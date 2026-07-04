@@ -1,0 +1,506 @@
+/* Bundled font - no network request, reliable on low-end hardware and offline */
+@import '@fontsource/ibm-plex-sans-arabic/300.css';
+@import '@fontsource/ibm-plex-sans-arabic/400.css';
+@import '@fontsource/ibm-plex-sans-arabic/500.css';
+@import '@fontsource/ibm-plex-sans-arabic/600.css';
+@import '@fontsource/ibm-plex-sans-arabic/700.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* CSS Variables - Refined Neo-Tech Theme 2026 */
+:root {
+  /* Refined Neo-Tech Palette */
+  --cyber-aqua: #2EE7C9;
+  --charcoal-graphite: #1A1F25;
+  --cosmic-grey: #242A31;
+  --cloud-soft-white: #F4F6FA;
+  --graphite: #4A5668;
+  --pulse-violet: #8C7CFF;
+  
+  /* Legacy variables for backward compatibility */
+  --electric-mint: var(--cyber-aqua);
+  --deep-space-black: var(--charcoal-graphite);
+  --cloud-white: var(--cloud-soft-white);
+  --olive-gold: var(--cyber-aqua);
+  --graphite-blue: var(--graphite);
+  --warm-linen: var(--cloud-soft-white);
+  --obsidian: #121212;
+  --pearl-grey: var(--cloud-soft-white);
+  
+  /* Semantic colors */
+  --bg-primary: var(--cloud-soft-white);
+  --text-primary: var(--obsidian);
+  --border-default: rgba(0, 0, 0, 0.05);
+  --shadow-soft: 0 1px 2px rgba(0, 0, 0, 0.08);
+}
+
+@layer base {
+  body {
+    direction: rtl;
+    font-family: 'IBM Plex Sans Arabic', system-ui, sans-serif;
+    background: var(--cloud-soft-white);
+    color: var(--obsidian);
+    min-height: 100vh;
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.5;
+    letter-spacing: 0.01em;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    font-weight: 700;
+    color: var(--obsidian);
+    line-height: 1.3;
+    letter-spacing: -0.01em;
+  }
+
+  h1 {
+    font-size: 28px;
+  }
+
+  h2 {
+    font-size: 20px;
+  }
+
+  h3 {
+    font-size: 18px;
+  }
+
+  p, span {
+    font-weight: 400;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  small {
+    font-size: 13px;
+    line-height: 1.45;
+    font-weight: 300;
+  }
+}
+
+/* Custom scrollbar - Neo-Tech theme */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--cloud-soft-white);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--graphite);
+  border-radius: 4px;
+  opacity: 0.3;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  opacity: 0.5;
+}
+
+/* Sidebar - NO ANIMATIONS, INSTANT ONLY */
+@layer components {
+  .sidebar-item:not(.sidebar-item-active):hover {
+    background-color: rgba(46, 231, 201, 0.10) !important;
+    box-shadow: 0 2px 8px rgba(46, 231, 201, 0.08) !important;
+  }
+
+  /* Tab content wrapper - NO ANIMATIONS */
+  .tab-content-wrapper {
+    position: relative;
+    min-height: 200px;
+    overflow: hidden;
+  }
+
+  .tab-content {
+    /* NO TRANSITIONS - INSTANT RENDERING */
+  }
+}
+
+/* Component utilities */
+@layer components {
+  /* Xbox-Fluent card */
+  .card-soft {
+    background: #FFFFFF;
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    box-shadow: var(--shadow-soft);
+  }
+
+  /* Glass matte effect for top nav */
+  .glass-matte {
+    background: rgba(244, 246, 250, 0.95);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+
+  /* Primary button - NO ANIMATIONS */
+  .btn-primary {
+    background: var(--cyber-aqua);
+    color: var(--charcoal-graphite);
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 500;
+    border: none;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .btn-primary:hover {
+    filter: brightness(1.05);
+  }
+
+  /* Secondary button - NO ANIMATIONS */
+  .btn-secondary {
+    background: transparent;
+    color: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 500;
+  }
+
+  .btn-secondary:hover {
+    border-color: var(--cyber-aqua);
+    color: var(--cyber-aqua);
+  }
+
+  /* Ghost button - NO ANIMATIONS */
+  .btn-ghost {
+    background: transparent;
+    color: var(--obsidian);
+    border: 1px solid var(--border-default);
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-weight: 400;
+  }
+
+  .btn-ghost:hover {
+    background: var(--cloud-soft-white);
+    border-color: var(--cyber-aqua);
+  }
+
+  /* Input field - NO ANIMATIONS */
+  .input-soft {
+    background: white;
+    border: 1px solid var(--border-default);
+    border-radius: 10px;
+    padding: 12px 16px;
+    font-family: 'IBM Plex Sans Arabic', sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+  }
+
+  .input-soft:focus {
+    outline: none;
+    border-color: var(--cyber-aqua);
+    box-shadow: 0 0 0 3px rgba(46, 231, 201, 0.1);
+  }
+
+  /* Stats card */
+  .stats-card {
+    background: #FFFFFF;
+    border: 1px solid var(--border-default);
+    border-radius: 12px;
+    padding: 24px;
+    box-shadow: var(--shadow-soft);
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Badge */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 500;
+    background: var(--cloud-soft-white);
+    color: var(--obsidian);
+    border: 1px solid var(--border-default);
+  }
+
+  /* Tag */
+  .tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 400;
+    background: white;
+    color: var(--obsidian);
+    border: 1px solid var(--border-default);
+  }
+
+  /* POS button - NO ANIMATIONS */
+  .pos-button {
+    background: var(--cyber-aqua);
+    color: var(--charcoal-graphite);
+    border-radius: 8px;
+    padding: 20px 32px;
+    font-weight: 500;
+    font-size: 18px;
+    border: none;
+    box-shadow: var(--shadow-soft);
+    min-height: 80px;
+  }
+
+  .pos-button:hover {
+    filter: brightness(1.05);
+  }
+}
+
+/* Toast - NO ANIMATIONS */
+
+/* Hide scrollbar but keep functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* View Transitions API - DISABLED, NO ANIMATIONS */
+
+/* GLOBAL: DISABLE ALL TRANSITIONS AND ANIMATIONS - POS SPEED ONLY */
+*,
+*::before,
+*::after {
+  transition: none !important;
+  animation: none !important;
+  animation-duration: 0s !important;
+  animation-delay: 0s !important;
+  transition-duration: 0s !important;
+  transition-delay: 0s !important;
+}
+
+/* EXCEPTION: Keep loading spinners functional */
+.animate-spin {
+  animation: spin 1s linear infinite !important;
+}
+
+@keyframes spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Tablet PORTRAIT: VERTICAL layout - menu on top, cart below (768px–1279px, height > width) */
+@media (min-width: 768px) and (max-width: 1279px) and (max-aspect-ratio: 1/1) {
+  [data-order-modal] {
+    height: 85svh !important;
+    max-height: 85svh !important;
+    font-size: 11px !important;
+  }
+  [data-order-modal-body] {
+    flex-direction: column !important;
+    gap: 0 !important;
+  }
+  [data-order-modal] [data-order-menu] {
+    width: 100% !important;
+    min-width: unset !important;
+    max-width: unset !important;
+    flex: 0 0 auto !important;
+    max-height: 45% !important;
+    border-left: none !important;
+    border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+    padding: 8px !important;
+  }
+  [data-order-modal] [data-order-cart] {
+    width: 100% !important;
+    min-width: unset !important;
+    max-width: unset !important;
+    flex: 1 1 auto !important;
+    border-left: none !important;
+    border-top: 1px solid rgba(0,0,0,0.05) !important;
+    padding: 8px !important;
+  }
+  [data-order-modal] [data-order-item-grid] {
+    grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important;
+    gap: 6px !important;
+  }
+  /* Categories + search in one row on tablet vertical */
+  [data-order-modal] [data-order-menu-filters] {
+    flex-direction: row !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+  [data-order-modal] [data-order-menu-filters] > div:first-child {
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  [data-order-modal] [data-order-menu-filters] > div:last-child {
+    width: 140px !important;
+    flex-shrink: 0 !important;
+  }
+  [data-order-modal] * {
+    font-size: 11px !important;
+  }
+  [data-order-modal] button {
+    padding: 3px 6px !important;
+  }
+  [data-order-modal] input, [data-order-modal] textarea {
+    padding: 4px 8px !important;
+  }
+}/* Tablet LANDSCAPE: HORIZONTAL layout - menu left, cart right (768px–1279px, width >= height) */
+@media (min-width: 768px) and (max-width: 1279px) and (min-aspect-ratio: 1/1) {
+  [data-order-modal] {
+    height: 85svh !important;
+    max-height: 85svh !important;
+    font-size: 11px !important;
+  }
+  [data-order-modal-body] {
+    flex-direction: row !important;
+    gap: 0.5rem !important;
+  }
+  [data-order-modal] [data-order-menu] {
+    width: auto !important;
+    min-width: unset !important;
+    max-width: unset !important;
+    max-height: none !important;
+    flex: 1 1 auto !important;
+    border-left: 1px solid rgba(0,0,0,0.05) !important;
+    border-bottom: none !important;
+    padding: 6px !important;
+  }
+  [data-order-modal] [data-order-cart] {
+    width: 28% !important;
+    min-width: 180px !important;
+    max-width: 280px !important;
+    flex: 0 0 auto !important;
+    border-left: 1px solid rgba(0,0,0,0.05) !important;
+    border-top: none !important;
+    padding: 6px !important;
+  }
+  [data-order-modal] [data-order-menu-filters] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  [data-order-modal] [data-order-menu-filters] > div:first-child {
+    flex: none !important;
+    min-width: unset !important;
+  }
+  [data-order-modal] [data-order-menu-filters] > div:last-child {
+    width: auto !important;
+    flex-shrink: 0 !important;
+  }
+  [data-order-modal] [data-order-item-grid] {
+    grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)) !important;
+    gap: 4px !important;
+  }
+  [data-order-modal] * {
+    font-size: 11px !important;
+  }
+  [data-order-modal] button {
+    padding: 3px 6px !important;
+  }
+  [data-order-modal] input, [data-order-modal] textarea {
+    padding: 4px 8px !important;
+  }
+}/* Same tablet portrait vertical rules via JS class (backup - only when portrait) */
+html.tablet-viewport.tablet-portrait [data-order-modal] {
+  height: 85svh !important;
+  max-height: 85svh !important;
+  font-size: 11px !important;
+}
+html.tablet-viewport.tablet-portrait [data-order-modal-body] {
+  flex-direction: column !important;
+  gap: 0 !important;
+}
+html.tablet-viewport.tablet-portrait [data-order-modal] [data-order-menu] {
+  width: 100% !important;
+  min-width: unset !important;
+  max-width: unset !important;
+  flex: 0 0 auto !important;
+  max-height: 45% !important;
+  border-left: none !important;
+  border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+  padding: 8px !important;
+}
+html.tablet-viewport.tablet-portrait [data-order-modal] [data-order-cart] {
+  width: 100% !important;
+  min-width: unset !important;
+  max-width: unset !important;
+  flex: 1 1 auto !important;
+  border-left: none !important;
+  border-top: 1px solid rgba(0,0,0,0.05) !important;
+  padding: 8px !important;
+}
+html.tablet-viewport [data-order-modal] [data-order-item-grid] {
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr)) !important;
+  gap: 6px !important;
+}
+html.tablet-viewport.tablet-portrait [data-order-modal] [data-order-menu-filters] {
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+html.tablet-viewport [data-order-modal] [data-order-menu-filters] > div:first-child {
+  flex: 1 !important;
+  min-width: 0 !important;
+}
+html.tablet-viewport.tablet-portrait [data-order-modal] [data-order-menu-filters] > div:last-child {
+  width: 140px !important;
+  flex-shrink: 0 !important;
+}
+/* ALL text in order modal - tablet (js class backup) */
+html.tablet-viewport [data-order-modal] * {
+  font-size: 11px !important;
+}
+html.tablet-viewport [data-order-modal] button {
+  padding: 3px 6px !important;
+}
+html.tablet-viewport [data-order-modal] input,
+html.tablet-viewport [data-order-modal] textarea {
+  padding: 4px 8px !important;
+}/* Desktop: HORIZONTAL layout - menu left, cart right (1280px+) - explicit reset */
+@media (min-width: 1280px) {
+  [data-order-modal-body] {
+    flex-direction: row !important;
+    gap: 1rem !important;
+  }
+  [data-order-modal] [data-order-menu] {
+    width: auto !important;
+    min-width: unset !important;
+    max-width: unset !important;
+    max-height: none !important;
+    flex: 1 1 auto !important;
+    border-left: 1px solid rgba(0,0,0,0.05) !important;
+    border-bottom: none !important;
+    padding: 1rem !important;
+  }
+  [data-order-modal] [data-order-cart] {
+    width: 30% !important;
+    min-width: 260px !important;
+    max-width: 360px !important;
+    flex: 0 0 auto !important;
+    border-left: 1px solid rgba(0,0,0,0.05) !important;
+    border-top: none !important;
+    padding: 0.625rem 1rem !important;
+  }
+  [data-order-modal] [data-order-menu-filters] {
+    flex-direction: column !important;
+    align-items: stretch !important;
+  }
+  [data-order-modal] [data-order-menu-filters] > div:first-child {
+    flex: none !important;
+    min-width: unset !important;
+  }
+  [data-order-modal] [data-order-menu-filters] > div:last-child {
+    width: auto !important;
+    flex-shrink: 0 !important;
+  }
+}/* Tablet: zoom out (disabled - use compact layout instead) */
+/* @media (min-width: 768px) and (max-width: 1024px) {
+  html { zoom: 0.6; }
+} */

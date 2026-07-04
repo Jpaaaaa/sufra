@@ -1,0 +1,83 @@
+{
+  "type": "daily",
+  "date": "2025-02-01",
+  "data": {
+    "summary": {
+      "totalSales": 45000,
+      "orderCount": 125,
+      "averageOrder": 360,
+      "discounts": 1200,
+      "cancellations": 3,
+      "netProfit": 32000
+    },
+    "items": [
+      {
+        "id": 1,
+        "name": "شاورما لحم",
+        "quantitySold": 45,
+        "totalSales": 6750,
+        "movementStatus": "high"
+      },
+      {
+        "id": 2,
+        "name": "شاورما دجاج",
+        "quantitySold": 38,
+        "totalSales": 5700,
+        "movementStatus": "high"
+      },
+      {
+        "id": 3,
+        "name": "برجر كلاسيك",
+        "quantitySold": 22,
+        "totalSales": 3300,
+        "movementStatus": "medium"
+      }
+    ],
+    "employees": [
+      {
+        "id": 1,
+        "name": "أحمد محمد",
+        "ordersHandled": 45,
+        "totalSales": 16200,
+        "cancellations": 1,
+        "avgOrderValue": 360
+      },
+      {
+        "id": 2,
+        "name": "فاطمة علي",
+        "ordersHandled": 40,
+        "totalSales": 14400,
+        "cancellations": 0,
+        "avgOrderValue": 360
+      }
+    ],
+    "orders": [
+      {
+        "id": 1001,
+        "openTime": "2025-02-01T10:30:00Z",
+        "closeTime": "2025-02-01T11:15:00Z",
+        "itemCount": 3,
+        "totalAmount": 450,
+        "status": "completed",
+        "employee": "أحمد محمد"
+      },
+      {
+        "id": 1002,
+        "openTime": "2025-02-01T11:00:00Z",
+        "closeTime": null,
+        "itemCount": 2,
+        "totalAmount": 320,
+        "status": "pending",
+        "employee": "فاطمة علي"
+      }
+    ],
+    "drawer": {
+      "openingBalance": 5000,
+      "cashIn": 45000,
+      "cashOut": 1200,
+      "closingBalance": 48800,
+      "variance": 0
+    }
+  }
+}
+

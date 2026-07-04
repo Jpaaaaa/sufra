@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Sufra POS - جاري التحميل</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Segoe UI', 'IBM Plex Sans Arabic', system-ui, sans-serif;
+      background: linear-gradient(135deg, #F4F6FA 0%, #ffffff 55%, rgba(46, 231, 201, 0.12) 100%);
+      color: #121212;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .splash-content {
+      text-align: center;
+      padding: 48px 32px;
+      position: relative;
+      z-index: 1;
+    }
+    .logo-container {
+      width: 120px;
+      height: 120px;
+      margin: 0 auto 32px;
+      border-radius: 24px;
+      background: rgba(46, 231, 201, 0.1);
+      border: 2px solid rgba(46, 231, 201, 0.3);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      overflow: hidden;
+    }
+    .logo-container img {
+      width: 80px;
+      height: 80px;
+      object-fit: contain;
+    }
+    .brand {
+      font-size: 28px;
+      font-weight: 700;
+      color: #121212;
+      margin-bottom: 8px;
+      letter-spacing: -0.02em;
+    }
+    .brand span { color: #2EE7C9; }
+    .loading-text {
+      font-size: 15px;
+      color: #4A5668;
+      margin-bottom: 24px;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      margin: 0 auto;
+      border: 3px solid rgba(46, 231, 201, 0.35);
+      border-top-color: #2EE7C9;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .accent-line {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #2EE7C9, transparent);
+      opacity: 0.6;
+    }
+  </style>
+</head>
+<body>
+  <div class="splash-content">
+    <div class="logo-container">
+      <img src="logo.png" alt="Sufra" onerror="this.style.display='none'" />
+    </div>
+    <h1 class="brand">Sufra <span>POS</span></h1>
+    <p class="loading-text">جاري التحميل...</p>
+    <div class="spinner"></div>
+    <div class="accent-line"></div>
+  </div>
+</body>
+</html>

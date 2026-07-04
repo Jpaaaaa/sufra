@@ -1,0 +1,24 @@
+export { default as ReceiptIcon } from './ReceiptIcon';
+export { default as ClipboardIcon } from './ClipboardIcon';
+export { default as UtensilsIcon } from './UtensilsIcon';
+export { default as GiftIcon } from './GiftIcon';
+export { default as ChairIcon } from './ChairIcon';
+export { default as TableIcon } from './TableIcon';
+export { default as ChartIcon } from './ChartIcon';
+export { default as SettingsIcon } from './SettingsIcon';
+export { default as FinanceIcon } from './FinanceIcon';
+export { default as UsersIcon } from './UsersIcon';
+export { default as FloorIcon } from './FloorIcon';
+export { default as ShelfIcon } from './ShelfIcon';
+export { default as ClockIcon } from './ClockIcon';
+export { default as CheckCircleIcon } from './CheckCircleIcon';
+export { default as ArchiveIcon } from './ArchiveIcon';
+export { default as PrinterIcon } from './PrinterIcon';
+export { default as PencilIcon } from './PencilIcon';
+export { default as TruckIcon } from './TruckIcon';
+export { default as PackageIcon } from './PackageIcon';
+export { default as TrashIcon } from './TrashIcon';
+export { default as MenuIcon } from './MenuIcon';
+export { default as XIcon } from './XIcon';
+export { default as SearchIcon } from './SearchIcon';
+

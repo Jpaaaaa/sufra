@@ -1,0 +1,29 @@
+{
+  "name": "Sufra Lite POS",
+  "short_name": "Sufra Lite",
+  "description": "Point of Sale System for Restaurants",
+  "start_url": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "fullscreen"],
+  "background_color": "#ffffff",
+  "theme_color": "#F4F6FA",
+  "orientation": "any",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "./logo/logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./logo/logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ],
+  "scope": "/",
+  "categories": ["business", "productivity"],
+  "shortcuts": []
+}

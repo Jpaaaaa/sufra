@@ -1,0 +1,41 @@
+# Dependencies
+node_modules/
+
+# Build outputs
+dist/
+dist-bundle/
+**/out/
+*.tsbuildinfo
+
+# Electron packaging
+electron/release/
+electron/node/
+electron/temp/
+electron/frontend/out/
+
+# Runtime / local data
+*.sqlite
+**/data/uploads/
+backend/data/
+electron/data/
+
+# Logs
+*.log
+electron-output.log
+
+# Secrets & generated licenses
+license-manager/license.bin
+electron/scripts/license-keys/private.pem
+
+# Archives & backups
+machine-id-tool.zip
+modules-backup/
+
+# IDE
+.cursor/
+
+# Android build artifacts
+frontend/android/.gradle/
+frontend/android/**/build/
+frontend/android/app/src/main/assets/
+frontend/android/capacitor-cordova-android-plugins/

@@ -1,0 +1,877 @@
+import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { DatabaseService } from '../../database/database.service';
+import { ShelvesService } from '../shelves/shelves.service';
+import { TablesService } from '../tables/tables.service';
+
+export interface DineInOrderItem {
+  item_id: number;
+  item_name: string;
+  quantity: number;
+  price: number;
+  kitchen_id?: number | null;
+  service_type?: 'dine-in' | 'pickup';
+  shelf_item_id?: number | null;
+}
+
+export interface CreateDineInOrderDto {
+  table_id: number;
+  hall_id: number;
+  table_session_id?: number;
+  items: DineInOrderItem[];
+  globalDiscount?: { percent: number; amount: number };
+  note?: string;
+  userId?: number;
+  userRole?: string;
+}
+
+export interface DineInOrder {
+  id: number;
+  table_id: number;
+  hall_id: number;
+  table_session_id: number;
+  status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'archived';
+  total: number;
+  discount: number;
+  globalDiscount?: any;
+  note?: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DineInOrderWithItems extends DineInOrder {
+  items: Array<{
+    id: number;
+    order_id: number;
+    item_id: number;
+    item_name: string;
+    quantity: number;
+    price: number;
+    kitchen_id?: number | null;
+    service_type?: 'dine-in' | 'pickup' | null;
+    shelf_item_id?: number | null;
+  }>;
+}
+
+@Injectable()
+export class DineInOrdersService {
+  constructor(
+    private readonly db: DatabaseService,
+    private readonly shelvesService: ShelvesService,
+    private readonly tablesService: TablesService,
+  ) {}
+
+  async findByTable(tableId: number): Promise<DineInOrderWithItems[]> {
+    console.log('[DINE_IN_ORDERS] findByTable: querying orders for table_id', tableId);
+
+    try {
+      const orderRows = await this.db.all(
+        `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+         FROM dine_in_orders 
+         WHERE table_id = ? AND status IN ('pending', 'printed') 
+         ORDER BY created_at DESC`,
+        [tableId],
+      );
+
+      console.log('[DINE_IN_ORDERS] findByTable: found', orderRows.length, 'active orders for table', tableId);
+
+      if (orderRows.length === 0) {
+        return [];
+      }
+
+      const orderIds = orderRows.map((o: any) => o.id);
+
+      let itemRows: any[] = [];
+      if (orderIds.length > 0) {
+        const placeholders = orderIds.map(() => '?').join(',');
+        // CRITICAL: Always filter by order_type to ensure domain separation
+        itemRows = await this.db.all(
+          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+           FROM order_items 
+           WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
+          orderIds,
+        );
+      }
+
+      const ordersWithItems: DineInOrderWithItems[] = orderRows.map((order: any) => {
+        if (order.globalDiscount) {
+          try {
+            order.globalDiscount = JSON.parse(order.globalDiscount);
+          } catch (e) {
+            order.globalDiscount = null;
+          }
+        }
+
+        return {
+          ...order,
+          items: itemRows.filter((item: any) => item.order_id === order.id),
+        };
+      });
+
+      return ordersWithItems;
+    } catch (error) {
+      console.error('[DINE_IN_ORDERS] findByTable: error', error);
+      throw error;
+    }
+  }
+
+  async findByHall(hallId: number): Promise<DineInOrderWithItems[]> {
+    console.log('[DINE_IN_ORDERS] findByHall: querying orders for hall_id', hallId);
+
+    const orderRows = await this.db.all(
+      `SELECT dio.id, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
+              t.name AS table_name, t.number AS table_number, h.name AS hall_name, f.name AS floor_name
+       FROM dine_in_orders dio
+       LEFT JOIN tables t ON dio.table_id = t.id
+       LEFT JOIN halls h ON dio.hall_id = h.id
+       LEFT JOIN floors f ON h.floor_id = f.id
+       WHERE dio.hall_id = ? 
+       ORDER BY dio.created_at DESC`,
+      [hallId],
+    );
+
+    if (orderRows.length === 0) {
+      return [];
+    }
+
+    const orderIds = orderRows.map((o: any) => o.id);
+
+    let itemRows: any[] = [];
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+        // CRITICAL: Always filter by order_type to ensure domain separation
+        itemRows = await this.db.all(
+          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+           FROM order_items 
+           WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
+          orderIds,
+        );
+    }
+
+    const ordersWithItems: DineInOrderWithItems[] = orderRows.map((order: any) => {
+      if (order.globalDiscount) {
+        try {
+          order.globalDiscount = JSON.parse(order.globalDiscount);
+        } catch (e) {
+          order.globalDiscount = null;
+        }
+      }
+
+      return {
+        ...order,
+        items: itemRows.filter((item: any) => item.order_id === order.id),
+      };
+    });
+
+    return ordersWithItems;
+  }
+
+  async findActive(): Promise<DineInOrderWithItems[]> {
+    console.log('[DINE_IN_ORDERS] findActive: querying active orders');
+
+    const orderRows = await this.db.all(
+      `SELECT dio.id, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
+              t.name AS table_name, h.name AS hall_name
+       FROM dine_in_orders dio
+       INNER JOIN tables t ON dio.table_id = t.id
+       INNER JOIN halls h ON dio.hall_id = h.id
+       WHERE dio.status IN ('pending', 'printed') 
+       ORDER BY dio.created_at ASC`,
+    );
+
+    if (orderRows.length === 0) {
+      return [];
+    }
+
+    orderRows.forEach((order: any) => {
+      if (order.globalDiscount) {
+        try {
+          order.globalDiscount = JSON.parse(order.globalDiscount);
+        } catch (e) {
+          order.globalDiscount = null;
+        }
+      }
+    });
+
+    const orderIds = orderRows.map((o: any) => o.id);
+
+    let itemRows: any[] = [];
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+        // CRITICAL: Always filter by order_type to ensure domain separation
+        itemRows = await this.db.all(
+          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+           FROM order_items 
+           WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
+          orderIds,
+        );
+    }
+
+    const ordersWithItems: DineInOrderWithItems[] = orderRows.map((order: any) => ({
+      ...order,
+      items: itemRows.filter((item: any) => item.order_id === order.id),
+    }));
+
+    return ordersWithItems;
+  }
+
+  /**
+   * Find all archived dine-in orders (completed or archived status)
+   */
+  async findArchived(): Promise<DineInOrderWithItems[]> {
+    console.log('[DINE_IN_ORDERS] findArchived: querying archived dine-in orders');
+
+    // First, let's check all order statuses for debugging
+    const allStatuses = await this.db.all(
+      `SELECT status, COUNT(*) as count FROM dine_in_orders GROUP BY status`
+    );
+    console.log('[DINE_IN_ORDERS] findArchived: all order statuses in database:', allStatuses);
+
+    // First, check raw count without joins
+    const rawCount = await this.db.get(
+      `SELECT COUNT(*) as count FROM dine_in_orders WHERE status IN ('completed', 'archived', 'cancelled')`
+    );
+    console.log('[DINE_IN_ORDERS] findArchived: raw count of completed/archived/cancelled orders:', rawCount?.count || 0);
+
+    const orderRows = await this.db.all(
+      `SELECT dio.id, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
+              t.name AS table_name, h.name AS hall_name
+       FROM dine_in_orders dio
+       LEFT JOIN tables t ON dio.table_id = t.id
+       LEFT JOIN halls h ON dio.hall_id = h.id
+       WHERE dio.status IN ('completed', 'archived', 'cancelled')
+       ORDER BY dio.created_at DESC`,
+    );
+
+    console.log('[DINE_IN_ORDERS] findArchived: found', orderRows.length, 'archived/completed orders after JOIN');
+    if (orderRows.length > 0) {
+      console.log('[DINE_IN_ORDERS] findArchived: sample order:', JSON.stringify(orderRows[0], null, 2));
+    } else if (rawCount && rawCount.count > 0) {
+      console.log('[DINE_IN_ORDERS] findArchived: WARNING - Raw count shows', rawCount.count, 'orders but JOIN returned 0. Possible issue with table/hall joins.');
+    }
+
+    if (orderRows.length === 0) {
+      console.log('[DINE_IN_ORDERS] findArchived: no archived orders found');
+      return [];
+    }
+
+    orderRows.forEach((order: any) => {
+      if (order.globalDiscount) {
+        try {
+          order.globalDiscount = JSON.parse(order.globalDiscount);
+        } catch (e) {
+          order.globalDiscount = null;
+        }
+      }
+    });
+
+    const orderIds = orderRows.map((o: any) => o.id);
+
+    let itemRows: any[] = [];
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+      // CRITICAL: Always filter by order_type to ensure domain separation
+      itemRows = await this.db.all(
+        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+         FROM order_items 
+         WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
+        orderIds,
+      );
+    }
+
+    const ordersWithItems: DineInOrderWithItems[] = orderRows.map((order: any) => ({
+      ...order,
+      items: itemRows.filter((item: any) => item.order_id === order.id),
+    }));
+
+    return ordersWithItems;
+  }
+
+  async create(data: CreateDineInOrderDto): Promise<DineInOrderWithItems> {
+    console.log('[DINE_IN_ORDERS] create: creating dine-in order', data);
+
+    // STRICT VALIDATION
+    if (!data.hall_id) {
+      throw new BadRequestException('hall_id is required for dine-in orders');
+    }
+    if (!data.table_id) {
+      throw new BadRequestException('table_id is required for dine-in orders');
+    }
+    if (!data.items || data.items.length === 0) {
+      throw new BadRequestException('Order must have at least one item');
+    }
+
+    // Verify table and hall
+    const table = await this.db.get('SELECT id, hall_id FROM tables WHERE id = ?', [data.table_id]);
+    if (!table) {
+      throw new NotFoundException(`Table with id ${data.table_id} not found`);
+    }
+    if (table.hall_id !== data.hall_id) {
+      throw new BadRequestException(`Table ${data.table_id} does not belong to hall ${data.hall_id}`);
+    }
+
+    const hall = await this.db.get('SELECT id FROM halls WHERE id = ?', [data.hall_id]);
+    if (!hall) {
+      throw new NotFoundException(`Hall with id ${data.hall_id} not found`);
+    }
+
+    if (data.userRole === 'customer') {
+      const isUnlocked = await this.tablesService.isTableUnlocked(data.table_id);
+      if (!isUnlocked) {
+        throw new ForbiddenException('Table must be unlocked by captain before ordering');
+      }
+    }
+
+    // Handle table session
+    let tableSessionId = data.table_session_id;
+    if (!tableSessionId) {
+      let session = await this.db.get(
+        `SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
+        [data.table_id],
+      );
+
+      if (!session) {
+        const now = new Date().toISOString();
+        await this.db.run(
+          `INSERT INTO table_sessions (table_id, hall_id, started_at, status, created_at) 
+           VALUES (?, ?, ?, 'active', ?)`,
+          [data.table_id, data.hall_id, now, now],
+        );
+        
+        const lastSession = await this.db.get(
+          `SELECT id FROM table_sessions WHERE table_id = ? ORDER BY id DESC LIMIT 1`,
+          [data.table_id],
+        );
+        if (!lastSession || !lastSession.id) {
+          throw new BadRequestException('Failed to create table session');
+        }
+        tableSessionId = lastSession.id;
+      } else {
+        tableSessionId = session.id;
+      }
+    }
+
+    const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const discountAmount = data.globalDiscount?.amount ?? 0;
+    const total = Math.max(0, subtotal - discountAmount);
+    const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
+
+    const dbConnection = this.db.getConnection();
+    const insertStmt = dbConnection.prepare(
+      `INSERT INTO dine_in_orders (table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, created_by_user_id) 
+       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?)`,
+    );
+
+    try {
+      insertStmt.bind([
+        data.table_id,
+        data.hall_id,
+        tableSessionId,
+        total,
+        globalDiscountJson,
+        data.note || null,
+        data.userId ?? null,
+      ]);
+      insertStmt.step();
+    } finally {
+      insertStmt.free();
+    }
+
+    const orderIdResult = dbConnection.exec('SELECT last_insert_rowid() as id');
+    let orderId: number;
+
+    if (orderIdResult.length > 0 && orderIdResult[0].values.length > 0 && orderIdResult[0].values[0][0]) {
+      orderId = orderIdResult[0].values[0][0] as number;
+    } else {
+      const fallbackOrder = await this.db.get(
+        'SELECT id FROM dine_in_orders WHERE table_id = ? ORDER BY id DESC LIMIT 1',
+        [data.table_id],
+      );
+      if (!fallbackOrder || !fallbackOrder.id) {
+        throw new BadRequestException('Failed to create order: Could not retrieve order ID');
+      }
+      orderId = fallbackOrder.id;
+    }
+
+    if (!orderId || orderId === 0) {
+      throw new BadRequestException('Failed to create order: Invalid order ID returned');
+    }
+
+    // CRITICAL: Include order_type='dine_in' for proper domain separation
+    const stmt = this.db.getConnection().prepare(
+      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    try {
+      for (const item of data.items) {
+        stmt.bind([
+          orderId,
+          item.item_id,
+          item.item_name,
+          item.quantity,
+          item.price,
+          item.kitchen_id ?? null,
+          item.service_type || 'dine-in',
+          item.shelf_item_id ?? null,
+          'dine_in', // CRITICAL: Set order_type for domain separation
+        ]);
+        stmt.step();
+        stmt.reset();
+      }
+    } finally {
+      stmt.free();
+    }
+
+    // CRITICAL: Force database save after direct prepare/step operations
+    // This ensures the order and items are persisted to disk immediately
+    await this.db.run("UPDATE dine_in_orders SET updated_at = datetime('now') WHERE id = ?", [orderId]);
+    console.log('[DINE_IN_ORDERS] ✅ Database saved after order creation');
+
+    // Decrease stock for shelf items
+    try {
+      for (const item of data.items) {
+        if (item.shelf_item_id) {
+          try {
+            await this.shelvesService.decreaseStock(item.shelf_item_id, item.quantity);
+          } catch (stockErr: any) {
+            console.error('[DINE_IN_ORDERS] create: stock decrease failed, rolling back order', orderId);
+            await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [orderId]);
+            await this.db.run('DELETE FROM dine_in_orders WHERE id = ?', [orderId]);
+            throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'كمية غير كافية'}`);
+          }
+        }
+      }
+    } catch (stockErr: any) {
+      console.error('[DINE_IN_ORDERS] create: error during stock update, rolling back order', orderId);
+      await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [orderId]);
+      await this.db.run('DELETE FROM dine_in_orders WHERE id = ?', [orderId]);
+      throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'خطأ غير معروف'}`);
+    }
+
+    const orderRow = await this.db.get(
+      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+       FROM dine_in_orders WHERE id = ?`,
+      [orderId],
+    );
+
+    if (!orderRow) {
+      throw new NotFoundException('Order not found after creation');
+    }
+
+    if (orderRow.globalDiscount) {
+      try {
+        orderRow.globalDiscount = JSON.parse(orderRow.globalDiscount);
+      } catch (e) {
+        orderRow.globalDiscount = null;
+      }
+    }
+
+    // CRITICAL: Always filter by order_type to ensure domain separation
+    const itemRows = await this.db.all(
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+       FROM order_items 
+       WHERE order_id = ? AND order_type = 'dine_in'`,
+      [orderId],
+    );
+
+    console.log('[DINE_IN_ORDERS] ✅ Created order', orderId, 'with', itemRows.length, 'items');
+
+    return {
+      ...orderRow,
+      items: itemRows,
+    } as DineInOrderWithItems;
+  }
+
+  async updateStatus(id: number, status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'archived'): Promise<DineInOrder> {
+    console.log('[DINE_IN_ORDERS] updateStatus: updating order', id, 'to status', status);
+    await this.db.run(
+      'UPDATE dine_in_orders SET status = ?, updated_at = datetime("now") WHERE id = ?',
+      [status, id],
+    );
+    console.log('[DINE_IN_ORDERS] updateStatus: order', id, 'updated to', status);
+
+    const row = await this.db.get(
+      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+       FROM dine_in_orders WHERE id = ?`,
+      [id],
+    );
+    if (!row) {
+      throw new NotFoundException('Order not found');
+    }
+    
+    console.log('[DINE_IN_ORDERS] updateStatus: verified order', id, 'status is now:', row.status);
+
+    if (row.globalDiscount) {
+      try {
+        row.globalDiscount = JSON.parse(row.globalDiscount);
+      } catch (e) {
+        row.globalDiscount = null;
+      }
+    }
+
+    return row as DineInOrder;
+  }
+
+  async update(id: number, data: {
+    items: DineInOrderItem[];
+    globalDiscount?: { percent: number; amount: number };
+    note?: string;
+  }): Promise<DineInOrderWithItems> {
+    console.log('[DINE_IN_ORDERS] update: updating order', id, data);
+
+    const existing = await this.db.get(
+      'SELECT id, table_id, hall_id, status FROM dine_in_orders WHERE id = ?',
+      [id],
+    );
+    if (!existing) {
+      throw new NotFoundException('Order not found');
+    }
+
+    if (!data.items || data.items.length === 0) {
+      throw new BadRequestException('Order must have at least one item');
+    }
+
+    const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    const discountAmount = data.globalDiscount?.amount ?? 0;
+    const total = Math.max(0, subtotal - discountAmount);
+    const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
+
+    // Update order
+    await this.db.run(
+      'UPDATE dine_in_orders SET total = ?, globalDiscount = ?, note = ?, updated_at = datetime("now") WHERE id = ?',
+      [total, globalDiscountJson, data.note || null, id],
+    );
+
+    // Delete old order items (only for this order_type to prevent accidental deletion)
+    await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [id]);
+
+    // Insert new order items
+    // CRITICAL: Include order_type='dine_in' for proper domain separation
+    const stmt = this.db.getConnection().prepare(
+      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    );
+
+    try {
+      for (const item of data.items) {
+        stmt.bind([
+          id,
+          item.item_id,
+          item.item_name,
+          item.quantity,
+          item.price,
+          item.kitchen_id ?? null,
+          item.service_type || 'dine-in',
+          item.shelf_item_id ?? null,
+          'dine_in', // CRITICAL: Set order_type for domain separation
+        ]);
+        stmt.step();
+        stmt.reset();
+      }
+    } finally {
+      stmt.free();
+    }
+
+    // CRITICAL: Force database save after direct prepare/step operations
+    await this.db.run("UPDATE dine_in_orders SET updated_at = datetime('now') WHERE id = ?", [id]);
+    console.log('[DINE_IN_ORDERS] ✅ Database saved after order update');
+
+    // Return the updated order with items
+    const orderRow = await this.db.get(
+      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+       FROM dine_in_orders WHERE id = ?`,
+      [id],
+    );
+
+    if (!orderRow) {
+      throw new NotFoundException('Order not found after update');
+    }
+
+    if (orderRow.globalDiscount) {
+      try {
+        orderRow.globalDiscount = JSON.parse(orderRow.globalDiscount);
+      } catch (e) {
+        orderRow.globalDiscount = null;
+      }
+    }
+
+    const itemRows = await this.db.all(
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id 
+       FROM order_items 
+       WHERE order_id = ?`,
+      [id],
+    );
+
+    return {
+      ...orderRow,
+      items: itemRows,
+    } as DineInOrderWithItems;
+  }
+
+  async remove(id: number): Promise<void> {
+    // CRITICAL: Only delete items with matching order_type to prevent accidental deletion
+    await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [id]);
+    await this.db.run('DELETE FROM dine_in_orders WHERE id = ?', [id]);
+  }
+
+  async findById(id: number): Promise<DineInOrderWithItems | null> {
+    const orderRow = await this.db.get(
+      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+       FROM dine_in_orders WHERE id = ?`,
+      [id],
+    );
+
+    if (!orderRow) {
+      return null;
+    }
+
+    if (orderRow.globalDiscount) {
+      try {
+        orderRow.globalDiscount = JSON.parse(orderRow.globalDiscount);
+      } catch (e) {
+        orderRow.globalDiscount = null;
+      }
+    }
+
+    const itemRows = await this.db.all(
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id 
+       FROM order_items 
+       WHERE order_id = ?`,
+      [id],
+    );
+
+    return {
+      ...orderRow,
+      items: itemRows,
+    } as DineInOrderWithItems;
+  }
+
+  /**
+   * Move all orders from source table to target table
+   * Source table becomes empty; target table receives all orders
+   * POST /orders/dine-in/move-table
+   */
+  async moveTableOrders(
+    sourceTableId: number,
+    targetTableId: number,
+  ): Promise<{ movedCount: number }> {
+    if (sourceTableId === targetTableId) {
+      throw new BadRequestException('Source and target table must be different');
+    }
+
+    const orders = await this.db.all(
+      `SELECT id, hall_id, table_session_id FROM dine_in_orders 
+       WHERE table_id = ? AND status IN ('pending', 'printed')`,
+      [sourceTableId],
+    );
+
+    if (orders.length === 0) {
+      return { movedCount: 0 };
+    }
+
+    const targetTable = await this.db.get(
+      'SELECT id, hall_id FROM tables WHERE id = ?',
+      [targetTableId],
+    );
+    if (!targetTable) {
+      throw new NotFoundException(`Table with id ${targetTableId} not found`);
+    }
+
+    let session = await this.db.get(
+      `SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
+      [targetTableId],
+    );
+
+    if (!session) {
+      const now = new Date().toISOString();
+      await this.db.run(
+        `INSERT INTO table_sessions (table_id, hall_id, started_at, status, created_at) 
+         VALUES (?, ?, ?, 'active', ?)`,
+        [targetTableId, targetTable.hall_id, now, now],
+      );
+      session = await this.db.get(
+        `SELECT id FROM table_sessions WHERE table_id = ? ORDER BY id DESC LIMIT 1`,
+        [targetTableId],
+      );
+      if (!session?.id) {
+        throw new BadRequestException('Failed to create table session for target table');
+      }
+    }
+
+    const targetHallId = targetTable.hall_id;
+    const targetSessionId = session.id;
+
+    for (const order of orders) {
+      await this.db.run(
+        `UPDATE dine_in_orders SET table_id = ?, hall_id = ?, table_session_id = ?, updated_at = datetime("now") WHERE id = ?`,
+        [targetTableId, targetHallId, targetSessionId, order.id],
+      );
+    }
+
+    console.log('[DINE_IN_ORDERS] moveTableOrders: moved', orders.length, 'orders from table', sourceTableId, 'to', targetTableId);
+    return { movedCount: orders.length };
+  }
+
+  /**
+   * Move specific orders to a target table
+   * POST /orders/dine-in/move-orders
+   */
+  async moveOrders(
+    orderIds: number[],
+    targetTableId: number,
+  ): Promise<{ movedCount: number }> {
+    if (!orderIds?.length) {
+      return { movedCount: 0 };
+    }
+
+    const uniqueIds = [...new Set(orderIds)].filter((id) => typeof id === 'number' && !isNaN(id));
+    if (uniqueIds.length === 0) {
+      return { movedCount: 0 };
+    }
+
+    const placeholders = uniqueIds.map(() => '?').join(',');
+    const orders = await this.db.all(
+      `SELECT id, hall_id, table_session_id, table_id FROM dine_in_orders 
+       WHERE id IN (${placeholders}) AND status IN ('pending', 'printed')`,
+      uniqueIds,
+    );
+
+    if (orders.length === 0) {
+      return { movedCount: 0 };
+    }
+
+    const targetTable = await this.db.get(
+      'SELECT id, hall_id FROM tables WHERE id = ?',
+      [targetTableId],
+    );
+    if (!targetTable) {
+      throw new NotFoundException(`Table with id ${targetTableId} not found`);
+    }
+
+    let session = await this.db.get(
+      `SELECT id FROM table_sessions WHERE table_id = ? AND status = 'active' ORDER BY started_at DESC LIMIT 1`,
+      [targetTableId],
+    );
+
+    if (!session) {
+      const now = new Date().toISOString();
+      await this.db.run(
+        `INSERT INTO table_sessions (table_id, hall_id, started_at, status, created_at) 
+         VALUES (?, ?, ?, 'active', ?)`,
+        [targetTableId, targetTable.hall_id, now, now],
+      );
+      session = await this.db.get(
+        `SELECT id FROM table_sessions WHERE table_id = ? ORDER BY id DESC LIMIT 1`,
+        [targetTableId],
+      );
+      if (!session?.id) {
+        throw new BadRequestException('Failed to create table session for target table');
+      }
+    }
+
+    const targetHallId = targetTable.hall_id;
+    const targetSessionId = session.id;
+
+    for (const order of orders) {
+      await this.db.run(
+        `UPDATE dine_in_orders SET table_id = ?, hall_id = ?, table_session_id = ?, updated_at = datetime("now") WHERE id = ?`,
+        [targetTableId, targetHallId, targetSessionId, order.id],
+      );
+    }
+
+    console.log('[DINE_IN_ORDERS] moveOrders: moved', orders.length, 'orders to table', targetTableId);
+    return { movedCount: orders.length };
+  }
+
+  /**
+   * Set global discount for all active orders on a table
+   * PATCH /orders/table/:tableId/global-discount
+   */
+  async setTableGlobalDiscount(
+    tableId: number,
+    globalDiscount: { percent: number; amount: number } | null,
+  ): Promise<{ updatedCount: number }> {
+    console.log('[DINE_IN_ORDERS] setTableGlobalDiscount: table', tableId, 'discount', globalDiscount);
+
+    const orders = await this.db.all(
+      `SELECT id FROM dine_in_orders WHERE table_id = ? AND status IN ('pending', 'printed')`,
+      [tableId],
+    );
+
+    if (orders.length === 0) {
+      return { updatedCount: 0 };
+    }
+
+    const globalDiscountJson = globalDiscount ? JSON.stringify(globalDiscount) : null;
+    const discountAmount = globalDiscount?.amount ?? 0;
+
+    // Get subtotal for each order
+    let tableSubtotal = 0;
+    const orderSubtotals = new Map<number, number>();
+
+    for (const order of orders) {
+      const items = await this.db.all(
+        `SELECT quantity, price FROM order_items WHERE order_id = ? AND order_type = 'dine_in'`,
+        [order.id],
+      );
+      const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+      orderSubtotals.set(order.id, subtotal);
+      tableSubtotal += subtotal;
+    }
+
+    // Update each order with globalDiscount and recalculated total
+    for (const order of orders) {
+      const subtotal = orderSubtotals.get(order.id) ?? 0;
+      const proportionalDiscount = tableSubtotal > 0 ? (subtotal / tableSubtotal) * discountAmount : 0;
+      const newTotal = Math.max(0, subtotal - proportionalDiscount);
+
+      await this.db.run(
+        'UPDATE dine_in_orders SET globalDiscount = ?, total = ?, updated_at = datetime("now") WHERE id = ?',
+        [globalDiscountJson, newTotal, order.id],
+      );
+    }
+
+    console.log('[DINE_IN_ORDERS] setTableGlobalDiscount: updated', orders.length, 'orders');
+    return { updatedCount: orders.length };
+  }
+
+  /**
+   * Delete all archived dine-in orders (completed or archived status)
+   */
+  async removeAllArchived(): Promise<number> {
+    console.log('[DINE_IN_ORDERS] removeAllArchived: deleting all archived/completed dine-in orders');
+    
+    // Get all archived/completed order IDs first
+    const archivedOrders = await this.db.all(
+      'SELECT id FROM dine_in_orders WHERE status IN (?, ?)',
+      ['completed', 'archived'],
+    );
+    
+    if (archivedOrders.length === 0) {
+      console.log('[DINE_IN_ORDERS] removeAllArchived: no archived orders to delete');
+      return 0;
+    }
+
+    const orderIds = archivedOrders.map((o: any) => o.id);
+    console.log('[DINE_IN_ORDERS] removeAllArchived: deleting', orderIds.length, 'orders');
+    
+    // Delete order items first (CRITICAL: filter by order_type)
+    if (orderIds.length > 0) {
+      const placeholders = orderIds.map(() => '?').join(',');
+      await this.db.run(
+        `DELETE FROM order_items WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
+        orderIds,
+      );
+    }
+
+    // Delete archived/completed orders
+    await this.db.run(
+      'DELETE FROM dine_in_orders WHERE status IN (?, ?)',
+      ['completed', 'archived'],
+    );
+
+    console.log('[DINE_IN_ORDERS] removeAllArchived: deleted', archivedOrders.length, 'orders');
+    return archivedOrders.length;
+  }
+}
+

@@ -1,0 +1,83 @@
+{
+  "appId": "com.sufra.lite.pos",
+  "productName": "Sufra Lite POS",
+  "publish": {
+    "provider": "generic",
+    "url": "https://bazarone.amaantechnology.com/updates/sufra_lite/",
+    "channel": "latest"
+  },
+  "icon": "build/icon.ico",
+  "directories": {
+    "output": "release",
+    "buildResources": "build"
+  },
+  "asar": true,
+  "compression": "store",
+  "files": [
+    "dist/**/*",
+    "package.json",
+    "build/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "../frontend/dist",
+      "to": "frontend/dist",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "backend/dist",
+      "to": "backend/dist",
+      "filter": [
+        "**/*"
+      ]
+    },
+    {
+      "from": "backend/node_modules",
+      "to": "backend/node_modules",
+      "filter": [
+        "**/*",
+        "!**/*.md",
+        "!**/README*",
+        "!**/CHANGELOG*",
+        "!**/test/**",
+        "!**/tests/**",
+        "!**/__tests__/**",
+        "!**/.github/**",
+        "!**/docs/**"
+      ]
+    },
+    {
+      "from": "backend/package.json",
+      "to": "backend/package.json"
+    },
+    {
+      "from": "./node",
+      "to": "node"
+    },
+    {
+      "from": "build/icon.ico",
+      "to": "icon.ico"
+    }
+  ],
+  "win": {
+    "target": [
+      "nsis"
+    ],
+    "icon": "build/icon.ico",
+    "sign": null,
+    "forceCodeSigning": false,
+    "signingHashAlgorithms": []
+  },
+  "nsis": {
+    "oneClick": false,
+    "perMachine": true,
+    "allowToChangeInstallationDirectory": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "installerIcon": "build/icon.ico",
+    "uninstallerIcon": "build/icon.ico"
+  },
+  "npmRebuild": false
+}

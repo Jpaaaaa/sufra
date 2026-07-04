@@ -1,0 +1,45 @@
+{
+  "compilerOptions": {
+    "target": "ES2020",
+    "module": "CommonJS",
+    "moduleResolution": "Node",
+    "outDir": "dist",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "typeRoots": ["./types", "./node_modules/@types"],
+    "paths": {
+      "../../backend/dist/core": ["../backend/dist/core"]
+    }
+  },
+  "include": [
+    "main.ts",
+    "preload.ts",
+    "electron-env.ts",
+    "license/**/*.ts",
+    "updater/**/*.ts",
+    "shared/**/*.ts",
+    "init/**/*.ts",
+    "ipc/**/*.ts",
+    "loaders/**/*.ts",
+    "print/**/*.ts",
+    "types/**/*.ts",
+    "utils/**/*.ts",
+    "windows/**/*.ts",
+    "state.ts",
+    "http/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    "backend/**/*",
+    "backend/src/**/*",
+    "backend/dist/**/*.ts",
+    "../backend/**/*",
+    "frontend/**/*",
+    "**/*.spec.ts",
+    "**/*.test.ts"
+  ]
+}
+
+

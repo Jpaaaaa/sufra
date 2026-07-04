@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Sufra Lite</string>
+    <string name="title_activity_main">Sufra Lite</string>
+    <string name="package_name">com.sufra.lite</string>
+    <string name="custom_url_scheme">com.sufra.lite</string>
+</resources>

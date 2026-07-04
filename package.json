@@ -1,0 +1,21 @@
+{
+  "name": "sufra-lite-pos",
+  "version": "0.1.2",
+  "private": true,
+  "scripts": {
+    "dev:backend": "cd backend && npm run start:dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:electron": "cd electron && npm run dev",
+    "dev": "npm-run-all -p dev:backend dev:frontend dev:electron",
+    "build:backend": "cd backend && npm run build",
+    "build:frontend": "cd frontend && npm run build",
+    "build:electron": "cd electron && npm run build",
+    "build": "npm-run-all build:backend build:frontend build:electron"
+  },
+  "devDependencies": {
+    "npm-run-all": "^4.1.5"
+  },
+  "dependencies": {
+    "systeminformation": "^5.27.11"
+  }
+}

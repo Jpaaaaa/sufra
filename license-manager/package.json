@@ -1,0 +1,13 @@
+{
+  "name": "sufra-lite-license-manager",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "generate": "ts-node generate-license.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.5.0"
+  }
+}

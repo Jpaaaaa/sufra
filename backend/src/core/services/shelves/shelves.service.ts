@@ -1,0 +1,205 @@
+import { NotFoundException, BadRequestException } from '../../utils/exceptions';
+import { DatabaseService } from '../../database/database.service';
+
+export interface ShelfItem {
+  id: number;
+  name: string;
+  barcode: string;
+  price: number;
+  quantity: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ShelfSale {
+  id: number;
+  shelf_item_id: number;
+  quantity: number;
+  price: number;
+  created_at: string;
+}
+
+export class ShelvesService {
+  constructor(private readonly db: DatabaseService) {}
+
+  async findAll(): Promise<ShelfItem[]> {
+    const rows = await this.db.all(
+      'SELECT id, name, barcode, price, quantity, created_at as createdAt, updated_at as updatedAt FROM shelf_items ORDER BY name',
+    );
+    return rows as ShelfItem[];
+  }
+
+  async findOneById(id: number): Promise<ShelfItem> {
+    const row = await this.db.get(
+      'SELECT id, name, barcode, price, quantity, created_at as createdAt, updated_at as updatedAt FROM shelf_items WHERE id = ?',
+      [id],
+    );
+    if (!row) {
+      throw new NotFoundException('Shelf item not found');
+    }
+    return row as ShelfItem;
+  }
+
+  async findOneByBarcode(barcode: string): Promise<ShelfItem> {
+    const row = await this.db.get(
+      'SELECT id, name, barcode, price, quantity, created_at as createdAt, updated_at as updatedAt FROM shelf_items WHERE barcode = ?',
+      [barcode],
+    );
+    if (!row) {
+      throw new NotFoundException('Shelf item not found');
+    }
+    return row as ShelfItem;
+  }
+
+  async create(data: Omit<ShelfItem, 'id' | 'createdAt' | 'updatedAt'>): Promise<ShelfItem> {
+    const existing = await this.db.get('SELECT id FROM shelf_items WHERE barcode = ?', [data.barcode]);
+    if (existing) {
+      throw new BadRequestException('Barcode already exists');
+    }
+
+    const connection = this.db.getConnection();
+
+    const insertStmt = connection.prepare(
+      'INSERT INTO shelf_items (name, barcode, price, quantity, created_at, updated_at) VALUES (?, ?, ?, ?, datetime("now"), datetime("now"))',
+    );
+    insertStmt.bind([data.name, data.barcode, data.price, data.quantity]);
+    insertStmt.step();
+
+    const rowIdStmt = connection.prepare('SELECT last_insert_rowid() as id');
+    rowIdStmt.step();
+    const rowIdResult = rowIdStmt.getAsObject();
+    const id = rowIdResult.id as number;
+
+    insertStmt.free();
+    rowIdStmt.free();
+
+    const createdRow = await this.db.get(
+      'SELECT id, name, barcode, price, quantity, created_at as createdAt, updated_at as updatedAt FROM shelf_items WHERE id = ?',
+      [id],
+    );
+    if (!createdRow) {
+      throw new Error('Failed to retrieve created shelf item');
+    }
+    return createdRow as ShelfItem;
+  }
+
+  async update(id: number, data: Partial<Omit<ShelfItem, 'id' | 'createdAt' | 'updatedAt'>>): Promise<ShelfItem> {
+    const existing = await this.findOneById(id);
+
+    if (data.barcode && data.barcode !== existing.barcode) {
+      const duplicate = await this.db.get(
+        'SELECT id FROM shelf_items WHERE barcode = ? AND id != ?',
+        [data.barcode, id],
+      );
+      if (duplicate) {
+        throw new BadRequestException('Barcode already exists');
+      }
+    }
+
+    const merged = { ...existing, ...data };
+    await this.db.run(
+      'UPDATE shelf_items SET name = ?, barcode = ?, price = ?, quantity = ?, updated_at = datetime("now") WHERE id = ?',
+      [merged.name, merged.barcode, merged.price, merged.quantity, id],
+    );
+    return merged;
+  }
+
+  async remove(id: number): Promise<void> {
+    await this.findOneById(id);
+    await this.db.run('DELETE FROM shelf_items WHERE id = ?', [id]);
+  }
+
+  async decreaseStock(id: number, quantity: number): Promise<ShelfItem> {
+    if (quantity <= 0) {
+      throw new BadRequestException('Quantity must be greater than 0');
+    }
+
+    const existing = await this.findOneById(id);
+
+    if (existing.quantity < quantity) {
+      throw new BadRequestException(`Insufficient stock. Available: ${existing.quantity}, Requested: ${quantity}`);
+    }
+
+    const newQuantity = existing.quantity - quantity;
+    await this.db.run(
+      'UPDATE shelf_items SET quantity = ?, updated_at = datetime("now") WHERE id = ?',
+      [newQuantity, id],
+    );
+    return { ...existing, quantity: newQuantity };
+  }
+
+  async sell(barcode: string, quantity: number = 1): Promise<{ item: ShelfItem; sale: ShelfSale }> {
+    if (quantity <= 0) {
+      throw new BadRequestException('Quantity must be greater than 0');
+    }
+
+    const item = await this.findOneByBarcode(barcode);
+
+    if (item.quantity < quantity) {
+      throw new BadRequestException(`Insufficient stock. Available: ${item.quantity}, Requested: ${quantity}`);
+    }
+
+    const newQuantity = item.quantity - quantity;
+
+    try {
+      await this.db.run(
+        'UPDATE shelf_items SET quantity = ?, updated_at = datetime("now") WHERE id = ?',
+        [newQuantity, item.id],
+      );
+
+      const connection = this.db.getConnection();
+
+      const insertStmt = connection.prepare(
+        'INSERT INTO shelf_sales (shelf_item_id, quantity, price, created_at) VALUES (?, ?, ?, datetime("now"))',
+      );
+      insertStmt.bind([item.id, quantity, item.price]);
+      insertStmt.step();
+
+      const rowIdStmt = connection.prepare('SELECT last_insert_rowid() as id');
+      rowIdStmt.step();
+      const rowIdResult = rowIdStmt.getAsObject();
+      const saleId = rowIdResult.id as number;
+
+      insertStmt.free();
+      rowIdStmt.free();
+
+      const saleRow = await this.db.get(
+        'SELECT id, shelf_item_id, quantity, price, created_at FROM shelf_sales WHERE id = ?',
+        [saleId],
+      );
+
+      if (!saleRow) {
+        throw new Error('Failed to retrieve created sale');
+      }
+
+      return {
+        item: { ...item, quantity: newQuantity },
+        sale: saleRow as ShelfSale,
+      };
+    } catch (error) {
+      await this.db.run(
+        'UPDATE shelf_items SET quantity = ?, updated_at = datetime("now") WHERE id = ?',
+        [item.quantity, item.id],
+      );
+      throw error;
+    }
+  }
+
+  async getTodaySales(): Promise<(ShelfSale & { item_name: string; item_barcode: string })[]> {
+    const rows = await this.db.all(
+      `SELECT 
+        ss.id,
+        ss.shelf_item_id,
+        ss.quantity,
+        ss.price,
+        ss.created_at,
+        si.name as item_name,
+        si.barcode as item_barcode
+      FROM shelf_sales ss
+      INNER JOIN shelf_items si ON ss.shelf_item_id = si.id
+      WHERE DATE(ss.created_at) = DATE('now')
+      ORDER BY ss.created_at DESC`,
+    );
+    return rows as (ShelfSale & { item_name: string; item_barcode: string })[];
+  }
+}

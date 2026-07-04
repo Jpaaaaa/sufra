@@ -1,0 +1,40 @@
+name: Build Windows Installer
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18.20.8
+
+      - name: Install & build backend
+        working-directory: backend
+        run: |
+          npm install
+          npm rebuild --runtime=node --target=18.20.8
+          npm run build
+
+      - name: Install electron deps
+        working-directory: electron
+        run: npm install
+
+      - name: Build Electron installer
+        working-directory: electron
+        run: npm run dist
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: sufra-lite-windows-installer
+          path: electron/dist/*.exe
