@@ -10,4 +10,3 @@ export class UpdateExpenseDto {
   recurrence_interval?: number | null;
   next_occurrence_date?: string | null;
 }
-

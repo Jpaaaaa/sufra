@@ -1,8 +1,7 @@
 // Re-export server config functions for convenience
-export { getServerUrl, getServerConfig, setServerConfig, setServerUrl } from '../lib/server-config';
+export { getServerUrl, getServerConfig, setServerConfig, setServerUrl, LAN_API_PORT } from '../lib/server-config';
 
 // Legacy constant - use getServerUrl() instead for dynamic server URL
-// Kept for backward compatibility during migration
 export const API_BASE_URL = 'http://127.0.0.1:3333';
 
 export interface Hall {

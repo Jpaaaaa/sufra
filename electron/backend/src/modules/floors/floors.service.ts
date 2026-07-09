@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface Floor {
@@ -9,8 +9,7 @@ export interface Floor {
   updated_at: string;
 }
 
-@Injectable()
-export class FloorsService {
+class FloorsService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<Floor[]> {
@@ -80,4 +79,45 @@ export class FloorsService {
     await this.findOne(id);
     await this.db.run('DELETE FROM floors WHERE id = ?', [id]);
   }
+}
+
+let floorsInstance: FloorsService | null = null;
+
+export function initializeFloors(db: DatabaseService): void {
+  floorsInstance = new FloorsService(db);
+}
+
+function requireFloors(): FloorsService {
+  if (!floorsInstance) {
+    throw new Error('Floors not initialized');
+  }
+  return floorsInstance;
+}
+
+export function findAll(): ReturnType<FloorsService['findAll']> {
+  return requireFloors().findAll();
+}
+
+export function findOne(
+  ...args: Parameters<FloorsService['findOne']>
+): ReturnType<FloorsService['findOne']> {
+  return requireFloors().findOne(...args);
+}
+
+export function create(
+  ...args: Parameters<FloorsService['create']>
+): ReturnType<FloorsService['create']> {
+  return requireFloors().create(...args);
+}
+
+export function update(
+  ...args: Parameters<FloorsService['update']>
+): ReturnType<FloorsService['update']> {
+  return requireFloors().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<FloorsService['remove']>
+): ReturnType<FloorsService['remove']> {
+  return requireFloors().remove(...args);
 }

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface ShelfItem {
@@ -19,7 +19,6 @@ export interface ShelfSale {
   created_at: string;
 }
 
-@Injectable()
 export class ShelvesService {
   constructor(private readonly db: DatabaseService) {}
 
@@ -216,4 +215,67 @@ export class ShelvesService {
     );
     return rows as (ShelfSale & { item_name: string; item_barcode: string })[];
   }
+}
+
+let shelvesInstance: ShelvesService | null = null;
+
+export function initializeShelves(db: DatabaseService): void {
+  shelvesInstance = new ShelvesService(db);
+}
+
+export function requireShelves(): ShelvesService {
+  if (!shelvesInstance) {
+    throw new Error('Shelves not initialized');
+  }
+  return shelvesInstance;
+}
+
+export function findAll(): ReturnType<ShelvesService['findAll']> {
+  return requireShelves().findAll();
+}
+
+export function findOneById(
+  ...args: Parameters<ShelvesService['findOneById']>
+): ReturnType<ShelvesService['findOneById']> {
+  return requireShelves().findOneById(...args);
+}
+
+export function findOneByBarcode(
+  ...args: Parameters<ShelvesService['findOneByBarcode']>
+): ReturnType<ShelvesService['findOneByBarcode']> {
+  return requireShelves().findOneByBarcode(...args);
+}
+
+export function create(
+  ...args: Parameters<ShelvesService['create']>
+): ReturnType<ShelvesService['create']> {
+  return requireShelves().create(...args);
+}
+
+export function update(
+  ...args: Parameters<ShelvesService['update']>
+): ReturnType<ShelvesService['update']> {
+  return requireShelves().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<ShelvesService['remove']>
+): ReturnType<ShelvesService['remove']> {
+  return requireShelves().remove(...args);
+}
+
+export function decreaseStock(
+  ...args: Parameters<ShelvesService['decreaseStock']>
+): ReturnType<ShelvesService['decreaseStock']> {
+  return requireShelves().decreaseStock(...args);
+}
+
+export function sell(
+  ...args: Parameters<ShelvesService['sell']>
+): ReturnType<ShelvesService['sell']> {
+  return requireShelves().sell(...args);
+}
+
+export function getTodaySales(): ReturnType<ShelvesService['getTodaySales']> {
+  return requireShelves().getTodaySales();
 }

@@ -1,6 +1,6 @@
 export class CreateExpenseDto {
   business_day_id?: number | null;
-  date?: string | null; // Optional - for display/legacy purposes
+  date?: string | null;
   category!: string;
   amount!: number;
   notes?: string | null;
@@ -10,4 +10,3 @@ export class CreateExpenseDto {
   recurrence_interval?: number | null;
   next_occurrence_date?: string | null;
 }
-

@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import SettingsTabs from '../../components/tabs/SettingsTabs';
-import { getServerConfig, setServerConfig, testServerConnection, detectLocalIP } from '../../lib/server-config';
+import { getServerConfig, setServerConfig, testServerConnection, detectLocalIP, LAN_API_PORT } from '../../lib/server-config';
 import { showToast } from '../../components/ui/Toast';
 import { showConfirm } from '../../components/ui/ConfirmDialog';
 
@@ -32,7 +32,7 @@ export default function ServerSettingsPage() {
     try {
       const result = await detectLocalIP();
       if (result.ip) {
-        const detectedUrl = `http://${result.ip}:3333`;
+        const detectedUrl = `http://${result.ip}:${LAN_API_PORT}`;
         setServerUrl(detectedUrl);
         showToast(`تم اكتشاف العنوان: ${detectedUrl}`, 'success');
       } else if (result.warning === 'NOT_LAN') {
@@ -84,7 +84,7 @@ export default function ServerSettingsPage() {
         return;
       }
     } catch (error) {
-      showToast('عنوان الخادم غير صحيح. مثال: http://192.168.1.100:3333', 'error');
+      showToast(`عنوان الخادم غير صحيح. مثال: http://192.168.1.100:${LAN_API_PORT}`, 'error');
       return;
     }
 
@@ -144,7 +144,7 @@ export default function ServerSettingsPage() {
     try {
       setServerConfig({
         mode: 'host',
-        serverUrl: 'http://127.0.0.1:3333',
+        serverUrl: `http://127.0.0.1:${LAN_API_PORT}`,
       });
       loadCurrentConfig();
       showToast('تم إعادة تعيين الإعدادات', 'success');
@@ -226,7 +226,7 @@ export default function ServerSettingsPage() {
                     type="text"
                     value={serverUrl}
                     onChange={(e) => setServerUrl(e.target.value)}
-                    placeholder="http://192.168.1.100:3333"
+                    placeholder={`http://192.168.1.100:${LAN_API_PORT}`}
                     className="flex-1 rounded-soft-lg border border-black/10 bg-white px-4 py-2.5 text-[15px] leading-normal text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua"
                   />
                   <button
@@ -239,7 +239,7 @@ export default function ServerSettingsPage() {
                   </button>
                 </div>
                 <p className="mt-2 text-[12px] leading-relaxed text-graphite">
-                  أدخل عنوان IP ورقم المنفذ للخادم. مثال: http://192.168.1.100:3333
+                  أدخل عنوان IP ورقم المنفذ للخادم. مثال: http://192.168.1.100:{LAN_API_PORT}
                 </p>
               </div>
 
@@ -277,9 +277,9 @@ export default function ServerSettingsPage() {
                   💡 معلومات مهمة
                 </h3>
                 <ul className="space-y-1.5 text-[13px] leading-relaxed text-graphite">
-                  <li>• <strong>لفتح التطبيق عبر المتصفح:</strong> استخدم المنفذ 3000 (مثال: http://127.0.0.1:3000 أو http://192.168.1.100:3000) — منفذ الواجهة مختلف عن منفذ الخادم 3333</li>
-                  <li>• عنوان الخادم أعلاه (3333) للمواجهة البرمجية (API) فقط، وليس لفتح التطبيق في المتصفح</li>
-                  <li>• في وضع الخادم (Host): استخدم http://127.0.0.1:3333 أو العنوان المحلي المكتشف</li>
+                  <li>• <strong>لفتح التطبيق عبر المتصفح:</strong> استخدم المنفذ 3000 (مثال: http://127.0.0.1:3000 أو http://192.168.1.100:3000) — منفذ الواجهة مختلف عن منفذ API ({LAN_API_PORT})</li>
+                  <li>• عنوان الخادم أعلاه ({LAN_API_PORT}) للمواجهة البرمجية (API) و Socket.IO فقط، وليس لفتح التطبيق في المتصفح</li>
+                  <li>• في وضع الخادم (Host): استخدم http://127.0.0.1:{LAN_API_PORT} أو العنوان المحلي المكتشف</li>
                   <li>• في وضع العميل (Client): أدخل عنوان IP الخادم على الشبكة المحلية</li>
                   <li>• تأكد من أن الخادم والعميل على نفس الشبكة المحلية</li>
                   <li>• بعد تغيير الإعدادات، قد تحتاج إلى إعادة تحميل الصفحة</li>

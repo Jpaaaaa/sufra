@@ -76,6 +76,8 @@
     "allowToChangeInstallationDirectory": false,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
+    "installerSidebar": "build/installerSidebar.bmp",
+    "installerHeader": "build/installerHeader.bmp",
     "installerIcon": "build/icon.ico",
     "uninstallerIcon": "build/icon.ico"
   },

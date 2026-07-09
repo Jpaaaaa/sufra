@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface Item {
@@ -16,8 +16,7 @@ export interface Item {
   hidden_from_menu?: boolean;
 }
 
-@Injectable()
-export class ItemsService {
+class ItemsService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(kitchen_id?: number): Promise<Item[]> {
@@ -96,4 +95,47 @@ export class ItemsService {
     await this.findOne(id);
     await this.db.run('DELETE FROM items WHERE id = ?', [id]);
   }
+}
+
+let itemsInstance: ItemsService | null = null;
+
+export function initializeItems(db: DatabaseService): void {
+  itemsInstance = new ItemsService(db);
+}
+
+function requireItems(): ItemsService {
+  if (!itemsInstance) {
+    throw new Error('Items not initialized');
+  }
+  return itemsInstance;
+}
+
+export function findAll(
+  ...args: Parameters<ItemsService['findAll']>
+): ReturnType<ItemsService['findAll']> {
+  return requireItems().findAll(...args);
+}
+
+export function findOne(
+  ...args: Parameters<ItemsService['findOne']>
+): ReturnType<ItemsService['findOne']> {
+  return requireItems().findOne(...args);
+}
+
+export function create(
+  ...args: Parameters<ItemsService['create']>
+): ReturnType<ItemsService['create']> {
+  return requireItems().create(...args);
+}
+
+export function update(
+  ...args: Parameters<ItemsService['update']>
+): ReturnType<ItemsService['update']> {
+  return requireItems().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<ItemsService['remove']>
+): ReturnType<ItemsService['remove']> {
+  return requireItems().remove(...args);
 }

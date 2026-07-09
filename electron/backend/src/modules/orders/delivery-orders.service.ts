@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { ShelvesService } from '../shelves/shelves.service';
+import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 
 const DELIVERY_ORDER_SELECT =
   'id, customer_name, customer_phone, customer_address, status, total, discount, globalDiscount, note, created_at, updated_at, delivery_platform_id, delivery_platform_name, delivery_platform_commission_percent';
@@ -57,8 +57,7 @@ export interface DeliveryOrderWithItems extends DeliveryOrder {
   }>;
 }
 
-@Injectable()
-export class DeliveryOrdersService {
+class DeliveryOrdersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly shelvesService: ShelvesService,
@@ -565,3 +564,57 @@ export class DeliveryOrdersService {
   }
 }
 
+let deliveryOrdersInstance: DeliveryOrdersService | null = null;
+
+export function initializeDeliveryOrders(db: DatabaseService): void {
+  deliveryOrdersInstance = new DeliveryOrdersService(db, requireShelves());
+}
+
+function requireDeliveryOrders(): DeliveryOrdersService {
+  if (!deliveryOrdersInstance) {
+    throw new Error('Delivery orders not initialized');
+  }
+  return deliveryOrdersInstance;
+}
+
+export function findActive(): ReturnType<DeliveryOrdersService['findActive']> {
+  return requireDeliveryOrders().findActive();
+}
+
+export function findArchived(): ReturnType<DeliveryOrdersService['findArchived']> {
+  return requireDeliveryOrders().findArchived();
+}
+
+export function findById(
+  ...args: Parameters<DeliveryOrdersService['findById']>
+): ReturnType<DeliveryOrdersService['findById']> {
+  return requireDeliveryOrders().findById(...args);
+}
+
+export function create(
+  ...args: Parameters<DeliveryOrdersService['create']>
+): ReturnType<DeliveryOrdersService['create']> {
+  return requireDeliveryOrders().create(...args);
+}
+
+export function updateStatus(
+  ...args: Parameters<DeliveryOrdersService['updateStatus']>
+): ReturnType<DeliveryOrdersService['updateStatus']> {
+  return requireDeliveryOrders().updateStatus(...args);
+}
+
+export function update(
+  ...args: Parameters<DeliveryOrdersService['update']>
+): ReturnType<DeliveryOrdersService['update']> {
+  return requireDeliveryOrders().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<DeliveryOrdersService['remove']>
+): ReturnType<DeliveryOrdersService['remove']> {
+  return requireDeliveryOrders().remove(...args);
+}
+
+export function removeAllArchived(): ReturnType<DeliveryOrdersService['removeAllArchived']> {
+  return requireDeliveryOrders().removeAllArchived();
+}

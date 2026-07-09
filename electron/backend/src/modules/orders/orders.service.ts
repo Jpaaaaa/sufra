@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { ShelvesService } from '../shelves/shelves.service';
-import { TablesService } from '../tables/tables.service';
+import { requireShelves, ShelvesService } from '../shelves/shelves.service';
+import { requireTables, TablesService } from '../tables/tables.service';
 
 export interface Order {
   id: number;
@@ -32,8 +32,7 @@ export interface OrderWithItems extends Order {
   items: OrderItem[];
 }
 
-@Injectable()
-export class OrdersService {
+class OrdersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly shelvesService: ShelvesService,
@@ -609,4 +608,71 @@ export class OrdersService {
 
     return { cleared: orderIds.length };
   }
+}
+
+let ordersInstance: OrdersService | null = null;
+
+export function initializeOrders(db: DatabaseService): void {
+  ordersInstance = new OrdersService(db, requireShelves(), requireTables());
+}
+
+function requireOrders(): OrdersService {
+  if (!ordersInstance) {
+    throw new Error('Orders not initialized');
+  }
+  return ordersInstance;
+}
+
+export function findByTable(
+  ...args: Parameters<OrdersService['findByTable']>
+): ReturnType<OrdersService['findByTable']> {
+  return requireOrders().findByTable(...args);
+}
+
+export function findByHall(
+  ...args: Parameters<OrdersService['findByHall']>
+): ReturnType<OrdersService['findByHall']> {
+  return requireOrders().findByHall(...args);
+}
+
+export function findActiveOrders(): ReturnType<OrdersService['findActiveOrders']> {
+  return requireOrders().findActiveOrders();
+}
+
+export function create(
+  ...args: Parameters<OrdersService['create']>
+): ReturnType<OrdersService['create']> {
+  return requireOrders().create(...args);
+}
+
+export function updateStatus(
+  ...args: Parameters<OrdersService['updateStatus']>
+): ReturnType<OrdersService['updateStatus']> {
+  return requireOrders().updateStatus(...args);
+}
+
+export function updateOrderType(
+  ...args: Parameters<OrdersService['updateOrderType']>
+): ReturnType<OrdersService['updateOrderType']> {
+  return requireOrders().updateOrderType(...args);
+}
+
+export function update(
+  ...args: Parameters<OrdersService['update']>
+): ReturnType<OrdersService['update']> {
+  return requireOrders().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<OrdersService['remove']>
+): ReturnType<OrdersService['remove']> {
+  return requireOrders().remove(...args);
+}
+
+export function removeAll(): ReturnType<OrdersService['removeAll']> {
+  return requireOrders().removeAll();
+}
+
+export function clearAllTables(): ReturnType<OrdersService['clearAllTables']> {
+  return requireOrders().clearAllTables();
 }

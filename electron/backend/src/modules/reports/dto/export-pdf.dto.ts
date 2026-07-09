@@ -33,7 +33,6 @@ export interface EmployeeSummary {
   avgOrderValue: number;
 }
 
-// OLD OrderReport structure - DEPRECATED, use DailyAggregate instead
 export interface OrderReport {
   id: number;
   openTime: string;
@@ -44,7 +43,6 @@ export interface OrderReport {
   employee: string;
 }
 
-// NEW DailyAggregate structure - used for daily/weekly/monthly/yearly reports
 export interface DailyAggregate {
   id: number;
   date: string;
@@ -68,7 +66,7 @@ export interface ReportData {
   summary: ReportSummary;
   items: ItemPerformance[];
   employees: EmployeeSummary[];
-  orders: DailyAggregate[]; // Changed from OrderReport[] to DailyAggregate[]
+  orders: DailyAggregate[];
   drawer?: CashDrawerData;
 }
 
@@ -76,11 +74,7 @@ export class ExportPdfDto {
   type!: ReportPeriod;
   date!: string;
   data!: ReportData;
-  /** Branch/restaurant name for report header (e.g. "رعفة — إدارة المطعم المكتمل") */
   branchName?: string;
-  /** Logged-in user name for report footer */
   userName?: string;
-  /** Daily only: % change vs yesterday (e.g. 12 for +12%) */
   comparedToYesterday?: number;
 }
-

@@ -3,11 +3,10 @@ export type FinancePeriod = 'daily' | 'weekly' | 'monthly' | 'yearly';
 export interface RevenueData {
   id: number;
   business_day_id?: number | null;
-  date: string; // Display date (from business_day.start_at)
+  date: string;
   type: 'daily' | 'weekly' | 'monthly' | 'yearly' | 'extra';
   amount: number;
   notes?: string | null;
-  /** من مزامنة الطلبات؛ يدوي قد يكون null */
   order_count?: number | null;
   created_at: string;
 }
@@ -15,7 +14,7 @@ export interface RevenueData {
 export interface ExpenseData {
   id: number;
   business_day_id?: number | null;
-  date: string; // Display date (from business_day.start_at)
+  date: string;
   category: string;
   amount: number;
   notes?: string | null;
@@ -30,7 +29,7 @@ export interface ExpenseData {
 export interface CashFlowData {
   id: number;
   business_day_id?: number | null;
-  date: string; // Display date (from business_day.start_at)
+  date: string;
   type: 'in' | 'out';
   reason: string;
   amount: number;
@@ -63,4 +62,3 @@ export class ExportFinanceDto {
   to!: string;
   data!: FinanceExportData;
 }
-

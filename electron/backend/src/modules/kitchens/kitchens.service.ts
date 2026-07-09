@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface Kitchen {
@@ -11,8 +11,7 @@ export interface Kitchen {
   updated_at: string;
 }
 
-@Injectable()
-export class KitchensService {
+class KitchensService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<Kitchen[]> {
@@ -93,4 +92,51 @@ export class KitchensService {
     // If no service types found in orders, default to dine-in (most common)
     return serviceTypes.length > 0 ? serviceTypes : ['dine-in'];
   }
+}
+
+let kitchensInstance: KitchensService | null = null;
+
+export function initializeKitchens(db: DatabaseService): void {
+  kitchensInstance = new KitchensService(db);
+}
+
+function requireKitchens(): KitchensService {
+  if (!kitchensInstance) {
+    throw new Error('Kitchens not initialized');
+  }
+  return kitchensInstance;
+}
+
+export function findAll(): ReturnType<KitchensService['findAll']> {
+  return requireKitchens().findAll();
+}
+
+export function findOne(
+  ...args: Parameters<KitchensService['findOne']>
+): ReturnType<KitchensService['findOne']> {
+  return requireKitchens().findOne(...args);
+}
+
+export function create(
+  ...args: Parameters<KitchensService['create']>
+): ReturnType<KitchensService['create']> {
+  return requireKitchens().create(...args);
+}
+
+export function update(
+  ...args: Parameters<KitchensService['update']>
+): ReturnType<KitchensService['update']> {
+  return requireKitchens().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<KitchensService['remove']>
+): ReturnType<KitchensService['remove']> {
+  return requireKitchens().remove(...args);
+}
+
+export function getItemsServiceTypes(
+  ...args: Parameters<KitchensService['getItemsServiceTypes']>
+): ReturnType<KitchensService['getItemsServiceTypes']> {
+  return requireKitchens().getItemsServiceTypes(...args);
 }

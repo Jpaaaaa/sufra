@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface Shift {
@@ -26,8 +26,7 @@ export interface ShiftSummary {
   };
 }
 
-@Injectable()
-export class ShiftsService {
+class ShiftsService {
   constructor(private readonly db: DatabaseService) {}
 
   /** Map DB row to Shift (uses localtime for business day = calendar day). */
@@ -307,4 +306,45 @@ export class ShiftsService {
 
     return rows.map((row: any) => this.rowToShift(row));
   }
+}
+
+let shiftsInstance: ShiftsService | null = null;
+
+export function initializeShifts(db: DatabaseService): void {
+  shiftsInstance = new ShiftsService(db);
+}
+
+function requireShifts(): ShiftsService {
+  if (!shiftsInstance) {
+    throw new Error('Shifts not initialized');
+  }
+  return shiftsInstance;
+}
+
+export function getAllShifts(
+  ...args: Parameters<ShiftsService['getAllShifts']>
+): ReturnType<ShiftsService['getAllShifts']> {
+  return requireShifts().getAllShifts(...args);
+}
+
+export function getActiveShift(): ReturnType<ShiftsService['getActiveShift']> {
+  return requireShifts().getActiveShift();
+}
+
+export function getShiftById(
+  ...args: Parameters<ShiftsService['getShiftById']>
+): ReturnType<ShiftsService['getShiftById']> {
+  return requireShifts().getShiftById(...args);
+}
+
+export function startShift(
+  ...args: Parameters<ShiftsService['startShift']>
+): ReturnType<ShiftsService['startShift']> {
+  return requireShifts().startShift(...args);
+}
+
+export function finishShift(
+  ...args: Parameters<ShiftsService['finishShift']>
+): ReturnType<ShiftsService['finishShift']> {
+  return requireShifts().finishShift(...args);
 }

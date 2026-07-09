@@ -2,44 +2,41 @@
  * IPC handlers: items, categories.
  */
 import { ipcMain } from 'electron';
-import { getService, ItemsService, OffersService, CategoriesService } from '../../init/backend-loader';
+import {
+  itemsFindAll,
+  offersEnrichItemsWithOffers,
+  itemsFindOne,
+  itemsCreate,
+  itemsUpdate,
+  itemsRemove,
+  categoriesFindAll,
+  categoriesFindOne,
+  categoriesCreate,
+  categoriesUpdate,
+  categoriesRemove,
+  categoriesReorder,
+} from '../../init/backend-loader';
 
 export function registerCatalogHandlers() {
   ipcMain.handle('items:findAll', async (_, kitchen_id?: number) => {
-    const itemsService = getService(ItemsService);
-    const offersService = getService(OffersService);
-    const items = await itemsService.findAll(kitchen_id);
-    return await offersService.enrichItemsWithOffers(items);
+    const items = await itemsFindAll(kitchen_id);
+    return offersEnrichItemsWithOffers(items);
   });
-  ipcMain.handle('items:findOne', async (_, id: number) => {
-    return await getService(ItemsService).findOne(id);
-  });
-  ipcMain.handle('items:create', async (_, data: any) => {
-    return await getService(ItemsService).create(data);
-  });
-  ipcMain.handle('items:update', async (_, id: number, data: any) => {
-    return await getService(ItemsService).update(id, data);
-  });
-  ipcMain.handle('items:remove', async (_, id: number) => {
-    return await getService(ItemsService).remove(id);
-  });
+  ipcMain.handle('items:findOne', async (_, id: number) => itemsFindOne(id));
+  ipcMain.handle('items:create', async (_, data: any) => itemsCreate(data));
+  ipcMain.handle('items:update', async (_, id: number, data: any) =>
+    itemsUpdate(id, data),
+  );
+  ipcMain.handle('items:remove', async (_, id: number) => itemsRemove(id));
 
-  ipcMain.handle('categories:findAll', async () => {
-    return await getService(CategoriesService).findAll();
-  });
-  ipcMain.handle('categories:findOne', async (_, id: number) => {
-    return await getService(CategoriesService).findOne(id);
-  });
-  ipcMain.handle('categories:create', async (_, data: any) => {
-    return await getService(CategoriesService).create(data);
-  });
-  ipcMain.handle('categories:update', async (_, id: number, data: any) => {
-    return await getService(CategoriesService).update(id, data);
-  });
-  ipcMain.handle('categories:remove', async (_, id: number) => {
-    return await getService(CategoriesService).remove(id);
-  });
+  ipcMain.handle('categories:findAll', async () => categoriesFindAll());
+  ipcMain.handle('categories:findOne', async (_, id: number) => categoriesFindOne(id));
+  ipcMain.handle('categories:create', async (_, data: any) => categoriesCreate(data));
+  ipcMain.handle('categories:update', async (_, id: number, data: any) =>
+    categoriesUpdate(id, data),
+  );
+  ipcMain.handle('categories:remove', async (_, id: number) => categoriesRemove(id));
   ipcMain.handle('categories:reorder', async (_, ids: number[]) => {
-    await getService(CategoriesService).reorder(ids);
+    await categoriesReorder(ids);
   });
 }

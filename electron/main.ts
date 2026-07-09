@@ -45,21 +45,23 @@ import path from 'path';
 import fs from 'fs';
 import { setIsDev } from './electron-env';
 import { loadDev } from './loaders/devLoader';
-import { loadBackendModules, initializeBackendLibrary } from './init/backend-loader';
+import { loadBackendModules, initializeBackendLibrary, shutdownBackend } from './init/backend-loader';
 import { getStaticFrontendPath } from './init/paths';
 import { createWindow } from './windows/main-window';
 import { getMainWindow, setMainWindow, getBackendApp, setBackendApp, getIsQuitting, setIsQuitting } from './state';
 import { setupIpcHandlers } from './ipc/handlers';
-import { setupHttpServer, shutdownHttpServer } from './http/server';
+import { setupFastifyLanServer, shutdownFastifyLanServer } from './http-fastify/server';
+import { LAN_API_PORT } from './http-shared/lan-ports';
 import { registerLicenseIpc } from './license/register-license-ipc';
 import { registerAutoUpdater } from './updater/register-auto-updater';
 
-/** LAN HTTP server port (must match `http/server.ts`). */
-const LAN_HTTP_PORT = 3333;
+/** LAN API port (Fastify — primary). */
+const LAN_HTTP_PORT = LAN_API_PORT;
 
 // Tell env whether dev or prod
 const isDev = !app.isPackaged;
 setIsDev(isDev);
+let shutdownComplete = false;
 
 // ======================================================================
 // REGISTER CUSTOM PROTOCOL (MUST BE BEFORE APP READY)
@@ -490,10 +492,14 @@ app.whenReady().then(async () => {
   setupIpcHandlers();
   console.log('[LIFECYCLE] ✓ IPC handlers registered');
   
-  // Setup HTTP server for browser clients (LAN access)
-  console.log('[LIFECYCLE] Setting up HTTP server...');
-  setupHttpServer();
-  console.log('[LIFECYCLE] ✓ HTTP server setup complete');
+  // Fastify LAN server (API + Socket.IO + uploads on port 3333)
+  console.log('[LIFECYCLE] Setting up Fastify LAN server...');
+  try {
+    await setupFastifyLanServer();
+    console.log('[LIFECYCLE] ✓ Fastify LAN server ready');
+  } catch (error) {
+    console.error('[LIFECYCLE] ✗ Fastify LAN server failed to start:', error);
+  }
 
   console.log('[LIFECYCLE] ✓ Initialization complete. App is ready.');
   console.log('[LIFECYCLE] ✓✓✓ App is fully initialized and should stay alive ✓✓✓');
@@ -503,22 +509,11 @@ app.whenReady().then(async () => {
     console.log('[LIFECYCLE] ✓ Window is alive and visible:', mainWindow.isVisible());
     console.log('[LIFECYCLE] ✓ Window URL:', mainWindow.webContents.getURL());
     
-    // Ensure window stays visible
-    if (!mainWindow.isVisible()) {
-      console.log('[LIFECYCLE] ⚠️ Window not visible, showing it...');
+    // Show once after init if hidden (e.g. still on splash) — never restore minimized windows
+    if (!mainWindow.isVisible() && !mainWindow.isMinimized()) {
+      console.log('[LIFECYCLE] ⚠️ Window not visible after init, showing it...');
       mainWindow.show();
     }
-    
-    // Add final keep-alive check
-    setInterval(() => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        // Window is still alive - this interval keeps process alive
-        if (!mainWindow.isVisible()) {
-          console.log('[LIFECYCLE] ⚠️ Window became invisible, showing it...');
-          mainWindow.show();
-        }
-      }
-    }, 5000); // Check every 5 seconds
     
   } else {
     console.error('[LIFECYCLE] ✗✗✗ CRITICAL: Window is null or destroyed after initialization!');
@@ -594,15 +589,10 @@ app.on('window-all-closed', async () => {
   console.log('[LIFECYCLE] backendApp exists:', backendApp !== null);
   console.log('[LIFECYCLE] isQuitting:', getIsQuitting());
   
-  // If user intentionally closed the window (isQuitting is true), prevent window recreation
-  // but let the natural quit flow trigger before-quit event for proper cleanup
-  if (getIsQuitting() && backendApp) {
-    console.log('[LIFECYCLE] User intentionally closed window - will let before-quit handle cleanup');
-    if (process.platform !== 'darwin') {
-      // Don't call app.quit() here - just return to prevent window recreation
-      // This allows before-quit event to fire and save the database
-      return;
-    }
+  // User closed the window — quit so backend/LAN server shut down (before-quit runs cleanup)
+  if (getIsQuitting()) {
+    console.log('[LIFECYCLE] User closed window — calling app.quit()');
+    app.quit();
     return;
   }
   
@@ -650,51 +640,41 @@ app.on('window-all-closed', async () => {
     }
   }
   
-  // Only quit on non-macOS if window was actually closed by user AND backend is initialized
+  // Normal shutdown on Windows/Linux when all windows are closed
   if (process.platform !== 'darwin') {
     if (getBackendApp()) {
-      console.log('[LIFECYCLE] Backend was initialized - this looks like normal shutdown');
-      console.log('[LIFECYCLE] Allowing natural quit flow (before-quit will handle cleanup)');
-      // Don't call app.quit() directly - let before-quit event fire to save database
+      console.log('[LIFECYCLE] All windows closed — calling app.quit()');
+      app.quit();
     } else {
-      console.log('[LIFECYCLE] ⚠️ Backend was NOT initialized - this might be a crash!');
-      console.log('[LIFECYCLE] Waiting 5 seconds before quitting to allow debugging...');
+      console.log('[LIFECYCLE] ⚠️ Backend was NOT initialized — delaying quit for debugging');
       setTimeout(() => {
         console.log('[LIFECYCLE] Quitting after delay...');
         app.quit();
       }, 5000);
-      return; // Don't quit immediately
     }
   }
 });
 
 app.on('before-quit', async (event) => {
+  if (shutdownComplete) return;
+
   console.log('[LIFECYCLE] before-quit event fired');
-  
-  // Always prevent default quit - we'll manually call app.quit() when ready
   event.preventDefault();
-  
-  setIsQuitting(true); // Mark that we're intentionally quitting
-  
+  setIsQuitting(true);
+
   try {
-    // Gracefully shutdown HTTP server first
-    await shutdownHttpServer();
-    
-    // Gracefully shutdown backend app (this saves the database)
-    const backendApp = getBackendApp();
-    if (backendApp) {
-      console.log('[BACKEND] Requesting graceful shutdown (will save database)...');
-      await backendApp.close();
-      console.log('[BACKEND] ✓ Backend shut down gracefully, database saved');
+    await shutdownFastifyLanServer();
+
+    if (getBackendApp()) {
+      await shutdownBackend();
       setBackendApp(null);
     }
-    
   } catch (error: any) {
     console.error('[LIFECYCLE] Error during shutdown:', error);
   }
-  
-  // All cleanup complete, now it's safe to quit
+
+  shutdownComplete = true;
   console.log('[LIFECYCLE] All cleanup complete, quitting now');
-  app.quit();
+  app.exit(0);
 });
 

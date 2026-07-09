@@ -1,4 +1,3 @@
-import { Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 // @ts-ignore - sql.js doesn't have types
 import initSqlJs from 'sql.js';
 import * as path from 'path';
@@ -21,8 +20,7 @@ export interface DatabaseRow {
   [key: string]: any;
 }
 
-@Injectable()
-export class DatabaseService implements OnModuleInit, OnModuleDestroy {
+export class DatabaseService {
   private db!: SqlJsDatabase;
   private migrationInProgress = false;
   private dbPath!: string;
@@ -34,7 +32,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
   private isInitialized = false;
   private initError: Error | null = null;
 
-  async onModuleInit() {
+  async initialize() {
     console.log('[DB] Starting database initialization...');
     
     // Create initialization promise
@@ -201,7 +199,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
     return this.isInitialized && !this.initError;
   }
 
-  async onModuleDestroy() {
+  async shutdown() {
     if (this.db) {
       // Await save to ensure data is persisted before closing
       await this.saveDatabase();
@@ -211,7 +209,7 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
 
   getConnection(): SqlJsDatabase {
     if (!this.isInitialized) {
-      throw new Error('Database not initialized. Call ensureInitialized() first or wait for onModuleInit() to complete.');
+      throw new Error('Database not initialized. Call ensureInitialized() first or wait for initialize() to complete.');
     }
     return this.db;
   }

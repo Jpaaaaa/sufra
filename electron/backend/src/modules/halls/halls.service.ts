@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface Hall {
@@ -10,8 +10,7 @@ export interface Hall {
   updated_at: string;
 }
 
-@Injectable()
-export class HallsService {
+class HallsService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<Hall[]> {
@@ -84,4 +83,45 @@ export class HallsService {
     await this.db.run('DELETE FROM tables WHERE hall_id = ?', [id]);
     await this.db.run('DELETE FROM halls WHERE id = ?', [id]);
   }
+}
+
+let hallsInstance: HallsService | null = null;
+
+export function initializeHalls(db: DatabaseService): void {
+  hallsInstance = new HallsService(db);
+}
+
+function requireHalls(): HallsService {
+  if (!hallsInstance) {
+    throw new Error('Halls not initialized');
+  }
+  return hallsInstance;
+}
+
+export function findAll(): ReturnType<HallsService['findAll']> {
+  return requireHalls().findAll();
+}
+
+export function findOne(
+  ...args: Parameters<HallsService['findOne']>
+): ReturnType<HallsService['findOne']> {
+  return requireHalls().findOne(...args);
+}
+
+export function create(
+  ...args: Parameters<HallsService['create']>
+): ReturnType<HallsService['create']> {
+  return requireHalls().create(...args);
+}
+
+export function update(
+  ...args: Parameters<HallsService['update']>
+): ReturnType<HallsService['update']> {
+  return requireHalls().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<HallsService['remove']>
+): ReturnType<HallsService['remove']> {
+  return requireHalls().remove(...args);
 }

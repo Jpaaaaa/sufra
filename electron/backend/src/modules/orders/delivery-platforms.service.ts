@@ -1,4 +1,4 @@
-import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface DeliveryPlatform {
@@ -9,8 +9,7 @@ export interface DeliveryPlatform {
   created_at: string;
 }
 
-@Injectable()
-export class DeliveryPlatformsService {
+class DeliveryPlatformsService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<DeliveryPlatform[]> {
@@ -96,4 +95,39 @@ export class DeliveryPlatformsService {
     }
     await this.db.run('DELETE FROM delivery_platforms WHERE id = ?', [id]);
   }
+}
+
+let deliveryPlatformsInstance: DeliveryPlatformsService | null = null;
+
+export function initializeDeliveryPlatforms(db: DatabaseService): void {
+  deliveryPlatformsInstance = new DeliveryPlatformsService(db);
+}
+
+function requireDeliveryPlatforms(): DeliveryPlatformsService {
+  if (!deliveryPlatformsInstance) {
+    throw new Error('Delivery platforms not initialized');
+  }
+  return deliveryPlatformsInstance;
+}
+
+export function findAll(): ReturnType<DeliveryPlatformsService['findAll']> {
+  return requireDeliveryPlatforms().findAll();
+}
+
+export function create(
+  ...args: Parameters<DeliveryPlatformsService['create']>
+): ReturnType<DeliveryPlatformsService['create']> {
+  return requireDeliveryPlatforms().create(...args);
+}
+
+export function update(
+  ...args: Parameters<DeliveryPlatformsService['update']>
+): ReturnType<DeliveryPlatformsService['update']> {
+  return requireDeliveryPlatforms().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<DeliveryPlatformsService['remove']>
+): ReturnType<DeliveryPlatformsService['remove']> {
+  return requireDeliveryPlatforms().remove(...args);
 }

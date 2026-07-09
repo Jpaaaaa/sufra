@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { getServerConfig, extractIPFromHost } from '../../lib/server-config';
+import { getServerConfig, extractIPFromHost, LAN_API_PORT } from '../../lib/server-config';
 import { getServerUrl, fetchJson } from '../../utils';
 import { MonitorSmartphone, Printer, User, Server, Globe } from 'lucide-react';
 import Card from '../ui/Card';
@@ -19,7 +19,8 @@ interface HealthElectronMeta {
   packaged: boolean;
   runtime: 'packaged' | 'development';
   version: string;
-  multerResolvable: boolean;
+  multerResolvable?: boolean;
+  uploadReady?: boolean;
   appPath: string;
 }
 
@@ -121,7 +122,7 @@ export default function SystemStatusCard() {
         }
         const mode = e.packaged ? 'نسخة مثبتة' : 'تطوير محلي';
         let line = `${mode} · v${e.version}`;
-        if (!e.multerResolvable) {
+        if (!e.uploadReady && !e.multerResolvable) {
           line += ' · ⚠ رفع الصور غير جاهز';
         }
         setApiRuntimeLine(line);
@@ -149,7 +150,7 @@ export default function SystemStatusCard() {
       icon: Server,
     },
     {
-      label: 'وضع API (من يخدم 3333)',
+      label: `وضع API (منفذ ${LAN_API_PORT})`,
       value: apiRuntimeLine,
       icon: Globe,
     },

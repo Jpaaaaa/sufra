@@ -4,7 +4,12 @@
 import { ipcMain, BrowserWindow, app } from 'electron';
 import path from 'path';
 import fs from 'fs';
-import { getService, HealthController, PrintersService, generateReportTemplate } from '../../init/backend-loader';
+import {
+  healthGetHealth,
+  generateReportTemplate,
+  printersGetAllSettings,
+  printersSaveSetting,
+} from '../../init/backend-loader';
 import { getAvailablePrinters, printPngToPrinter, scanForPrinters } from '../../print/printer';
 import {
   readRecipePrintBranding,
@@ -15,16 +20,13 @@ import { buildRecipePreviewSample } from '../../print/recipe-preview-sample';
 export function registerPrintHandlers() {
   ipcMain.handle('backend:health', async () => {
     try {
-      const healthController = getService(HealthController);
-      return await healthController.getHealth();
+      return await healthGetHealth();
     } catch (err: any) {
       return { status: 'error', message: err.message };
     }
   });
 
-  ipcMain.handle('printers:getSettings', async () => {
-    return await getService(PrintersService).getAllSettings();
-  });
+  ipcMain.handle('printers:getSettings', async () => printersGetAllSettings());
   ipcMain.handle('printers:available', async () => getAvailablePrinters());
   ipcMain.handle('printers:scan', async () => {
     try {
@@ -34,9 +36,7 @@ export function registerPrintHandlers() {
       return [];
     }
   });
-  ipcMain.handle('printers:saveSettings', async (_, data: any) => {
-    return await getService(PrintersService).saveSetting(data);
-  });
+  ipcMain.handle('printers:saveSettings', async (_, data: any) => printersSaveSetting(data));
   ipcMain.handle('recipePrint:getSettings', async () => readRecipePrintBranding());
   ipcMain.handle('recipePrint:saveSettings', async (_, data: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
     writeRecipePrintBranding(data ?? {}),
@@ -62,7 +62,7 @@ export function registerPrintHandlers() {
         const { renderRecipeToPng } = await import('../../print/render-recipe');
         const sample = buildRecipePreviewSample(branding ?? {});
         const png = await renderRecipeToPng(sample, { mergeBranding: false });
-        const settings = await getService(PrintersService).getAllSettings();
+        const settings = await printersGetAllSettings();
         const setting = settings.find(
           (s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active,
         );
@@ -119,7 +119,7 @@ export function registerPrintHandlers() {
     try {
       const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
       const png = await renderOrderToPng(orderData);
-      const settings = await getService(PrintersService).getAllSettings();
+      const settings = await printersGetAllSettings();
       const setting = settings.find((s: any) => s.kitchen_id === (kitchenId ?? null) && s.printer_type === 'kitchen' && s.is_active);
       if (!setting?.printer_ip) {
         return { success: false, error: 'No printer configured for this kitchen' };
@@ -134,7 +134,7 @@ export function registerPrintHandlers() {
     try {
       const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
       const png = await renderReceiptToPng(receiptData);
-      const settings = await getService(PrintersService).getAllSettings();
+      const settings = await printersGetAllSettings();
       const setting = settings.find((s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active);
       if (!setting?.printer_ip) {
         return { success: false, error: 'No customer receipt printer configured' };

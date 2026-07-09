@@ -1,13 +1,14 @@
 import path from 'path';
 import fs from 'fs';
-import { app, BrowserWindow, dialog, nativeImage } from 'electron';
+import { app, BrowserWindow, dialog } from 'electron';
 import { getMainWindow, setMainWindow, getBackendApp, getIsQuitting, setIsQuitting } from '../state';
 import { getStaticFrontendPath } from '../init/paths';
 import { loadDev } from '../loaders/devLoader';
+import { applyWindowsTaskbarIcon, resolveAppIcon } from './resolve-app-icon';
 
 const SPLASH_MIN_MS = 1200;
 
-function createSplashWindow(): BrowserWindow | null {
+function createSplashWindow(appIcon: ReturnType<typeof resolveAppIcon>): BrowserWindow | null {
   const splashPath = path.join(__dirname, '..', 'splash.html');
   if (!fs.existsSync(splashPath)) return null;
   const splash = new BrowserWindow({
@@ -18,7 +19,9 @@ function createSplashWindow(): BrowserWindow | null {
     alwaysOnTop: true,
     backgroundColor: '#F4F6FA',
     show: false,
+    ...(appIcon && { icon: appIcon.image }),
   });
+  if (appIcon) applyWindowsTaskbarIcon(splash, appIcon);
   const normalizedPath = splashPath.replace(/\\/g, '/');
   const fileUrl = normalizedPath.startsWith('/') ? `file://${normalizedPath}` : `file:///${normalizedPath}`;
   splash.loadURL(fileUrl);
@@ -36,7 +39,14 @@ export async function createWindow(): Promise<void> {
     }
 
     const splashStart = Date.now();
-    const splash = createSplashWindow();
+    const appIcon = resolveAppIcon();
+    if (appIcon) {
+      console.log('[WINDOW] ✓ App icon:', appIcon.icoPath);
+    } else {
+      console.warn('[WINDOW] ⚠️ No icon.ico found — taskbar may show default Electron icon');
+    }
+
+    const splash = createSplashWindow(appIcon);
 
     console.log('[WINDOW] Creating new BrowserWindow...');
 
@@ -47,32 +57,13 @@ export async function createWindow(): Promise<void> {
       console.log('[WINDOW] ✓ Using preload path:', preloadPath);
     }
 
-    const buildDir = path.join(__dirname, '..', '..', 'build');
-    let iconPathResolved: string;
-    if (app.isPackaged) {
-      const packagedCandidates = [
-        path.join(process.resourcesPath, 'icon.ico'),
-        path.join(path.dirname(process.execPath), 'resources', 'icon.ico'),
-        path.join(app.getAppPath(), '..', 'icon.ico'),
-      ];
-      iconPathResolved = packagedCandidates.find((p) => fs.existsSync(p)) || packagedCandidates[0];
-    } else {
-      iconPathResolved = fs.existsSync(path.join(buildDir, 'icon.ico'))
-        ? path.join(buildDir, 'icon.ico')
-        : path.join(buildDir, 'sufralogo.png');
-    }
-    iconPathResolved = path.resolve(iconPathResolved);
-    const iconPathExists = fs.existsSync(iconPathResolved);
-    const icon = iconPathExists ? nativeImage.createFromPath(iconPathResolved) : null;
-    const useIcon = icon && !icon.isEmpty();
-
     let mainWindow: BrowserWindow;
     mainWindow = new BrowserWindow({
       width: 1280,
       height: 800,
       show: false,
       backgroundColor: '#f5f5f5',
-      ...(useIcon && { icon }),
+      ...(appIcon && { icon: appIcon.image }),
       webPreferences: {
         preload: fs.existsSync(preloadPath) ? preloadPath : undefined,
         contextIsolation: true,
@@ -86,24 +77,10 @@ export async function createWindow(): Promise<void> {
     setMainWindow(mainWindow);
     console.log('[WINDOW] ✓ BrowserWindow created successfully');
 
-    if (useIcon && process.platform === 'win32') {
-      try {
-        mainWindow.setIcon(icon!);
-      } catch (e) {
-        console.warn('[WINDOW] setIcon failed:', e);
-      }
-    }
-
-    if (process.platform === 'win32' && iconPathExists) {
-      try {
-        mainWindow.setAppDetails({
-          appId: 'com.sufra.lite.pos',
-          appIconPath: iconPathResolved,
-          appIconIndex: 0,
-        });
-      } catch (e) {
-        console.warn('[WINDOW] setAppDetails failed:', e);
-      }
+    if (appIcon) {
+      applyWindowsTaskbarIcon(mainWindow, appIcon);
+      mainWindow.once('ready-to-show', () => applyWindowsTaskbarIcon(mainWindow, appIcon));
+      mainWindow.once('show', () => applyWindowsTaskbarIcon(mainWindow, appIcon));
     }
 
     mainWindow.webContents.setWindowOpenHandler(() => {

@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, UnauthorizedException } from '@nestjs/common';
+import { NotFoundException, UnauthorizedException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { UsersService } from '../users/users.service';
+import { requireUsers } from '../users/users.service';
 
 export interface TableEntity {
   id: number;
@@ -11,11 +11,10 @@ export interface TableEntity {
   updated_at: string;
 }
 
-@Injectable()
 export class TablesService {
   constructor(
     private readonly db: DatabaseService,
-    private readonly usersService: UsersService,
+    private readonly usersService: ReturnType<typeof requireUsers>,
   ) {}
 
   async findAll(): Promise<TableEntity[]> {
@@ -293,4 +292,87 @@ export class TablesService {
 
     await this.db.run('DELETE FROM customer_table_locks WHERE user_id = ?', [userId]);
   }
+}
+
+let tablesInstance: TablesService | null = null;
+
+export function initializeTables(db: DatabaseService): void {
+  tablesInstance = new TablesService(db, requireUsers());
+}
+
+export function requireTables(): TablesService {
+  if (!tablesInstance) {
+    throw new Error('Tables not initialized');
+  }
+  return tablesInstance;
+}
+
+export function findAll(): ReturnType<TablesService['findAll']> {
+  return requireTables().findAll();
+}
+
+export function findByHall(
+  ...args: Parameters<TablesService['findByHall']>
+): ReturnType<TablesService['findByHall']> {
+  return requireTables().findByHall(...args);
+}
+
+export function findOne(
+  ...args: Parameters<TablesService['findOne']>
+): ReturnType<TablesService['findOne']> {
+  return requireTables().findOne(...args);
+}
+
+export function create(
+  ...args: Parameters<TablesService['create']>
+): ReturnType<TablesService['create']> {
+  return requireTables().create(...args);
+}
+
+export function update(
+  ...args: Parameters<TablesService['update']>
+): ReturnType<TablesService['update']> {
+  return requireTables().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<TablesService['remove']>
+): ReturnType<TablesService['remove']> {
+  return requireTables().remove(...args);
+}
+
+export function isTableUnlocked(
+  ...args: Parameters<TablesService['isTableUnlocked']>
+): ReturnType<TablesService['isTableUnlocked']> {
+  return requireTables().isTableUnlocked(...args);
+}
+
+export function unlockTable(
+  ...args: Parameters<TablesService['unlockTable']>
+): ReturnType<TablesService['unlockTable']> {
+  return requireTables().unlockTable(...args);
+}
+
+export function lockTable(
+  ...args: Parameters<TablesService['lockTable']>
+): ReturnType<TablesService['lockTable']> {
+  return requireTables().lockTable(...args);
+}
+
+export function getCustomerLockedTable(
+  ...args: Parameters<TablesService['getCustomerLockedTable']>
+): ReturnType<TablesService['getCustomerLockedTable']> {
+  return requireTables().getCustomerLockedTable(...args);
+}
+
+export function lockCustomerToTable(
+  ...args: Parameters<TablesService['lockCustomerToTable']>
+): ReturnType<TablesService['lockCustomerToTable']> {
+  return requireTables().lockCustomerToTable(...args);
+}
+
+export function unlockCustomerFromTable(
+  ...args: Parameters<TablesService['unlockCustomerFromTable']>
+): ReturnType<TablesService['unlockCustomerFromTable']> {
+  return requireTables().unlockCustomerFromTable(...args);
 }

@@ -1,6 +1,5 @@
-import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
-import { DineInOrdersService } from '../orders/dine-in-orders.service';
+import { removeAllArchived as dineInRemoveAllArchived } from '../orders/dine-in-orders.service';
 import * as fs from 'fs';
 import * as path from 'path';
 import { getAppDataPath, ensureDirectoryExists } from '../../utils/app-data-path';
@@ -23,14 +22,10 @@ export interface DailySummary {
   businessDayEnd: string;
 }
 
-@Injectable()
-export class BusinessDayService {
+class BusinessDayService {
   private readonly reportsHistoryDir: string;
 
-  constructor(
-    private readonly db: DatabaseService,
-    private readonly dineInOrdersService: DineInOrdersService,
-  ) {
+  constructor(private readonly db: DatabaseService) {
     // Use Electron's userData directory in production, or local data in dev
     this.reportsHistoryDir = getAppDataPath('reports-history');
 
@@ -165,7 +160,7 @@ export class BusinessDayService {
       // Clear archived dine-in orders before starting new business day
       try {
         console.log('[BUSINESS-DAY] Clearing archived dine-in orders...');
-        const deletedCount = await this.dineInOrdersService.removeAllArchived();
+        const deletedCount = await dineInRemoveAllArchived();
         console.log('[BUSINESS-DAY] Cleared', deletedCount, 'archived dine-in orders');
       } catch (clearError: any) {
         console.error('[BUSINESS-DAY] Failed to clear archived dine-in orders:', clearError);
@@ -456,4 +451,59 @@ export class BusinessDayService {
       // Don't throw - allow business day reset to continue even if file write fails
     }
   }
+}
+
+let businessDayInstance: BusinessDayService | null = null;
+
+export function initializeBusinessDay(db: DatabaseService): void {
+  businessDayInstance = new BusinessDayService(db);
+}
+
+function requireBusinessDay(): BusinessDayService {
+  if (!businessDayInstance) {
+    throw new Error('Business day not initialized');
+  }
+  return businessDayInstance;
+}
+
+export function getCurrentBusinessDay(): ReturnType<
+  BusinessDayService['getCurrentBusinessDay']
+> {
+  return requireBusinessDay().getCurrentBusinessDay();
+}
+
+export function getBusinessDayStartTime(): ReturnType<
+  BusinessDayService['getBusinessDayStartTime']
+> {
+  return requireBusinessDay().getBusinessDayStartTime();
+}
+
+export function ensureBusinessDayExists(): ReturnType<
+  BusinessDayService['ensureBusinessDayExists']
+> {
+  return requireBusinessDay().ensureBusinessDayExists();
+}
+
+export function getBusinessDayById(
+  ...args: Parameters<BusinessDayService['getBusinessDayById']>
+): ReturnType<BusinessDayService['getBusinessDayById']> {
+  return requireBusinessDay().getBusinessDayById(...args);
+}
+
+export function getAllBusinessDays(): ReturnType<
+  BusinessDayService['getAllBusinessDays']
+> {
+  return requireBusinessDay().getAllBusinessDays();
+}
+
+export function startNewBusinessDay(
+  ...args: Parameters<BusinessDayService['startNewBusinessDay']>
+): ReturnType<BusinessDayService['startNewBusinessDay']> {
+  return requireBusinessDay().startNewBusinessDay(...args);
+}
+
+export function calculateDailySummary(
+  ...args: Parameters<BusinessDayService['calculateDailySummary']>
+): ReturnType<BusinessDayService['calculateDailySummary']> {
+  return requireBusinessDay().calculateDailySummary(...args);
 }

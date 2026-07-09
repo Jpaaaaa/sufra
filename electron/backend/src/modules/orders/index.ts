@@ -1,3 +1,2 @@
 export * from './orders.service';
-export * from './orders.controller';
-export * from './orders.module';
+export { initializeOrdersCluster } from './orders-bootstrap';

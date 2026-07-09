@@ -1,21 +1,29 @@
 /**
- * IPC handlers: shifts.
+ * IPC handlers for shifts.
  */
 import { ipcMain } from 'electron';
-import { getService, ShiftsService } from '../../init/backend-loader';
+import {
+  shiftsGetAllShifts,
+  shiftsGetActiveShift,
+  shiftsGetShiftById,
+  shiftsStartShift,
+  shiftsFinishShift,
+} from '../../init/backend-loader';
 
 export function registerShiftsHandlers() {
-  ipcMain.handle('shifts:findAll', async (_, limit?: number) => getService(ShiftsService).getAllShifts(limit));
-  ipcMain.handle('shifts:findOne', async (_, id: number) => getService(ShiftsService).getShiftById(id));
-  ipcMain.handle('shifts:getCurrent', async () => getService(ShiftsService).getActiveShift());
-  ipcMain.handle('shifts:start', async (_, data: any) => {
-    const userId = data?.userId || data?.user_id || data;
-    if (typeof userId !== 'number') throw new Error('shifts:start requires userId (number)');
-    return await getService(ShiftsService).startShift(userId);
+  ipcMain.handle('shifts:findAll', async (_, limit?: number) => shiftsGetAllShifts(limit));
+  ipcMain.handle('shifts:findOne', async (_, id: number) => shiftsGetShiftById(id));
+  ipcMain.handle('shifts:getCurrent', async () => shiftsGetActiveShift());
+  ipcMain.handle('shifts:start', async (_, userId: number) => {
+    if (typeof userId !== 'number') {
+      throw new Error('userId (number) required');
+    }
+    return await shiftsStartShift(userId);
   });
-  ipcMain.handle('shifts:end', async (_, data: any) => {
-    const userId = data?.userId || data?.user_id || data;
-    if (typeof userId !== 'number') throw new Error('shifts:end requires userId (number)');
-    return await getService(ShiftsService).finishShift(userId);
+  ipcMain.handle('shifts:end', async (_, userId: number) => {
+    if (typeof userId !== 'number') {
+      throw new Error('userId (number) required');
+    }
+    return await shiftsFinishShift(userId);
   });
 }

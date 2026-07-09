@@ -1,4 +1,10 @@
-export * from './kitchens.service';
-export * from './kitchens.controller';
-export * from './kitchens.module';
-
+export {
+  initializeKitchens,
+  findAll,
+  findOne,
+  create,
+  update,
+  remove,
+  getItemsServiceTypes,
+  type Kitchen,
+} from './kitchens.service';

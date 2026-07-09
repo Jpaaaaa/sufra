@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 import { CreateRevenueDto } from './dto/create-revenue.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
@@ -15,8 +15,7 @@ export interface Revenue extends RevenueData {}
 export interface Expense extends ExpenseData {}
 export interface CashFlow extends CashFlowData {}
 
-@Injectable()
-export class FinanceService {
+class FinanceService {
   constructor(private readonly db: DatabaseService) {}
 
   // ============ REVENUE ============
@@ -512,4 +511,83 @@ export class FinanceService {
       netProfit,
     };
   }
+}
+
+let financeInstance: FinanceService | null = null;
+
+export function initializeFinance(db: DatabaseService): void {
+  financeInstance = new FinanceService(db);
+}
+
+function requireFinance(): FinanceService {
+  if (!financeInstance) {
+    throw new Error('Finance not initialized');
+  }
+  return financeInstance;
+}
+
+export function getRevenues(
+  ...args: Parameters<FinanceService['getRevenues']>
+): ReturnType<FinanceService['getRevenues']> {
+  return requireFinance().getRevenues(...args);
+}
+
+export function createRevenue(
+  ...args: Parameters<FinanceService['createRevenue']>
+): ReturnType<FinanceService['createRevenue']> {
+  return requireFinance().createRevenue(...args);
+}
+
+export function syncRevenueFromOrders(
+  ...args: Parameters<FinanceService['syncRevenueFromOrders']>
+): ReturnType<FinanceService['syncRevenueFromOrders']> {
+  return requireFinance().syncRevenueFromOrders(...args);
+}
+
+export function getExpenses(
+  ...args: Parameters<FinanceService['getExpenses']>
+): ReturnType<FinanceService['getExpenses']> {
+  return requireFinance().getExpenses(...args);
+}
+
+export function createExpense(
+  ...args: Parameters<FinanceService['createExpense']>
+): ReturnType<FinanceService['createExpense']> {
+  return requireFinance().createExpense(...args);
+}
+
+export function updateExpense(
+  ...args: Parameters<FinanceService['updateExpense']>
+): ReturnType<FinanceService['updateExpense']> {
+  return requireFinance().updateExpense(...args);
+}
+
+export function deleteExpense(
+  ...args: Parameters<FinanceService['deleteExpense']>
+): ReturnType<FinanceService['deleteExpense']> {
+  return requireFinance().deleteExpense(...args);
+}
+
+export function getCashFlow(
+  ...args: Parameters<FinanceService['getCashFlow']>
+): ReturnType<FinanceService['getCashFlow']> {
+  return requireFinance().getCashFlow(...args);
+}
+
+export function createCashFlow(
+  ...args: Parameters<FinanceService['createCashFlow']>
+): ReturnType<FinanceService['createCashFlow']> {
+  return requireFinance().createCashFlow(...args);
+}
+
+export function syncCashFlowFromOrders(
+  ...args: Parameters<FinanceService['syncCashFlowFromOrders']>
+): ReturnType<FinanceService['syncCashFlowFromOrders']> {
+  return requireFinance().syncCashFlowFromOrders(...args);
+}
+
+export function getProfitAndLoss(
+  ...args: Parameters<FinanceService['getProfitAndLoss']>
+): ReturnType<FinanceService['getProfitAndLoss']> {
+  return requireFinance().getProfitAndLoss(...args);
 }

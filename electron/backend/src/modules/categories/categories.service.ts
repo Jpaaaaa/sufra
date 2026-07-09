@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 
 export interface Category {
@@ -9,8 +9,7 @@ export interface Category {
   is_menu_active: boolean;
 }
 
-@Injectable()
-export class CategoriesService {
+class CategoriesService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<Category[]> {
@@ -99,4 +98,51 @@ export class CategoriesService {
       order += 1;
     }
   }
+}
+
+let categoriesInstance: CategoriesService | null = null;
+
+export function initializeCategories(db: DatabaseService): void {
+  categoriesInstance = new CategoriesService(db);
+}
+
+function requireCategories(): CategoriesService {
+  if (!categoriesInstance) {
+    throw new Error('Categories not initialized');
+  }
+  return categoriesInstance;
+}
+
+export function findAll(): ReturnType<CategoriesService['findAll']> {
+  return requireCategories().findAll();
+}
+
+export function findOne(
+  ...args: Parameters<CategoriesService['findOne']>
+): ReturnType<CategoriesService['findOne']> {
+  return requireCategories().findOne(...args);
+}
+
+export function create(
+  ...args: Parameters<CategoriesService['create']>
+): ReturnType<CategoriesService['create']> {
+  return requireCategories().create(...args);
+}
+
+export function update(
+  ...args: Parameters<CategoriesService['update']>
+): ReturnType<CategoriesService['update']> {
+  return requireCategories().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<CategoriesService['remove']>
+): ReturnType<CategoriesService['remove']> {
+  return requireCategories().remove(...args);
+}
+
+export function reorder(
+  ...args: Parameters<CategoriesService['reorder']>
+): ReturnType<CategoriesService['reorder']> {
+  return requireCategories().reorder(...args);
 }

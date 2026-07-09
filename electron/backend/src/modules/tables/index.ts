@@ -1,3 +1,18 @@
-export * from './tables.module';
-
-
+export {
+  initializeTables,
+  requireTables,
+  findAll,
+  findByHall,
+  findOne,
+  create,
+  update,
+  remove,
+  isTableUnlocked,
+  unlockTable,
+  lockTable,
+  getCustomerLockedTable,
+  lockCustomerToTable,
+  unlockCustomerFromTable,
+  TablesService,
+  type TableEntity,
+} from './tables.service';

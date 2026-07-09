@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 import { parseWeekdaysJson } from './weekday-helpers';
 import { happyHourRowMatchesNow } from './happy-hour-match';
@@ -72,8 +72,7 @@ export interface HappyHour {
   weekdays?: number[];
 }
 
-@Injectable()
-export class OffersService {
+class OffersService {
   constructor(private readonly db: DatabaseService) {}
 
   // ========== Daily Deals ==========
@@ -788,5 +787,166 @@ export class OffersService {
       };
     });
   }
+}
+
+let offersInstance: OffersService | null = null;
+
+export function initializeOffers(db: DatabaseService): void {
+  offersInstance = new OffersService(db);
+}
+
+function requireOffers(): OffersService {
+  if (!offersInstance) {
+    throw new Error('Offers not initialized');
+  }
+  return offersInstance;
+}
+
+export function createDailyDeal(
+  ...args: Parameters<OffersService['createDailyDeal']>
+): ReturnType<OffersService['createDailyDeal']> {
+  return requireOffers().createDailyDeal(...args);
+}
+
+export function getDailyDealByDate(
+  ...args: Parameters<OffersService['getDailyDealByDate']>
+): ReturnType<OffersService['getDailyDealByDate']> {
+  return requireOffers().getDailyDealByDate(...args);
+}
+
+export function getActiveDailyDeal(): ReturnType<OffersService['getActiveDailyDeal']> {
+  return requireOffers().getActiveDailyDeal();
+}
+
+export function updateDailyDeal(
+  ...args: Parameters<OffersService['updateDailyDeal']>
+): ReturnType<OffersService['updateDailyDeal']> {
+  return requireOffers().updateDailyDeal(...args);
+}
+
+export function getAllDailyDeals(): ReturnType<OffersService['getAllDailyDeals']> {
+  return requireOffers().getAllDailyDeals();
+}
+
+export function deleteDailyDeal(
+  ...args: Parameters<OffersService['deleteDailyDeal']>
+): ReturnType<OffersService['deleteDailyDeal']> {
+  return requireOffers().deleteDailyDeal(...args);
+}
+
+export function createCombo(
+  ...args: Parameters<OffersService['createCombo']>
+): ReturnType<OffersService['createCombo']> {
+  return requireOffers().createCombo(...args);
+}
+
+export function getAllCombos(): ReturnType<OffersService['getAllCombos']> {
+  return requireOffers().getAllCombos();
+}
+
+export function getCombo(
+  ...args: Parameters<OffersService['getCombo']>
+): ReturnType<OffersService['getCombo']> {
+  return requireOffers().getCombo(...args);
+}
+
+export function updateCombo(
+  ...args: Parameters<OffersService['updateCombo']>
+): ReturnType<OffersService['updateCombo']> {
+  return requireOffers().updateCombo(...args);
+}
+
+export function deleteCombo(
+  ...args: Parameters<OffersService['deleteCombo']>
+): ReturnType<OffersService['deleteCombo']> {
+  return requireOffers().deleteCombo(...args);
+}
+
+export function createScheduledOffer(
+  ...args: Parameters<OffersService['createScheduledOffer']>
+): ReturnType<OffersService['createScheduledOffer']> {
+  return requireOffers().createScheduledOffer(...args);
+}
+
+export function getAllScheduledOffers(): ReturnType<OffersService['getAllScheduledOffers']> {
+  return requireOffers().getAllScheduledOffers();
+}
+
+export function getActiveScheduledOffers(): ReturnType<OffersService['getActiveScheduledOffers']> {
+  return requireOffers().getActiveScheduledOffers();
+}
+
+export function getScheduledOffer(
+  ...args: Parameters<OffersService['getScheduledOffer']>
+): ReturnType<OffersService['getScheduledOffer']> {
+  return requireOffers().getScheduledOffer(...args);
+}
+
+export function updateScheduledOffer(
+  ...args: Parameters<OffersService['updateScheduledOffer']>
+): ReturnType<OffersService['updateScheduledOffer']> {
+  return requireOffers().updateScheduledOffer(...args);
+}
+
+export function deleteScheduledOffer(
+  ...args: Parameters<OffersService['deleteScheduledOffer']>
+): ReturnType<OffersService['deleteScheduledOffer']> {
+  return requireOffers().deleteScheduledOffer(...args);
+}
+
+export function setFeatured(
+  ...args: Parameters<OffersService['setFeatured']>
+): ReturnType<OffersService['setFeatured']> {
+  return requireOffers().setFeatured(...args);
+}
+
+export function getAllFeaturedItems(): ReturnType<OffersService['getAllFeaturedItems']> {
+  return requireOffers().getAllFeaturedItems();
+}
+
+export function isFeatured(
+  ...args: Parameters<OffersService['isFeatured']>
+): ReturnType<OffersService['isFeatured']> {
+  return requireOffers().isFeatured(...args);
+}
+
+export function createHappyHour(
+  ...args: Parameters<OffersService['createHappyHour']>
+): ReturnType<OffersService['createHappyHour']> {
+  return requireOffers().createHappyHour(...args);
+}
+
+export function getAllHappyHours(): ReturnType<OffersService['getAllHappyHours']> {
+  return requireOffers().getAllHappyHours();
+}
+
+export function getHappyHour(
+  ...args: Parameters<OffersService['getHappyHour']>
+): ReturnType<OffersService['getHappyHour']> {
+  return requireOffers().getHappyHour(...args);
+}
+
+export function updateHappyHour(
+  ...args: Parameters<OffersService['updateHappyHour']>
+): ReturnType<OffersService['updateHappyHour']> {
+  return requireOffers().updateHappyHour(...args);
+}
+
+export function deleteHappyHour(
+  ...args: Parameters<OffersService['deleteHappyHour']>
+): ReturnType<OffersService['deleteHappyHour']> {
+  return requireOffers().deleteHappyHour(...args);
+}
+
+export function getEffectivePrice(
+  ...args: Parameters<OffersService['getEffectivePrice']>
+): ReturnType<OffersService['getEffectivePrice']> {
+  return requireOffers().getEffectivePrice(...args);
+}
+
+export function enrichItemsWithOffers(
+  ...args: Parameters<OffersService['enrichItemsWithOffers']>
+): ReturnType<OffersService['enrichItemsWithOffers']> {
+  return requireOffers().enrichItemsWithOffers(...args);
 }
 

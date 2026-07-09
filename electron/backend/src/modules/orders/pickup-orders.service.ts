@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { ShelvesService } from '../shelves/shelves.service';
+import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 
 export interface PickupOrderItem {
   item_id: number;
@@ -50,8 +50,7 @@ export interface PickupOrderWithItems extends PickupOrder {
   }>;
 }
 
-@Injectable()
-export class PickupOrdersService {
+class PickupOrdersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly shelvesService: ShelvesService,
@@ -502,3 +501,57 @@ export class PickupOrdersService {
   }
 }
 
+let pickupOrdersInstance: PickupOrdersService | null = null;
+
+export function initializePickupOrders(db: DatabaseService): void {
+  pickupOrdersInstance = new PickupOrdersService(db, requireShelves());
+}
+
+function requirePickupOrders(): PickupOrdersService {
+  if (!pickupOrdersInstance) {
+    throw new Error('Pickup orders not initialized');
+  }
+  return pickupOrdersInstance;
+}
+
+export function findActive(): ReturnType<PickupOrdersService['findActive']> {
+  return requirePickupOrders().findActive();
+}
+
+export function findArchived(): ReturnType<PickupOrdersService['findArchived']> {
+  return requirePickupOrders().findArchived();
+}
+
+export function findById(
+  ...args: Parameters<PickupOrdersService['findById']>
+): ReturnType<PickupOrdersService['findById']> {
+  return requirePickupOrders().findById(...args);
+}
+
+export function create(
+  ...args: Parameters<PickupOrdersService['create']>
+): ReturnType<PickupOrdersService['create']> {
+  return requirePickupOrders().create(...args);
+}
+
+export function updateStatus(
+  ...args: Parameters<PickupOrdersService['updateStatus']>
+): ReturnType<PickupOrdersService['updateStatus']> {
+  return requirePickupOrders().updateStatus(...args);
+}
+
+export function update(
+  ...args: Parameters<PickupOrdersService['update']>
+): ReturnType<PickupOrdersService['update']> {
+  return requirePickupOrders().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<PickupOrdersService['remove']>
+): ReturnType<PickupOrdersService['remove']> {
+  return requirePickupOrders().remove(...args);
+}
+
+export function removeAllArchived(): ReturnType<PickupOrdersService['removeAllArchived']> {
+  return requirePickupOrders().removeAllArchived();
+}

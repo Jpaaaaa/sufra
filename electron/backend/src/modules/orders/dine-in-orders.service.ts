@@ -1,7 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException } from '@nestjs/common';
+import { NotFoundException, BadRequestException, ForbiddenException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { ShelvesService } from '../shelves/shelves.service';
-import { TablesService } from '../tables/tables.service';
+import { requireShelves, ShelvesService } from '../shelves/shelves.service';
+import { requireTables, TablesService } from '../tables/tables.service';
 
 export interface DineInOrderItem {
   item_id: number;
@@ -52,8 +52,7 @@ export interface DineInOrderWithItems extends DineInOrder {
   }>;
 }
 
-@Injectable()
-export class DineInOrdersService {
+class DineInOrdersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly shelvesService: ShelvesService,
@@ -875,3 +874,87 @@ export class DineInOrdersService {
   }
 }
 
+let dineInOrdersInstance: DineInOrdersService | null = null;
+
+export function initializeDineInOrders(db: DatabaseService): void {
+  dineInOrdersInstance = new DineInOrdersService(db, requireShelves(), requireTables());
+}
+
+function requireDineInOrders(): DineInOrdersService {
+  if (!dineInOrdersInstance) {
+    throw new Error('Dine-in orders not initialized');
+  }
+  return dineInOrdersInstance;
+}
+
+export function findByTable(
+  ...args: Parameters<DineInOrdersService['findByTable']>
+): ReturnType<DineInOrdersService['findByTable']> {
+  return requireDineInOrders().findByTable(...args);
+}
+
+export function findByHall(
+  ...args: Parameters<DineInOrdersService['findByHall']>
+): ReturnType<DineInOrdersService['findByHall']> {
+  return requireDineInOrders().findByHall(...args);
+}
+
+export function findActive(): ReturnType<DineInOrdersService['findActive']> {
+  return requireDineInOrders().findActive();
+}
+
+export function findArchived(): ReturnType<DineInOrdersService['findArchived']> {
+  return requireDineInOrders().findArchived();
+}
+
+export function create(
+  ...args: Parameters<DineInOrdersService['create']>
+): ReturnType<DineInOrdersService['create']> {
+  return requireDineInOrders().create(...args);
+}
+
+export function updateStatus(
+  ...args: Parameters<DineInOrdersService['updateStatus']>
+): ReturnType<DineInOrdersService['updateStatus']> {
+  return requireDineInOrders().updateStatus(...args);
+}
+
+export function update(
+  ...args: Parameters<DineInOrdersService['update']>
+): ReturnType<DineInOrdersService['update']> {
+  return requireDineInOrders().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<DineInOrdersService['remove']>
+): ReturnType<DineInOrdersService['remove']> {
+  return requireDineInOrders().remove(...args);
+}
+
+export function findById(
+  ...args: Parameters<DineInOrdersService['findById']>
+): ReturnType<DineInOrdersService['findById']> {
+  return requireDineInOrders().findById(...args);
+}
+
+export function moveTableOrders(
+  ...args: Parameters<DineInOrdersService['moveTableOrders']>
+): ReturnType<DineInOrdersService['moveTableOrders']> {
+  return requireDineInOrders().moveTableOrders(...args);
+}
+
+export function moveOrders(
+  ...args: Parameters<DineInOrdersService['moveOrders']>
+): ReturnType<DineInOrdersService['moveOrders']> {
+  return requireDineInOrders().moveOrders(...args);
+}
+
+export function setTableGlobalDiscount(
+  ...args: Parameters<DineInOrdersService['setTableGlobalDiscount']>
+): ReturnType<DineInOrdersService['setTableGlobalDiscount']> {
+  return requireDineInOrders().setTableGlobalDiscount(...args);
+}
+
+export function removeAllArchived(): ReturnType<DineInOrdersService['removeAllArchived']> {
+  return requireDineInOrders().removeAllArchived();
+}

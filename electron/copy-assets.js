@@ -131,4 +131,10 @@ for (const logoPath of logoCandidates) {
   }
 }
 
+const iconSrc = path.join(__dirname, 'build', 'icon.ico');
+if (fs.existsSync(iconSrc)) {
+  fs.copyFileSync(iconSrc, path.join(distDir, 'icon.ico'));
+  console.log('App icon copied to dist.');
+}
+
 console.log("Fonts copied successfully.");

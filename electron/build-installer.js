@@ -22,7 +22,7 @@ try {
 
   // Step 2: Build Backend (normal build, no bundling - native modules need node_modules)
   console.log('📦 Step 2/4: Building backend...');
-  execSync('cd ../backend && npm run build', { stdio: 'inherit' });
+  execSync('npm run build:backend', { stdio: 'inherit', cwd: __dirname });
   console.log('✓ Backend built successfully\n');
 
   // Step 3: Build Electron

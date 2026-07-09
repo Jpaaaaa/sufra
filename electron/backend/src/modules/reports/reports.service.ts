@@ -1,15 +1,10 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import { BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { BusinessDayService } from '../business-day/business-day.service';
 import { ExportPdfDto } from './dto/export-pdf.dto';
 import { generateReportExcel } from './generate-report-excel';
 
-@Injectable()
-export class ReportsService {
-  constructor(
-    private readonly db: DatabaseService,
-    private readonly businessDayService: BusinessDayService,
-  ) {}
+class ReportsService {
+  constructor(private readonly db: DatabaseService) {}
 
   /**
    * Get orders from all order tables by date range (real time - no shift).
@@ -2791,4 +2786,37 @@ export class ReportsService {
   }
 }
 
+let reportsInstance: ReportsService | null = null;
+
+export function initializeReports(db: DatabaseService): void {
+  reportsInstance = new ReportsService(db);
+}
+
+function requireReports(): ReportsService {
+  if (!reportsInstance) {
+    throw new Error('Reports not initialized');
+  }
+  return reportsInstance;
+}
+
+export async function getDailySummary(): Promise<{
+  totalSales: number;
+  ordersCount: number;
+  occupiedTables: number;
+  emptyTables: number;
+  printerStatus: 'success' | 'error';
+}> {
+  return requireReports().getDailySummary();
+}
+
+export async function getReportData(
+  period: 'daily' | 'weekly' | 'monthly' | 'yearly',
+  dateStr: string,
+): Promise<any> {
+  return requireReports().getReportData(period, dateStr);
+}
+
+export async function generateExcel(dto: ExportPdfDto): Promise<Buffer> {
+  return requireReports().generateExcel(dto);
+}
 

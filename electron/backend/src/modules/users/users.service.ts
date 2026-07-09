@@ -1,10 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { NotFoundException, ConflictException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 import { User, CreateUserDto, UpdateUserDto } from './user.entity';
 import * as bcrypt from 'bcrypt';
 
-@Injectable()
-export class UsersService {
+class UsersService {
   constructor(private readonly db: DatabaseService) {}
 
   async findAll(): Promise<Omit<User, 'password_hash'>[]> {
@@ -13,7 +12,6 @@ export class UsersService {
     );
     return rows.map((row: any) => ({
       ...row,
-      // Only return permissions for customer role
       require_captain_approval: row.role === 'customer' ? Boolean(row.require_captain_approval) : false,
       customer_free_order: row.role === 'customer' ? Boolean(row.customer_free_order) : false,
     })) as Omit<User, 'password_hash'>[];
@@ -29,7 +27,6 @@ export class UsersService {
     }
     return {
       ...row,
-      // Only return permissions for customer role
       require_captain_approval: row.role === 'customer' ? Boolean(row.require_captain_approval) : false,
       customer_free_order: row.role === 'customer' ? Boolean(row.customer_free_order) : false,
     } as Omit<User, 'password_hash'>;
@@ -51,16 +48,13 @@ export class UsersService {
   }
 
   async create(dto: CreateUserDto): Promise<Omit<User, 'password_hash'>> {
-    // Check if username already exists
     const existing = await this.findByUsername(dto.username);
     if (existing) {
       throw new ConflictException('Username already exists');
     }
 
-    // Hash password
     const password_hash = await bcrypt.hash(dto.password, 10);
 
-    // Only apply permissions for customer role
     const isCustomer = dto.role === 'customer';
     const require_captain_approval = isCustomer && dto.customer_free_order ? 0 : (isCustomer && dto.require_captain_approval ? 1 : 0);
     const customer_free_order = isCustomer && dto.customer_free_order ? 1 : 0;
@@ -69,7 +63,6 @@ export class UsersService {
       'INSERT INTO users (username, password_hash, role, require_captain_approval, customer_free_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime("now"), datetime("now"))',
       [dto.username, password_hash, dto.role, require_captain_approval, customer_free_order],
     );
-    // Fetch by username to avoid relying on last_insert_rowid() in sql.js
     const row = await this.db.get(
       'SELECT id, username, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users WHERE username = ? ORDER BY id DESC LIMIT 1',
       [dto.username],
@@ -87,7 +80,6 @@ export class UsersService {
   async update(id: number, dto: UpdateUserDto): Promise<Omit<User, 'password_hash'>> {
     const existing = await this.findOne(id);
 
-    // Check if username is being changed and if it already exists
     if (dto.username && dto.username !== existing.username) {
       const usernameExists = await this.findByUsername(dto.username);
       if (usernameExists) {
@@ -114,14 +106,10 @@ export class UsersService {
       values.push(dto.role);
     }
 
-    // Handle permissions with logic: customer_free_order overrides require_captain_approval
-    // Only apply permissions for customer role
     const newRole = dto.role || existing.role;
     const isCustomer = newRole === 'customer';
 
-    // Always update permissions based on final role
     if (isCustomer) {
-      // If role is customer, allow setting permissions
       const currentRequire = dto.require_captain_approval !== undefined
         ? dto.require_captain_approval
         : (existing.role === 'customer' ? existing.require_captain_approval : false);
@@ -129,7 +117,6 @@ export class UsersService {
         ? dto.customer_free_order
         : (existing.role === 'customer' ? existing.customer_free_order : false);
 
-      // Apply logic: customer_free_order overrides require_captain_approval
       const finalRequire = currentFree ? false : currentRequire;
       const finalFree = currentFree;
 
@@ -138,7 +125,6 @@ export class UsersService {
       updates.push('customer_free_order = ?');
       values.push(finalFree ? 1 : 0);
     } else {
-      // If role is not customer, always clear permissions
       updates.push('require_captain_approval = ?');
       values.push(0);
       updates.push('customer_free_order = ?');
@@ -168,11 +154,64 @@ export class UsersService {
   }
 
   async remove(id: number): Promise<void> {
-    await this.findOne(id); // Check if exists
+    await this.findOne(id);
     await this.db.run('DELETE FROM users WHERE id = ?', [id]);
   }
 
   async validatePassword(user: User, password: string): Promise<boolean> {
     return bcrypt.compare(password, user.password_hash);
   }
+}
+
+let usersInstance: UsersService | null = null;
+
+export function initializeUsers(db: DatabaseService): void {
+  usersInstance = new UsersService(db);
+}
+
+export function requireUsers(): UsersService {
+  if (!usersInstance) {
+    throw new Error('Users not initialized');
+  }
+  return usersInstance;
+}
+
+export function findAll(): ReturnType<UsersService['findAll']> {
+  return requireUsers().findAll();
+}
+
+export function findOne(
+  ...args: Parameters<UsersService['findOne']>
+): ReturnType<UsersService['findOne']> {
+  return requireUsers().findOne(...args);
+}
+
+export function findByUsername(
+  ...args: Parameters<UsersService['findByUsername']>
+): ReturnType<UsersService['findByUsername']> {
+  return requireUsers().findByUsername(...args);
+}
+
+export function create(
+  ...args: Parameters<UsersService['create']>
+): ReturnType<UsersService['create']> {
+  return requireUsers().create(...args);
+}
+
+export function update(
+  ...args: Parameters<UsersService['update']>
+): ReturnType<UsersService['update']> {
+  return requireUsers().update(...args);
+}
+
+export function remove(
+  ...args: Parameters<UsersService['remove']>
+): ReturnType<UsersService['remove']> {
+  return requireUsers().remove(...args);
+}
+
+export function validatePassword(
+  ...args: Parameters<UsersService['validatePassword']>
+): ReturnType<UsersService['validatePassword']> {
+  return requireUsers().validatePassword(...args);
 }

@@ -1,4 +1,3 @@
-import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 
 export interface PrinterDevice {
@@ -16,8 +15,7 @@ export interface PrinterSettings {
   is_active: boolean;
 }
 
-@Injectable()
-export class PrintersService {
+class PrintersService {
   constructor(private readonly db: DatabaseService) {}
 
   // Get all available printers on the system (native printers only)
@@ -190,4 +188,49 @@ export class PrintersService {
 
     return output;
   }
+}
+
+let printersInstance: PrintersService | null = null;
+
+export function initializePrinters(db: DatabaseService): void {
+  printersInstance = new PrintersService(db);
+}
+
+function requirePrinters(): PrintersService {
+  if (!printersInstance) {
+    throw new Error('Printers not initialized');
+  }
+  return printersInstance;
+}
+
+export function getAvailablePrinters(): ReturnType<PrintersService['getAvailablePrinters']> {
+  return requirePrinters().getAvailablePrinters();
+}
+
+export function getAllSettings(): ReturnType<PrintersService['getAllSettings']> {
+  return requirePrinters().getAllSettings();
+}
+
+export function saveSetting(
+  ...args: Parameters<PrintersService['saveSetting']>
+): ReturnType<PrintersService['saveSetting']> {
+  return requirePrinters().saveSetting(...args);
+}
+
+export function deleteSetting(
+  ...args: Parameters<PrintersService['deleteSetting']>
+): ReturnType<PrintersService['deleteSetting']> {
+  return requirePrinters().deleteSetting(...args);
+}
+
+export function formatOrderForPrint(
+  ...args: Parameters<PrintersService['formatOrderForPrint']>
+): ReturnType<PrintersService['formatOrderForPrint']> {
+  return requirePrinters().formatOrderForPrint(...args);
+}
+
+export function formatReceiptForPrint(
+  ...args: Parameters<PrintersService['formatReceiptForPrint']>
+): ReturnType<PrintersService['formatReceiptForPrint']> {
+  return requirePrinters().formatReceiptForPrint(...args);
 }

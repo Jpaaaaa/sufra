@@ -1,13 +1,13 @@
 {
   "name": "sufra-lite-electron",
-  "version": "0.1.13",
+  "version": "0.1.16",
   "private": true,
   "description": "Sufra Lite POS System",
   "author": "Aman Technology",
   "main": "dist/main.js",
   "scripts": {
     "dev": "node scripts/convert-icon.js && npm run build:backend && npm run build && npm run dev:electron",
-    "dev:electron": "node scripts/convert-icon.js && node run-electron.js",
+    "dev:electron": "node scripts/convert-icon.js && node scripts/patch-electron-icon.js && node run-electron.js",
     "dev:platform": "cross-env AMAAN_PLATFORM_URL=http://127.0.0.1:3850 AMAAN_PLATFORM_ENFORCE_UNPACKAGED=1 node scripts/convert-icon.js && node run-electron.js",
     "dev:frontend": "cd ../frontend && npm run dev",
     "dev:all": "concurrently \"npm run dev:frontend\" \"npm run dev\"",
@@ -16,26 +16,24 @@
     "copy-assets": "node copy-assets.js",
     "build:frontend": "cd ../frontend && npm run build",
     "build:backend": "cd backend && npm run build",
-    "ensure-electron-deps": "npm install --no-audit --no-fund",
-    "dist": "node scripts/prepare-installer-assets.js && node scripts/convert-icon.js && set CSC_IDENTITY_AUTO_DISCOVERY=false && npm run build:frontend && npm run build:backend && node scripts/prepare-dist.js && npm run ensure-electron-deps && npm run build && electron-builder --win && node scripts/restore-backend-dev.js",
+    "ensure-electron-deps": "node scripts/ensure-electron-deps.js",
+    "dist": "node scripts/prepare-installer-assets.js && node scripts/convert-icon.js && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:frontend && npm run build:backend && node scripts/prepare-dist.js && npm run ensure-electron-deps && npm run build && electron-builder --win && node scripts/restore-backend-dev.js",
     "dist:timed": "node scripts/dist-timed.js",
     "start": "npx electron .",
     "create-icon": "node create-icon.js"
   },
   "dependencies": {
+    "@fastify/cors": "^10.1.0",
+    "@fastify/multipart": "^9.4.0",
+    "@fastify/static": "^9.1.3",
     "canvas": "^3.2.0",
-    "cors": "^2.8.5",
     "electron-updater": "6.8.3",
-    "express": "^4.22.1",
-    "multer": "^2.0.2",
+    "fastify": "^5.9.0",
     "pngjs": "^7.0.0",
     "socket.io": "^4.8.3",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
-    "@types/cors": "^2.8.19",
-    "@types/express": "^4.17.25",
-    "@types/multer": "^2.0.0",
     "@types/pngjs": "^6.0.0",
     "concurrently": "^8.2.2",
     "cross-env": "7.0.3",
@@ -44,6 +42,7 @@
     "electron-rebuild": "^3.2.9",
     "jimp": "^1.6.0",
     "png-to-ico": "^2.1.8",
+    "rcedit": "^4.0.1",
     "sharp": "^0.33.5",
     "typescript": "^5.5.0"
   }

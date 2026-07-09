@@ -7,10 +7,7 @@
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "typeRoots": ["./types", "./node_modules/@types"],
-    "paths": {
-      "../../backend/dist/core": ["../backend/dist/core"]
-    }
+    "typeRoots": ["./types", "./node_modules/@types"]
   },
   "include": [
     "main.ts",
@@ -27,7 +24,8 @@
     "utils/**/*.ts",
     "windows/**/*.ts",
     "state.ts",
-    "http/**/*.ts"
+    "http-fastify/**/*.ts",
+    "http-shared/**/*.ts"
   ],
   "exclude": [
     "node_modules",
@@ -35,7 +33,6 @@
     "backend/**/*",
     "backend/src/**/*",
     "backend/dist/**/*.ts",
-    "../backend/**/*",
     "frontend/**/*",
     "**/*.spec.ts",
     "**/*.test.ts"

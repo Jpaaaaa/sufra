@@ -1,4 +1,14 @@
-export * from './finance.module';
-export * from './finance.service';
-export * from './finance.controller';
-
+export {
+  initializeFinance,
+  getRevenues,
+  createRevenue,
+  syncRevenueFromOrders,
+  getExpenses,
+  createExpense,
+  updateExpense,
+  deleteExpense,
+  getCashFlow,
+  createCashFlow,
+  syncCashFlowFromOrders,
+  getProfitAndLoss,
+} from './finance.service';
