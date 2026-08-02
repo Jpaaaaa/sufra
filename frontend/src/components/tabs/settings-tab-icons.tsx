@@ -110,9 +110,30 @@ function IconLicense({ className }: IconProps) {
   );
 }
 
+function IconShift({ className }: IconProps) {
+  return (
+    <svg
+      className={className}
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <circle cx="12" cy="12" r="10" />
+      <polyline points="12 6 12 12 16 14" />
+    </svg>
+  );
+}
+
 const TAB_ICONS: Partial<Record<SettingsTabKey, (p: IconProps) => ReactElement>> = {
   printers: IconPrinters,
   'recipe-print': IconRecipePrint,
+  shift: IconShift,
   server: IconServer,
   users: IconUsers,
   'license-updates': IconLicense,

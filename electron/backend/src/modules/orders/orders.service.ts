@@ -2,6 +2,7 @@ import { NotFoundException, BadRequestException, ForbiddenException } from '../.
 import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { requireTables, TablesService } from '../tables/tables.service';
+import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
 
 export interface Order {
   id: number;
@@ -278,88 +279,37 @@ class OrdersService {
     });
 
     // Insert order with globalDiscount
-    // Use the connection directly to ensure last_insert_rowid() works correctly
-    const dbConnection = this.db.getConnection();
-    
-    // Insert order using prepared statement to ensure rowid tracking
-    const insertStmt = dbConnection.prepare(
-      'INSERT INTO orders (table_id, order_type, status, total, created_at, customer_name, customer_phone, customer_location, note, globalDiscount) VALUES (?, ?, ?, ?, datetime("now"), ?, ?, ?, ?, ?)',
+    await this.db.run(
+      'INSERT INTO orders (table_id, order_type, status, total, created_at, customer_name, customer_phone, customer_location, note, globalDiscount) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, ?, ?, ?, ?, ?)',
+      [data.table_id, orderType, 'pending', total, data.customer_name || null, data.customer_phone || null, data.customer_location || null, data.note || null, globalDiscountJson],
     );
-    
-    try {
-      insertStmt.bind([data.table_id, orderType, 'pending', total, data.customer_name || null, data.customer_phone || null, data.customer_location || null, data.note || null, globalDiscountJson]);
-      insertStmt.step();
-    } finally {
-      insertStmt.free();
-    }
-    
-    // Trigger database save after INSERT (since we used connection directly)
-    // The database service will handle the actual save
-    try {
-      await this.db.run('SELECT 1');
-    } catch (e) {
-      // Ignore - this is just to trigger save
-    }
-    
-    // Get the last insert rowid immediately after INSERT
-    const orderIdResult = dbConnection.exec('SELECT last_insert_rowid() as id');
-    let orderId: number;
-    
-    if (orderIdResult.length > 0 && orderIdResult[0].values.length > 0 && orderIdResult[0].values[0][0]) {
-      orderId = orderIdResult[0].values[0][0] as number;
-    } else {
-      // Fallback: query for the most recently created order for this table
-      console.warn('[ORDERS] create: last_insert_rowid() returned no result, using fallback query');
-      const fallbackOrder = await this.db.get(
-        'SELECT id FROM orders WHERE table_id = ? ORDER BY id DESC LIMIT 1',
-        [data.table_id],
-      );
-      const fallbackId = fallbackOrder?.id;
-      if (!fallbackId) {
-        throw new BadRequestException('Failed to create order: Could not retrieve order ID');
-      }
-      orderId = fallbackId as number;
-      console.log('[ORDERS] create: Using fallback order ID:', orderId);
-    }
-    
+
+    const orderId = await this.db.getLastInsertRowId();
     console.log('[ORDERS] create: created order with id', orderId);
-    
-    // Validate that we got a valid order ID
+
     if (!orderId || orderId === 0) {
       throw new BadRequestException('Failed to create order: Invalid order ID returned');
     }
 
-    // Insert order items using prepared statement
-    const stmt = this.db.getConnection().prepare(
-      'INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    );
-
-    try {
-      for (const item of data.items) {
-        const serviceType = item.service_type || 'dine-in';
-        console.log('[ORDERS] create: inserting order item', {
-          order_id: orderId,
-          item_id: item.item_id,
-          item_name: item.item_name,
-          quantity: item.quantity,
-          price: item.price,
-          kitchen_id: item.kitchen_id,
-          service_type: serviceType,
-          shelf_item_id: item.shelf_item_id,
-        });
-        stmt.bind([orderId, item.item_id, item.item_name, item.quantity, item.price, item.kitchen_id ?? null, serviceType, item.shelf_item_id ?? null]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+    for (const item of data.items) {
+      const serviceType = item.service_type || 'dine-in';
+      console.log('[ORDERS] create: inserting order item', {
+        order_id: orderId,
+        item_id: item.item_id,
+        item_name: item.item_name,
+        quantity: item.quantity,
+        price: item.price,
+        kitchen_id: item.kitchen_id,
+        service_type: serviceType,
+        shelf_item_id: item.shelf_item_id,
+      });
+      await this.db.run(
+        'INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [orderId, resolveOrderItemInsertId(item.item_id, item.shelf_item_id), item.item_name, item.quantity, item.price, item.kitchen_id ?? null, serviceType, item.shelf_item_id ?? null],
+      );
     }
-    
+
     console.log('[ORDERS] create: inserted', data.items.length, 'order items for order', orderId);
-    
-    // Note: The database service auto-saves after db.run() calls
-    // Prepared statements modify the in-memory database directly, so queries will work immediately
-    // The save to disk happens asynchronously but doesn't affect query availability
 
     // Decrease stock for shelf items
     try {
@@ -422,7 +372,7 @@ class OrdersService {
     console.log('[ORDERS] updateStatus: updating order', id, 'to status', status);
     
     await this.db.run(
-      'UPDATE orders SET status = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [status, id],
     );
 
@@ -448,7 +398,7 @@ class OrdersService {
 
   async updateOrderType(id: number, orderType: 'dine-in'): Promise<Order> {
     await this.db.run(
-      'UPDATE orders SET order_type = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE orders SET order_type = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [orderType, id],
     );
 
@@ -507,7 +457,7 @@ class OrdersService {
 
     // Update order
     await this.db.run(
-      'UPDATE orders SET order_type = ?, total = ?, updated_at = datetime("now"), customer_name = ?, customer_phone = ?, customer_location = ?, note = ? WHERE id = ?',
+      'UPDATE orders SET order_type = ?, total = ?, updated_at = CURRENT_TIMESTAMP, customer_name = ?, customer_phone = ?, customer_location = ?, note = ? WHERE id = ?',
       [
         orderType,
         total,
@@ -522,20 +472,12 @@ class OrdersService {
     // Delete old order items
     await this.db.run('DELETE FROM order_items WHERE order_id = ?', [id]);
 
-    // Insert new order items using prepared statement
-    const stmt = this.db.getConnection().prepare(
-      'INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
-    );
-
-    try {
-      for (const item of data.items) {
-        const serviceType = item.service_type || 'dine-in';
-        stmt.bind([id, item.item_id, item.item_name, item.quantity, item.price, item.kitchen_id ?? null, serviceType, item.shelf_item_id ?? null]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+    for (const item of data.items) {
+      const serviceType = item.service_type || 'dine-in';
+      await this.db.run(
+        'INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+        [id, resolveOrderItemInsertId(item.item_id, item.shelf_item_id), item.item_name, item.quantity, item.price, item.kitchen_id ?? null, serviceType, item.shelf_item_id ?? null],
+      );
     }
 
     // Return the updated order with items
@@ -603,7 +545,7 @@ class OrdersService {
     // Update all orders to 'completed' status instead of deleting
     // This ensures they are counted in daily sales
     await this.db.run(
-      `UPDATE orders SET status = 'completed', updated_at = datetime("now") WHERE id IN (${orderIds.join(',')})`,
+      `UPDATE orders SET status = 'completed', updated_at = CURRENT_TIMESTAMP WHERE id IN (${orderIds.join(',')})`,
     );
 
     return { cleared: orderIds.length };

@@ -1,5 +1,6 @@
 import { NotFoundException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
+import { getCurrentBusinessDateFromSettings } from '../settings/resolve-order-shift';
 import { CreateRevenueDto } from './dto/create-revenue.dto';
 import { CreateExpenseDto } from './dto/create-expense.dto';
 import { UpdateExpenseDto } from './dto/update-expense.dto';
@@ -59,7 +60,7 @@ class FinanceService {
   async createRevenue(dto: CreateRevenueDto): Promise<Revenue> {
     const dateVal = dto.date || new Date().toISOString().split('T')[0];
     await this.db.run(
-      'INSERT INTO revenues (date, type, amount, notes, order_count, created_at) VALUES (?, ?, ?, ?, ?, datetime("now"))',
+      'INSERT INTO revenues (date, type, amount, notes, order_count, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
       [dateVal, dto.type, dto.amount, dto.notes || null, null],
     );
     const id = await this.db.getLastInsertRowId();
@@ -89,11 +90,11 @@ class FinanceService {
          COUNT(*) as order_count,
          COALESCE(SUM(total), 0) as total_sales
        FROM (
-         SELECT total FROM dine_in_orders WHERE DATE(created_at) = ? AND status = 'completed'
+         SELECT total FROM dine_in_orders WHERE business_date = ? AND status IN ('completed', 'archived')
          UNION ALL
-         SELECT total FROM pickup_orders WHERE DATE(created_at) = ? AND status IN ('completed', 'archived')
+         SELECT total FROM pickup_orders WHERE business_date = ? AND status IN ('completed', 'archived')
          UNION ALL
-         SELECT total FROM delivery_orders WHERE DATE(created_at) = ? AND status IN ('completed', 'archived')
+         SELECT total FROM delivery_orders WHERE business_date = ? AND status IN ('completed', 'archived')
        )`,
       [dateNorm, dateNorm, dateNorm],
     );
@@ -131,7 +132,7 @@ class FinanceService {
     }
 
     await this.db.run(
-      'INSERT INTO revenues (date, type, amount, notes, order_count, created_at) VALUES (?, ?, ?, ?, ?, datetime("now"))',
+      'INSERT INTO revenues (date, type, amount, notes, order_count, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
       [dateNorm, 'daily', totalSales, notesVal, orderCount],
     );
     const id = await this.db.getLastInsertRowId();
@@ -151,25 +152,25 @@ class FinanceService {
 
   /** @deprecated Use syncRevenueFromOrders. Kept for API compatibility. */
   async syncRevenueFromBusinessDay(_businessDayId: number): Promise<Revenue | null> {
-    const today = new Date().toISOString().split('T')[0];
+    const today = await getCurrentBusinessDateFromSettings();
     return this.syncRevenueFromOrders(today);
   }
 
   /**
-   * Sync today's revenue from orders and return totals (by calendar date).
+   * Sync today's revenue from orders and return totals (current business day).
    */
   async syncRevenueForToday(): Promise<{ total: number; orderCount: number }> {
-    const today = new Date().toISOString().split('T')[0];
+    const today = await getCurrentBusinessDateFromSettings();
     const totals = await this.db.get(
       `SELECT 
          COUNT(*) as order_count,
          COALESCE(SUM(total), 0) as total_sales
        FROM (
-         SELECT total FROM dine_in_orders WHERE DATE(created_at) = ? AND status = 'completed'
+         SELECT total FROM dine_in_orders WHERE business_date = ? AND status IN ('completed', 'archived')
          UNION ALL
-         SELECT total FROM pickup_orders WHERE DATE(created_at) = ? AND status IN ('completed', 'archived')
+         SELECT total FROM pickup_orders WHERE business_date = ? AND status IN ('completed', 'archived')
          UNION ALL
-         SELECT total FROM delivery_orders WHERE DATE(created_at) = ? AND status IN ('completed', 'archived')
+         SELECT total FROM delivery_orders WHERE business_date = ? AND status IN ('completed', 'archived')
        )`,
       [today, today, today],
     );
@@ -262,7 +263,7 @@ class FinanceService {
       : null;
 
     await this.db.run(
-      'INSERT INTO expenses (date, category, amount, notes, user_id, is_recurring, recurrence_type, recurrence_interval, next_occurrence_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime("now"))',
+      'INSERT INTO expenses (date, category, amount, notes, user_id, is_recurring, recurrence_type, recurrence_interval, next_occurrence_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
       [
         dateVal,
         dto.category,
@@ -279,7 +280,7 @@ class FinanceService {
     if (!id) {
       throw new Error('Failed to create expense');
     }
-    // Return from input data instead of SELECT - avoids last_insert_rowid timing issues in sql.js
+    // Return from input data (id already known from insert)
     const createdAt = new Date().toISOString().slice(0, 19).replace('T', ' ');
     return {
       id,
@@ -446,7 +447,7 @@ class FinanceService {
   async createCashFlow(dto: CreateCashFlowDto): Promise<CashFlow> {
     const dateVal = dto.date || new Date().toISOString().split('T')[0];
     await this.db.run(
-      'INSERT INTO cash_flow (date, type, reason, amount, linked_order_id, created_at) VALUES (?, ?, ?, ?, ?, datetime("now"))',
+      'INSERT INTO cash_flow (date, type, reason, amount, linked_order_id, created_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
       [dateVal, dto.type, dto.reason, dto.amount, dto.linked_order_id || null],
     );
     const id = await this.db.getLastInsertRowId();

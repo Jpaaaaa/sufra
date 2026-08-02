@@ -204,40 +204,38 @@ class BusinessDayService {
       if (earliestStart) {
         // Find orders before the earliest business day
         orphanedDatesQuery = `
-          SELECT DISTINCT DATE(created_at) as order_date, 
+          SELECT business_date as order_date, 
                  MIN(created_at) as first_order, 
                  MAX(created_at) as last_order,
                  COUNT(*) as order_count
           FROM (
-            SELECT created_at FROM orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
+            SELECT business_date, created_at FROM dine_in_orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
             UNION ALL
-            SELECT created_at FROM pickup_orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
+            SELECT business_date, created_at FROM pickup_orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
             UNION ALL
-            SELECT created_at FROM dine_in_orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
-            UNION ALL
-            SELECT created_at FROM delivery_orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
+            SELECT business_date, created_at FROM delivery_orders WHERE created_at < ? AND status IN ('pending', 'printed', 'completed')
           )
-          GROUP BY DATE(created_at)
+          WHERE business_date IS NOT NULL
+          GROUP BY business_date
           ORDER BY order_date ASC
         `;
-        queryParams = [earliestStart, earliestStart, earliestStart, earliestStart];
+        queryParams = [earliestStart, earliestStart, earliestStart];
       } else {
         // No business days exist - find all orders grouped by date
         orphanedDatesQuery = `
-          SELECT DISTINCT DATE(created_at) as order_date, 
+          SELECT business_date as order_date, 
                  MIN(created_at) as first_order, 
                  MAX(created_at) as last_order,
                  COUNT(*) as order_count
           FROM (
-            SELECT created_at FROM orders WHERE status IN ('pending', 'printed', 'completed')
+            SELECT business_date, created_at FROM dine_in_orders WHERE status IN ('pending', 'printed', 'completed')
             UNION ALL
-            SELECT created_at FROM pickup_orders WHERE status IN ('pending', 'printed', 'completed')
+            SELECT business_date, created_at FROM pickup_orders WHERE status IN ('pending', 'printed', 'completed')
             UNION ALL
-            SELECT created_at FROM dine_in_orders WHERE status IN ('pending', 'printed', 'completed')
-            UNION ALL
-            SELECT created_at FROM delivery_orders WHERE status IN ('pending', 'printed', 'completed')
+            SELECT business_date, created_at FROM delivery_orders WHERE status IN ('pending', 'printed', 'completed')
           )
-          GROUP BY DATE(created_at)
+          WHERE business_date IS NOT NULL
+          GROUP BY business_date
           ORDER BY order_date ASC
         `;
       }
@@ -279,7 +277,7 @@ class BusinessDayService {
           // Insert the retroactive business day (not active)
           await this.db.run(
             `INSERT INTO business_days (start_at, end_at, is_active, created_at) 
-             VALUES (?, ?, 0, datetime('now'))`,
+             VALUES (?, ?, 0, CURRENT_TIMESTAMP)`,
             [startAt, endAt],
           );
           
@@ -353,23 +351,32 @@ class BusinessDayService {
   async calculateDailySummary(businessDayStart: string): Promise<DailySummary> {
     const businessDayEnd = new Date().toISOString();
 
-    // Get all completed orders for the current business day
     const orders = await this.db.all(
-      `SELECT id, total, discount, globalDiscount, created_at 
-       FROM orders 
-       WHERE created_at >= ? AND created_at < ? AND status = 'completed'`,
-      [businessDayStart, businessDayEnd],
+      `SELECT total, discount, globalDiscount, created_at 
+       FROM dine_in_orders 
+       WHERE created_at >= ? AND created_at < ? AND status IN ('completed', 'archived')
+       UNION ALL
+       SELECT total, discount, globalDiscount, created_at 
+       FROM pickup_orders 
+       WHERE created_at >= ? AND created_at < ? AND status IN ('completed', 'archived')
+       UNION ALL
+       SELECT total, discount, globalDiscount, created_at 
+       FROM delivery_orders 
+       WHERE created_at >= ? AND created_at < ? AND status IN ('completed', 'archived')`,
+      [
+        businessDayStart, businessDayEnd,
+        businessDayStart, businessDayEnd,
+        businessDayStart, businessDayEnd,
+      ],
     );
 
     let totalSales = 0;
     let totalDiscounts = 0;
-    let numberOfOrders = orders.length;
+    const numberOfOrders = orders.length;
 
     orders.forEach((order: any) => {
-      // Calculate discount amount
       let discountAmount = 0;
 
-      // Handle globalDiscount (stored as JSON string)
       if (order.globalDiscount) {
         try {
           const globalDiscount = typeof order.globalDiscount === 'string'
@@ -384,22 +391,18 @@ class BusinessDayService {
         }
       }
 
-      // Also check the discount column (legacy)
       if (order.discount) {
         discountAmount += order.discount;
       }
 
-      // Total before discount (assuming order.total is the final amount after discount)
-      // We need to add back the discount to get the original amount
-      const orderTotalBeforeDiscount = (order.total || 0) + discountAmount;
-      totalSales += orderTotalBeforeDiscount;
+      totalSales += order.total || 0;
       totalDiscounts += discountAmount;
     });
 
     const averageOrderValue = numberOfOrders > 0
       ? Math.round(totalSales / numberOfOrders)
       : 0;
-    const netProfit = totalSales - totalDiscounts;
+    const netProfit = totalSales;
 
     return {
       totalSales,

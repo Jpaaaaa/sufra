@@ -14,6 +14,7 @@ import { registerShelvesRoutes } from './shelves';
 import { registerFinanceRoutes } from './finance';
 import { registerPrintersRoutes } from './printers';
 import { registerPrintRoutes } from './print';
+import { registerSettingsRoutes } from './settings';
 
 export function registerAllFastifyRoutes(ctx: FastifyRouteContext): void {
   registerHealthRoutes(ctx);
@@ -28,4 +29,5 @@ export function registerAllFastifyRoutes(ctx: FastifyRouteContext): void {
   registerFinanceRoutes(ctx);
   registerPrintersRoutes(ctx);
   registerPrintRoutes(ctx);
+  registerSettingsRoutes(ctx);
 }

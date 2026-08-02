@@ -1,1 +1,1 @@
-export type SettingsTabKey = 'printers' | 'recipe-print' | 'server' | 'users' | 'license-updates';
+export type SettingsTabKey = 'printers' | 'recipe-print' | 'server' | 'users' | 'shift' | 'license-updates';

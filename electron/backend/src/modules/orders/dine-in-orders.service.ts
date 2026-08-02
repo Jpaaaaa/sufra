@@ -2,9 +2,11 @@ import { NotFoundException, BadRequestException, ForbiddenException } from '../.
 import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { requireTables, TablesService } from '../tables/tables.service';
+import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
+import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
 
 export interface DineInOrderItem {
-  item_id: number;
+  item_id: number | null;
   item_name: string;
   quantity: number;
   price: number;
@@ -353,15 +355,12 @@ class DineInOrdersService {
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
+    const shiftFields = await resolveOrderShiftFields();
 
-    const dbConnection = this.db.getConnection();
-    const insertStmt = dbConnection.prepare(
-      `INSERT INTO dine_in_orders (table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, created_by_user_id) 
-       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?)`,
-    );
-
-    try {
-      insertStmt.bind([
+    await this.db.run(
+      `INSERT INTO dine_in_orders (table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, created_by_user_id, business_date, shift_definition_id) 
+       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?, ?, ?)`,
+      [
         data.table_id,
         data.hall_id,
         tableSessionId,
@@ -369,62 +368,35 @@ class DineInOrdersService {
         globalDiscountJson,
         data.note || null,
         data.userId ?? null,
-      ]);
-      insertStmt.step();
-    } finally {
-      insertStmt.free();
-    }
+        shiftFields.business_date,
+        shiftFields.shift_definition_id,
+      ],
+    );
 
-    const orderIdResult = dbConnection.exec('SELECT last_insert_rowid() as id');
-    let orderId: number;
-
-    if (orderIdResult.length > 0 && orderIdResult[0].values.length > 0 && orderIdResult[0].values[0][0]) {
-      orderId = orderIdResult[0].values[0][0] as number;
-    } else {
-      const fallbackOrder = await this.db.get(
-        'SELECT id FROM dine_in_orders WHERE table_id = ? ORDER BY id DESC LIMIT 1',
-        [data.table_id],
-      );
-      if (!fallbackOrder || !fallbackOrder.id) {
-        throw new BadRequestException('Failed to create order: Could not retrieve order ID');
-      }
-      orderId = fallbackOrder.id;
-    }
-
+    const orderId = await this.db.getLastInsertRowId();
     if (!orderId || orderId === 0) {
       throw new BadRequestException('Failed to create order: Invalid order ID returned');
     }
 
-    // CRITICAL: Include order_type='dine_in' for proper domain separation
-    const stmt = this.db.getConnection().prepare(
-      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    try {
-      for (const item of data.items) {
-        stmt.bind([
+    for (const item of data.items) {
+      await this.db.run(
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
           orderId,
-          item.item_id,
+          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
           item.item_name,
           item.quantity,
           item.price,
           item.kitchen_id ?? null,
           item.service_type || 'dine-in',
           item.shelf_item_id ?? null,
-          'dine_in', // CRITICAL: Set order_type for domain separation
-        ]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+          'dine_in',
+        ],
+      );
     }
 
-    // CRITICAL: Force database save after direct prepare/step operations
-    // This ensures the order and items are persisted to disk immediately
-    await this.db.run("UPDATE dine_in_orders SET updated_at = datetime('now') WHERE id = ?", [orderId]);
-    console.log('[DINE_IN_ORDERS] ✅ Database saved after order creation');
+    console.log('[DINE_IN_ORDERS] ✅ Order created with id', orderId);
 
     // Decrease stock for shelf items
     try {
@@ -484,7 +456,7 @@ class DineInOrdersService {
   async updateStatus(id: number, status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'archived'): Promise<DineInOrder> {
     console.log('[DINE_IN_ORDERS] updateStatus: updating order', id, 'to status', status);
     await this.db.run(
-      'UPDATE dine_in_orders SET status = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE dine_in_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [status, id],
     );
     console.log('[DINE_IN_ORDERS] updateStatus: order', id, 'updated to', status);
@@ -537,43 +509,32 @@ class DineInOrdersService {
 
     // Update order
     await this.db.run(
-      'UPDATE dine_in_orders SET total = ?, globalDiscount = ?, note = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE dine_in_orders SET total = ?, globalDiscount = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [total, globalDiscountJson, data.note || null, id],
     );
 
     // Delete old order items (only for this order_type to prevent accidental deletion)
     await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [id]);
 
-    // Insert new order items
-    // CRITICAL: Include order_type='dine_in' for proper domain separation
-    const stmt = this.db.getConnection().prepare(
-      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    try {
-      for (const item of data.items) {
-        stmt.bind([
+    for (const item of data.items) {
+      await this.db.run(
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
           id,
-          item.item_id,
+          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
           item.item_name,
           item.quantity,
           item.price,
           item.kitchen_id ?? null,
           item.service_type || 'dine-in',
           item.shelf_item_id ?? null,
-          'dine_in', // CRITICAL: Set order_type for domain separation
-        ]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+          'dine_in',
+        ],
+      );
     }
 
-    // CRITICAL: Force database save after direct prepare/step operations
-    await this.db.run("UPDATE dine_in_orders SET updated_at = datetime('now') WHERE id = ?", [id]);
-    console.log('[DINE_IN_ORDERS] ✅ Database saved after order update');
+    console.log('[DINE_IN_ORDERS] ✅ Order updated with id', id);
 
     // Return the updated order with items
     const orderRow = await this.db.get(
@@ -702,7 +663,7 @@ class DineInOrdersService {
 
     for (const order of orders) {
       await this.db.run(
-        `UPDATE dine_in_orders SET table_id = ?, hall_id = ?, table_session_id = ?, updated_at = datetime("now") WHERE id = ?`,
+        `UPDATE dine_in_orders SET table_id = ?, hall_id = ?, table_session_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [targetTableId, targetHallId, targetSessionId, order.id],
       );
     }
@@ -773,7 +734,7 @@ class DineInOrdersService {
 
     for (const order of orders) {
       await this.db.run(
-        `UPDATE dine_in_orders SET table_id = ?, hall_id = ?, table_session_id = ?, updated_at = datetime("now") WHERE id = ?`,
+        `UPDATE dine_in_orders SET table_id = ?, hall_id = ?, table_session_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?`,
         [targetTableId, targetHallId, targetSessionId, order.id],
       );
     }
@@ -825,7 +786,7 @@ class DineInOrdersService {
       const newTotal = Math.max(0, subtotal - proportionalDiscount);
 
       await this.db.run(
-        'UPDATE dine_in_orders SET globalDiscount = ?, total = ?, updated_at = datetime("now") WHERE id = ?',
+        'UPDATE dine_in_orders SET globalDiscount = ?, total = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [globalDiscountJson, newTotal, order.id],
       );
     }

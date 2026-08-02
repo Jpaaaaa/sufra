@@ -571,7 +571,7 @@ export function usePickupOrderModal() {
     try {
       const payload: any = {
         items: selectedItems.map((si) => ({
-          item_id: si.item.id,
+          item_id: si.shelfItem?.id ? null : si.item.id,
           item_name: si.item.name,
           quantity: si.quantity,
           price: si.item.price,

@@ -188,11 +188,7 @@ class OffersService {
       'INSERT INTO combos (combo_name, combo_price, weekdays) VALUES (?, ?, ?)',
       [data.combo_name, data.combo_price, weekdaysJson],
     );
-    // sql.js last_insert_rowid() is unreliable; fetch the actual id instead
-    const inserted = await this.db.get(
-      'SELECT id FROM combos ORDER BY id DESC LIMIT 1',
-    );
-    const comboId = (inserted as { id: number })?.id;
+    const comboId = await this.db.getLastInsertRowId();
     if (!comboId) {
       throw new Error('Failed to retrieve created combo id');
     }
@@ -313,7 +309,7 @@ class OffersService {
           data.weekdays === null || data.weekdays.length === 0 ? null : JSON.stringify(data.weekdays),
         );
       }
-      updates.push('updated_at = datetime("now")');
+      updates.push('updated_at = CURRENT_TIMESTAMP');
       values.push(id);
 
       await this.db.run(
@@ -706,8 +702,6 @@ class OffersService {
 
   // ========== Helper: Get effective price for a product ==========
   async getEffectivePrice(product_id: number): Promise<number | null> {
-    const conn = this.db.getConnection();
-    
     // 1. Check daily deal (highest priority)
     const dailyDeal = await this.getActiveDailyDeal();
     if (dailyDeal && dailyDeal.product_id === product_id) {

@@ -234,6 +234,40 @@ contextBridge.exposeInMainWorld('sufra', {
     dailySummary: () => invoke('reports:dailySummary'),
     getReport: (period: string, date: string) => invoke('reports:getReport', period, date),
   },
+  settings: {
+    getShiftHours: () => invoke('settings:getShiftHours'),
+    updateShiftHours: (data: {
+      shift_mode?: 'single' | 'multi';
+      business_day_start_time?: string;
+      shift_start_time?: string;
+      shift_end_time?: string;
+    }) => invoke('settings:updateShiftHours', data),
+    getShiftDefinitions: () => invoke('settings:getShiftDefinitions'),
+    createShiftDefinition: (data: {
+      name: string;
+      start_time: string;
+      end_time: string;
+      sort_order?: number;
+    }) => invoke('settings:createShiftDefinition', data),
+    updateShiftDefinition: (
+      id: number,
+      data: {
+        name?: string;
+        start_time?: string;
+        end_time?: string;
+        sort_order?: number;
+        is_active?: boolean;
+      },
+    ) => invoke('settings:updateShiftDefinition', id, data),
+    removeShiftDefinition: (id: number) => invoke('settings:removeShiftDefinition', id),
+    replaceShiftDefinitions: (shifts: Array<{
+      id?: number;
+      name: string;
+      start_time: string;
+      end_time: string;
+      sort_order?: number;
+    }>) => invoke('settings:replaceShiftDefinitions', shifts),
+  },
   export: {
     pdf: (exportData: {
       type: 'daily' | 'weekly' | 'monthly' | 'yearly';
@@ -374,6 +408,52 @@ declare global {
       reports: {
         dailySummary: () => Promise<any>;
         getReport: (period: string, date: string) => Promise<any>;
+      };
+      settings: {
+        getShiftHours: () => Promise<{
+          shift_mode: 'single' | 'multi';
+          business_day_start_time: string;
+          shift_start_time: string;
+          shift_end_time: string;
+          current_business_date: string;
+        }>;
+        updateShiftHours: (data: {
+          shift_mode?: 'single' | 'multi';
+          business_day_start_time?: string;
+          shift_start_time?: string;
+          shift_end_time?: string;
+        }) => Promise<{
+          shift_mode: 'single' | 'multi';
+          business_day_start_time: string;
+          shift_start_time: string;
+          shift_end_time: string;
+          current_business_date: string;
+        }>;
+        getShiftDefinitions: () => Promise<Array<{
+          id: number;
+          name: string;
+          start_time: string;
+          end_time: string;
+          sort_order: number;
+          is_active: boolean;
+        }>>;
+        createShiftDefinition: (data: {
+          name: string;
+          start_time: string;
+          end_time: string;
+          sort_order?: number;
+        }) => Promise<unknown>;
+        updateShiftDefinition: (
+          id: number,
+          data: {
+            name?: string;
+            start_time?: string;
+            end_time?: string;
+            sort_order?: number;
+            is_active?: boolean;
+          },
+        ) => Promise<unknown>;
+        removeShiftDefinition: (id: number) => Promise<unknown>;
       };
       halls: {
         findAll: () => Promise<any[]>;

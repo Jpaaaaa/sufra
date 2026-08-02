@@ -60,7 +60,7 @@ class UsersService {
     const customer_free_order = isCustomer && dto.customer_free_order ? 1 : 0;
 
     await this.db.run(
-      'INSERT INTO users (username, password_hash, role, require_captain_approval, customer_free_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, datetime("now"), datetime("now"))',
+      'INSERT INTO users (username, password_hash, role, require_captain_approval, customer_free_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
       [dto.username, password_hash, dto.role, require_captain_approval, customer_free_order],
     );
     const row = await this.db.get(
@@ -135,7 +135,7 @@ class UsersService {
       return existing;
     }
 
-    updates.push('updated_at = datetime("now")');
+    updates.push('updated_at = CURRENT_TIMESTAMP');
     values.push(id);
 
     await this.db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);

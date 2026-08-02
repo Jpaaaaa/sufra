@@ -1,9 +1,11 @@
 import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
+import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
+import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
 
 export interface PickupOrderItem {
-  item_id: number;
+  item_id: number | null;
   item_name: string;
   quantity: number;
   price: number;
@@ -206,74 +208,43 @@ class PickupOrdersService {
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
+    const shiftFields = await resolveOrderShiftFields();
 
-    const dbConnection = this.db.getConnection();
-    const insertStmt = dbConnection.prepare(
-      `INSERT INTO pickup_orders (status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, created_by_user_id) 
-       VALUES ('pending', ?, 0, ?, ?, ?, ?, datetime('now', 'localtime'), ?)`,
-    );
-
-    try {
-      insertStmt.bind([
+    await this.db.run(
+      `INSERT INTO pickup_orders (status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, created_by_user_id, business_date, shift_definition_id) 
+       VALUES ('pending', ?, 0, ?, ?, ?, ?, datetime('now', 'localtime'), ?, ?, ?)`,
+      [
         total,
         globalDiscountJson,
         data.note || null,
         (data.customer_name && data.customer_name.trim()) ? data.customer_name.trim() : null,
         (data.customer_phone && data.customer_phone.trim()) ? data.customer_phone.trim() : null,
         data.userId ?? null,
-      ]);
-      insertStmt.step();
-    } finally {
-      insertStmt.free();
-    }
+        shiftFields.business_date,
+        shiftFields.shift_definition_id,
+      ],
+    );
 
-    try {
-      await this.db.run('SELECT 1');
-    } catch (e) {}
-
-    const orderIdResult = dbConnection.exec('SELECT last_insert_rowid() as id');
-    let orderId: number;
-
-    if (orderIdResult.length > 0 && orderIdResult[0].values.length > 0 && orderIdResult[0].values[0][0]) {
-      orderId = orderIdResult[0].values[0][0] as number;
-    } else {
-      const fallbackOrder = await this.db.get(
-        'SELECT id FROM pickup_orders ORDER BY id DESC LIMIT 1',
-        [],
-      );
-      if (!fallbackOrder || !fallbackOrder.id) {
-        throw new BadRequestException('Failed to create order: Could not retrieve order ID');
-      }
-      orderId = fallbackOrder.id;
-    }
-
+    const orderId = await this.db.getLastInsertRowId();
     if (!orderId || orderId === 0) {
       throw new BadRequestException('Failed to create order: Invalid order ID returned');
     }
 
-    // CRITICAL: Include order_type='pickup' for proper domain separation
-    const stmt = this.db.getConnection().prepare(
-      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    try {
-      for (const item of data.items) {
-        stmt.bind([
+    for (const item of data.items) {
+      await this.db.run(
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
           orderId,
-          item.item_id,
+          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
           item.item_name,
           item.quantity,
           item.price,
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
-          'pickup', // CRITICAL: Set order_type for domain separation
-        ]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+          'pickup',
+        ],
+      );
     }
 
     // Decrease stock for shelf items
@@ -336,7 +307,7 @@ class PickupOrdersService {
    */
   async updateStatus(id: number, status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'archived'): Promise<PickupOrder> {
     await this.db.run(
-      'UPDATE pickup_orders SET status = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE pickup_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [status, id],
     );
 
@@ -394,37 +365,28 @@ class PickupOrdersService {
 
     // Update order
     await this.db.run(
-      'UPDATE pickup_orders SET total = ?, globalDiscount = ?, note = ?, customer_name = ?, customer_phone = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE pickup_orders SET total = ?, globalDiscount = ?, note = ?, customer_name = ?, customer_phone = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [total, globalDiscountJson, data.note || null, customerName, customerPhone, id],
     );
 
     // Delete old order items (only for this order_type to prevent accidental deletion)
     await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'pickup'", [id]);
 
-    // Insert new order items
-    // CRITICAL: Include order_type='pickup' for proper domain separation
-    const stmt = this.db.getConnection().prepare(
-      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    try {
-      for (const item of data.items) {
-        stmt.bind([
+    for (const item of data.items) {
+      await this.db.run(
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
           id,
-          item.item_id,
+          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
           item.item_name,
           item.quantity,
           item.price,
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
-          'pickup', // CRITICAL: Set order_type for domain separation
-        ]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+          'pickup',
+        ],
+      );
     }
 
     // Return the updated order with items

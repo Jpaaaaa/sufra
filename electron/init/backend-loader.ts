@@ -151,6 +151,13 @@ export let businessDayGetCurrentBusinessDay: () => Promise<any>;
 export let businessDayStartNewBusinessDay: (...args: any[]) => Promise<any>;
 export let businessDayEnsureBusinessDayExists: () => Promise<any>;
 export let businessDayGetAllBusinessDays: () => Promise<any>;
+export let settingsGetShiftHours: () => Promise<any>;
+export let settingsUpdateShiftHours: (...args: any[]) => Promise<any>;
+export let settingsGetShiftDefinitions: () => Promise<any>;
+export let settingsCreateShiftDefinition: (...args: any[]) => Promise<any>;
+export let settingsUpdateShiftDefinition: (...args: any[]) => Promise<any>;
+export let settingsRemoveShiftDefinition: (...args: any[]) => Promise<any>;
+export let settingsReplaceShiftDefinitions: (...args: any[]) => Promise<any>;
 
 export function loadBackendModules(): void {
   try {
@@ -322,6 +329,15 @@ export function loadBackendModules(): void {
     businessDayStartNewBusinessDay = businessDayModule.startNewBusinessDay;
     businessDayEnsureBusinessDayExists = businessDayModule.ensureBusinessDayExists;
     businessDayGetAllBusinessDays = businessDayModule.getAllBusinessDays;
+    const settingsModule = requireBackendModule('modules/settings/settings.service');
+    settingsGetShiftHours = settingsModule.getShiftHours;
+    settingsUpdateShiftHours = settingsModule.updateShiftHours;
+    const shiftDefsModule = requireBackendModule('modules/settings/shift-definitions.service');
+    settingsGetShiftDefinitions = () => shiftDefsModule.getShiftDefinitions(false);
+    settingsCreateShiftDefinition = shiftDefsModule.createShiftDefinition;
+    settingsUpdateShiftDefinition = shiftDefsModule.updateShiftDefinition;
+    settingsRemoveShiftDefinition = shiftDefsModule.removeShiftDefinition;
+    settingsReplaceShiftDefinitions = shiftDefsModule.replaceShiftDefinitions;
     console.log('[MAIN] ✓ Backend modules loaded successfully');
   } catch (error: any) {
     console.error('[MAIN] ✗ Failed to load backend modules:', error);

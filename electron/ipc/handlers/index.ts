@@ -12,6 +12,7 @@ import { registerShelvesHandlers } from './shelves';
 import { registerShiftsHandlers } from './shifts';
 import { registerFinanceHandlers } from './finance';
 import { registerSupportHandlers } from './support';
+import { registerSettingsHandlers } from './settings';
 
 export function setupIpcHandlers() {
   console.log('[IPC] Setting up IPC handlers...');
@@ -25,6 +26,7 @@ export function setupIpcHandlers() {
   registerShelvesHandlers();
   registerShiftsHandlers();
   registerFinanceHandlers();
+  registerSettingsHandlers();
   registerSupportHandlers();
   console.log('[IPC] ✓ IPC handlers registered');
 }

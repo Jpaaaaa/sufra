@@ -806,6 +806,34 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
       }
     }
 
+    // Settings endpoints
+    if (resource === 'settings') {
+      if (method === 'GET' && idOrAction === 'shift-hours') {
+        return await sufra.settings?.getShiftHours();
+      }
+      if ((method === 'PUT' || method === 'PATCH') && idOrAction === 'shift-hours') {
+        return await sufra.settings?.updateShiftHours(body);
+      }
+      if (method === 'GET' && idOrAction === 'shift-definitions') {
+        return await sufra.settings?.getShiftDefinitions();
+      }
+      if (method === 'POST' && idOrAction === 'shift-definitions') {
+        return await sufra.settings?.createShiftDefinition(body);
+      }
+      if ((method === 'PUT' || method === 'PATCH') && idOrAction === 'shift-definitions' && rest[0] === 'bulk') {
+        return await sufra.settings?.replaceShiftDefinitions(body?.shifts ?? []);
+      }
+      if ((method === 'PUT' || method === 'PATCH') && idOrAction === 'shift-definitions' && rest[0]) {
+        return await sufra.settings?.updateShiftDefinition(parseInt(rest[0], 10), body);
+      }
+      if (method === 'DELETE' && idOrAction === 'shift-definitions' && rest[0] === 'bulk') {
+        return await sufra.settings?.replaceShiftDefinitions([]);
+      }
+      if (method === 'DELETE' && idOrAction === 'shift-definitions' && rest[0]) {
+        return await sufra.settings?.removeShiftDefinition(parseInt(rest[0], 10));
+      }
+    }
+
     // Printers endpoints
     if (resource === 'printers') {
       if (method === 'GET') {

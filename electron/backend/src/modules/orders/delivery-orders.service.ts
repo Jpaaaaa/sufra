@@ -1,12 +1,14 @@
 import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
+import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
+import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
 
 const DELIVERY_ORDER_SELECT =
   'id, customer_name, customer_phone, customer_address, status, total, discount, globalDiscount, note, created_at, updated_at, delivery_platform_id, delivery_platform_name, delivery_platform_commission_percent';
 
 export interface DeliveryOrderItem {
-  item_id: number;
+  item_id: number | null;
   item_name: string;
   quantity: number;
   price: number;
@@ -230,14 +232,12 @@ class DeliveryOrdersService {
       deliveryPlatformPct = (p as { commission_percent: number }).commission_percent;
     }
 
-    const dbConnection = this.db.getConnection();
-    const insertStmt = dbConnection.prepare(
-      `INSERT INTO delivery_orders (customer_name, customer_phone, customer_address, status, total, discount, globalDiscount, note, created_at, created_by_user_id, delivery_platform_id, delivery_platform_name, delivery_platform_commission_percent) 
-       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?, ?, ?, ?)`,
-    );
+    const shiftFields = await resolveOrderShiftFields();
 
-    try {
-      insertStmt.bind([
+    await this.db.run(
+      `INSERT INTO delivery_orders (customer_name, customer_phone, customer_address, status, total, discount, globalDiscount, note, created_at, created_by_user_id, delivery_platform_id, delivery_platform_name, delivery_platform_commission_percent, business_date, shift_definition_id) 
+       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?, ?, ?, ?, ?, ?)`,
+      [
         (data.customer_name ?? '').trim(),
         (data.customer_phone ?? '').trim(),
         (data.customer_address ?? '').trim(),
@@ -248,59 +248,31 @@ class DeliveryOrdersService {
         deliveryPlatformId,
         deliveryPlatformName,
         deliveryPlatformPct,
-      ]);
-      insertStmt.step();
-    } finally {
-      insertStmt.free();
-    }
+        shiftFields.business_date,
+        shiftFields.shift_definition_id,
+      ],
+    );
 
-    try {
-      await this.db.run('SELECT 1');
-    } catch (e) {}
-
-    const orderIdResult = dbConnection.exec('SELECT last_insert_rowid() as id');
-    let orderId: number;
-
-    if (orderIdResult.length > 0 && orderIdResult[0].values.length > 0 && orderIdResult[0].values[0][0]) {
-      orderId = orderIdResult[0].values[0][0] as number;
-    } else {
-      const fallbackOrder = await this.db.get(
-        'SELECT id FROM delivery_orders ORDER BY id DESC LIMIT 1',
-        [],
-      );
-      if (!fallbackOrder || !fallbackOrder.id) {
-        throw new BadRequestException('Failed to create order: Could not retrieve order ID');
-      }
-      orderId = fallbackOrder.id;
-    }
-
+    const orderId = await this.db.getLastInsertRowId();
     if (!orderId || orderId === 0) {
       throw new BadRequestException('Failed to create order: Invalid order ID returned');
     }
 
-    // CRITICAL: Include order_type='delivery' for proper domain separation
-    const stmt = this.db.getConnection().prepare(
-      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    try {
-      for (const item of data.items) {
-        stmt.bind([
+    for (const item of data.items) {
+      await this.db.run(
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
           orderId,
-          item.item_id,
+          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
           item.item_name,
           item.quantity,
           item.price,
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
-          'delivery', // CRITICAL: Set order_type for domain separation
-        ]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+          'delivery',
+        ],
+      );
     }
 
     // Decrease stock for shelf items
@@ -363,7 +335,7 @@ class DeliveryOrdersService {
    */
   async updateStatus(id: number, status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'archived'): Promise<DeliveryOrder> {
     await this.db.run(
-      'UPDATE delivery_orders SET status = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE delivery_orders SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [status, id],
     );
 
@@ -419,7 +391,7 @@ class DeliveryOrdersService {
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
 
     // Build update query for customer fields (only update if provided)
-    const updateFields: string[] = ['total = ?', 'globalDiscount = ?', 'note = ?', "updated_at = datetime('now')"];
+    const updateFields: string[] = ['total = ?', 'globalDiscount = ?', 'note = ?', "updated_at = CURRENT_TIMESTAMP"];
     const updateValues: any[] = [total, globalDiscountJson, data.note || null];
 
     if (data.customer_name !== undefined) {
@@ -464,30 +436,21 @@ class DeliveryOrdersService {
     // Delete old order items (only for this order_type to prevent accidental deletion)
     await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'delivery'", [id]);
 
-    // Insert new order items
-    // CRITICAL: Include order_type='delivery' for proper domain separation
-    const stmt = this.db.getConnection().prepare(
-      `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    );
-
-    try {
-      for (const item of data.items) {
-        stmt.bind([
+    for (const item of data.items) {
+      await this.db.run(
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        [
           id,
-          item.item_id,
+          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
           item.item_name,
           item.quantity,
           item.price,
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
-          'delivery', // CRITICAL: Set order_type for domain separation
-        ]);
-        stmt.step();
-        stmt.reset();
-      }
-    } finally {
-      stmt.free();
+          'delivery',
+        ],
+      );
     }
 
     // Return the updated order with items

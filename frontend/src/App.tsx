@@ -31,6 +31,7 @@ const SettingsUsersPage = lazy(() => import('./pages/settings/SettingsUsersPage'
 const SettingsServerPage = lazy(() => import('./pages/settings/SettingsServerPage'));
 const SettingsRecipePrintPage = lazy(() => import('./pages/settings/SettingsRecipePrintPage'));
 const SettingsLicenseUpdatesPage = lazy(() => import('./pages/settings/SettingsLicenseUpdatesPage'));
+const SettingsShiftPage = lazy(() => import('./pages/settings/SettingsShiftPage'));
 const MarketingPage = lazy(() => import('./pages/marketing/MarketingPage'));
 const RecipesPage = lazy(() => import('./pages/recipes/RecipesPage'));
 const DiningPage = lazy(() => import('./pages/dining/DiningPage'));
@@ -108,6 +109,7 @@ function App() {
                     <Route path="/settings/activity-log" element={<Navigate to="/settings" replace />} />
                     <Route path="/settings/recipe-print" element={<SettingsRecipePrintPage />} />
                     <Route path="/settings/license-updates" element={<SettingsLicenseUpdatesPage />} />
+                    <Route path="/settings/shift" element={<SettingsShiftPage />} />
                     <Route path="/marketing" element={<MarketingPage />} />
                     <Route path="/recipes" element={<RecipesPage />} />
                     <Route path="/dining" element={<DiningPage />} />

@@ -12,11 +12,13 @@ type SettingsTabLabelKey =
   | 'tabRecipePrint'
   | 'tabServer'
   | 'tabUsers'
+  | 'tabShift'
   | 'tabLicenseUpdates';
 
 const tabs: { key: SettingsTabKey; labelKey: SettingsTabLabelKey; href: string; roles?: string[] }[] = [
   { key: 'printers', labelKey: 'tabPrinters', href: '/settings', roles: ['admin', 'manager'] },
   { key: 'recipe-print', labelKey: 'tabRecipePrint', href: '/settings/recipe-print', roles: ['admin', 'manager'] },
+  { key: 'shift', labelKey: 'tabShift', href: '/settings/shift', roles: ['admin', 'manager'] },
   { key: 'server', labelKey: 'tabServer', href: '/settings/server' },
   { key: 'users', labelKey: 'tabUsers', href: '/settings/users', roles: ['admin'] },
   {

@@ -138,16 +138,20 @@ export class TablesService {
     
     console.log(`[TablesService] Attempting INSERT: ${insertSql} with params:`, insertParams);
     
-    // Insert the table - do NOT rely on lastInsertRowId (unreliable in sql.js)
+    // Insert the table
     await this.db.run(insertSql, insertParams);
     console.log('[TablesService] INSERT completed successfully');
-    
-    // Fetch the created table by (number, hall_id) - NOT by id
-    // This is reliable and doesn't depend on lastInsertRowId
-    const row = await this.db.get(
-      'SELECT id, number, name, hall_id, created_at, updated_at FROM tables WHERE number = ? AND hall_id = ? ORDER BY id DESC LIMIT 1',
-      [tableNumber, hall_id]
-    );
+
+    const insertedId = await this.db.getLastInsertRowId();
+    const row = insertedId
+      ? await this.db.get(
+          'SELECT id, number, name, hall_id, created_at, updated_at FROM tables WHERE id = ?',
+          [insertedId],
+        )
+      : await this.db.get(
+          'SELECT id, number, name, hall_id, created_at, updated_at FROM tables WHERE number = ? AND hall_id = ? ORDER BY id DESC LIMIT 1',
+          [tableNumber, hall_id],
+        );
     
     if (row) {
       // Found the table - return it
@@ -205,7 +209,7 @@ export class TablesService {
     const row = await this.db.get(
       `SELECT id FROM table_locks 
        WHERE table_id = ? 
-       AND (expires_at IS NULL OR expires_at > datetime('now'))`,
+       AND (expires_at IS NULL OR expires_at > CURRENT_TIMESTAMP)`,
       [tableId],
     );
     return !!row;

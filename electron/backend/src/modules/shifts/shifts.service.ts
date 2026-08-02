@@ -1,5 +1,7 @@
 import { BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
+import { getShiftConfig } from '../settings/settings.service';
+import { computeBusinessDate, getCurrentBusinessDate } from '../../utils/business-date';
 
 export interface Shift {
   id: number;
@@ -29,7 +31,7 @@ export interface ShiftSummary {
 class ShiftsService {
   constructor(private readonly db: DatabaseService) {}
 
-  /** Map DB row to Shift (uses localtime for business day = calendar day). */
+  /** Map DB row to Shift (business day from configured shift start). */
   private rowToShift(row: any): Shift {
     return {
       id: row.id,
@@ -47,37 +49,39 @@ class ShiftsService {
   }
 
   /**
-   * Get today's shift (business day = calendar day, local time).
-   * If today has an open shift, return it. If today has no shift yet, create one.
-   * If today's shift was already closed (end-of-day), return null.
+   * Get the active shift for the current business day (overnight-aware).
    */
   async getActiveShift(): Promise<Shift | null> {
-    // Today's open shift: same calendar day (localtime) and status = open
-    const row = await this.db.get(
+    const { business_day_start_time: shiftStart } = await getShiftConfig();
+    const currentBd = getCurrentBusinessDate(shiftStart);
+
+    const openRows = await this.db.all(
       `SELECT id, started_by, ended_by, start_time, end_time, status, 
               total_sales, total_orders, total_items_sold, payment_breakdown, created_at
        FROM shifts 
-       WHERE status = 'open' 
-         AND date(start_time, 'localtime') = date('now', 'localtime')
-       ORDER BY start_time DESC 
-       LIMIT 1`,
+       WHERE status = 'open'
+       ORDER BY start_time DESC`,
     );
-    if (row) {
-      return this.rowToShift(row);
+    const openForBd = (openRows || []).find(
+      (row: any) => computeBusinessDate(row.start_time, shiftStart) === currentBd,
+    );
+    if (openForBd) {
+      return this.rowToShift(openForBd);
     }
 
-    // Check if today already has a closed shift (day was ended)
-    const closedToday = await this.db.get(
-      `SELECT id FROM shifts 
-       WHERE status = 'closed' 
-         AND date(start_time, 'localtime') = date('now', 'localtime')
-       LIMIT 1`,
+    const closedRows = await this.db.all(
+      `SELECT id, start_time FROM shifts 
+       WHERE status = 'closed'
+       ORDER BY end_time DESC
+       LIMIT 50`,
     );
-    if (closedToday) {
+    const closedForBd = (closedRows || []).find(
+      (row: any) => computeBusinessDate(row.start_time, shiftStart) === currentBd,
+    );
+    if (closedForBd) {
       return null;
     }
 
-    // No shift for today: auto-create one (new business day starts automatically)
     await this.db.run(
       `INSERT INTO shifts (started_by, start_time, status) 
        VALUES (0, datetime('now', 'localtime'), 'open')`,
@@ -86,8 +90,7 @@ class ShiftsService {
       `SELECT id, started_by, ended_by, start_time, end_time, status, 
               total_sales, total_orders, total_items_sold, payment_breakdown, created_at
        FROM shifts 
-       WHERE status = 'open' 
-         AND date(start_time, 'localtime') = date('now', 'localtime')
+       WHERE status = 'open'
        ORDER BY start_time DESC LIMIT 1`,
     );
     return created ? this.rowToShift(created) : null;
@@ -178,15 +181,15 @@ class ShiftsService {
     const orders = await this.db.all(
       `SELECT id, total, globalDiscount, created_at, 'dine_in' as order_type
        FROM dine_in_orders 
-       WHERE shift_id = ? AND status = 'completed'
+       WHERE shift_id = ? AND status IN ('completed', 'archived')
        UNION ALL
        SELECT id, total, globalDiscount, created_at, 'pickup' as order_type
        FROM pickup_orders 
-       WHERE shift_id = ? AND status = 'completed'
+       WHERE shift_id = ? AND status IN ('completed', 'archived')
        UNION ALL
        SELECT id, total, globalDiscount, created_at, 'delivery' as order_type
        FROM delivery_orders 
-       WHERE shift_id = ? AND status = 'delivered'`,
+       WHERE shift_id = ? AND status IN ('completed', 'archived')`,
       [shiftId, shiftId, shiftId],
     );
 
@@ -218,7 +221,7 @@ class ShiftsService {
     // Count items from order_items table (using order_type to identify the source)
     if (dineInIds.length > 0) {
       const dineInItems = await this.db.all(
-        `SELECT SUM(quantity) as total FROM order_items WHERE order_id IN (${dineInIds.join(',')}) AND order_type = 'dine-in'`,
+        `SELECT SUM(quantity) as total FROM order_items WHERE order_id IN (${dineInIds.join(',')}) AND order_type = 'dine_in'`,
       );
       totalItemsSold += dineInItems[0]?.total || 0;
     }
@@ -291,7 +294,7 @@ class ShiftsService {
   }
 
   async getShiftsByBusinessDay(businessDayStart: string, businessDayEnd: string | null): Promise<Shift[]> {
-    const endCondition = businessDayEnd || "datetime('now')";
+    const endCondition = businessDayEnd || "CURRENT_TIMESTAMP";
     const endParam = businessDayEnd ? [businessDayStart, businessDayEnd] : [businessDayStart];
 
     const rows = await this.db.all(

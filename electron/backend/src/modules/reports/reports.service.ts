@@ -1,30 +1,48 @@
 import { BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
+import { getCurrentBusinessDateFromSettings } from '../settings/resolve-order-shift';
+import { getShiftConfig } from '../settings/settings.service';
+import { getShiftDefinitions } from '../settings/shift-definitions.service';
 import { ExportPdfDto } from './dto/export-pdf.dto';
 import { generateReportExcel } from './generate-report-excel';
 
 class ReportsService {
   constructor(private readonly db: DatabaseService) {}
 
+  /** Map query aliases to order_items.order_type values stored in DB */
+  private orderTypeForItems(orderType: string): string {
+    if (orderType === 'dine-in' || orderType === 'dine_in') return 'dine_in';
+    return orderType;
+  }
+
   /**
-   * Get orders from all order tables by date range (real time - no shift).
+   * Get orders from all order tables by business_date range.
    */
-  private async getOrdersByDateRange(dateStart: string, dateEnd: string): Promise<any[]> {
+  private async getOrdersByBusinessDateRange(dateStart: string, dateEnd: string): Promise<any[]> {
     const orders = await this.db.all(
-      `SELECT id, total, globalDiscount, created_at, status, 'dine_in' as order_type, created_by_user_id
+      `SELECT id, total, globalDiscount, created_at, business_date, shift_definition_id, status, 'dine_in' as order_type, created_by_user_id
        FROM dine_in_orders 
-       WHERE created_at >= ? AND created_at <= ? AND status = 'completed'
+       WHERE business_date >= ? AND business_date <= ? AND status IN ('completed', 'archived')
        UNION ALL
-       SELECT id, total, globalDiscount, created_at, status, 'pickup' as order_type, created_by_user_id
+       SELECT id, total, globalDiscount, created_at, business_date, shift_definition_id, status, 'pickup' as order_type, created_by_user_id
        FROM pickup_orders 
-       WHERE created_at >= ? AND created_at <= ? AND status IN ('completed', 'archived')
+       WHERE business_date >= ? AND business_date <= ? AND status IN ('completed', 'archived')
        UNION ALL
-       SELECT id, total, globalDiscount, created_at, status, 'delivery' as order_type, created_by_user_id
+       SELECT id, total, globalDiscount, created_at, business_date, shift_definition_id, status, 'delivery' as order_type, created_by_user_id
        FROM delivery_orders 
-       WHERE created_at >= ? AND created_at <= ? AND status IN ('completed', 'archived')`,
+       WHERE business_date >= ? AND business_date <= ? AND status IN ('completed', 'archived')`,
       [dateStart, dateEnd, dateStart, dateEnd, dateStart, dateEnd],
     );
     return orders || [];
+  }
+
+  private orderBusinessDateKey(order: { business_date?: string; created_at?: string }): string {
+    if (order.business_date) return order.business_date;
+    const d = new Date(order.created_at || '');
+    return (
+      `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-` +
+      `${String(d.getDate()).padStart(2, '0')}`
+    );
   }
 
   async getDailySummary(): Promise<{
@@ -34,33 +52,32 @@ class ReportsService {
     emptyTables: number;
     printerStatus: 'success' | 'error';
   }> {
-    // Today by real time (local date)
-    const todayStart = "date('now', 'localtime') || ' 00:00:00'";
+    const today = await getCurrentBusinessDateFromSettings();
     const orders = await this.db.all(
       `SELECT total, globalDiscount 
        FROM dine_in_orders 
-       WHERE date(created_at) = date('now', 'localtime') AND status = 'completed'
+       WHERE business_date = ? AND status IN ('completed', 'archived')
        UNION ALL
        SELECT total, globalDiscount 
        FROM pickup_orders 
-       WHERE date(created_at) = date('now', 'localtime') AND status IN ('completed', 'archived')
+       WHERE business_date = ? AND status IN ('completed', 'archived')
        UNION ALL
        SELECT total, globalDiscount 
        FROM delivery_orders 
-       WHERE date(created_at) = date('now', 'localtime') AND status IN ('completed', 'archived')`,
+       WHERE business_date = ? AND status IN ('completed', 'archived')`,
+      [today, today, today],
     );
 
-    // Shelf sales for today
     const shelfSales = await this.db.all(
       `SELECT (quantity * price) as total
        FROM shelf_sales
-       WHERE date(created_at) = date('now', 'localtime')`,
+       WHERE business_date = ?`,
+      [today],
     ) || [];
 
     // Calculate total sales and discounts using globalDiscount?.amount || 0
     let totalSales = 0;
     let ordersCount = orders.length;
-    let shelfSaleCount = shelfSales.length;
 
     orders.forEach((order: any) => {
       let discountAmount = 0;
@@ -115,7 +132,7 @@ class ReportsService {
 
     return {
       totalSales: totalSales,
-      ordersCount: ordersCount + shelfSaleCount, // Include shelf sales in count
+      ordersCount: ordersCount,
       occupiedTables,
       emptyTables,
       printerStatus,
@@ -144,43 +161,60 @@ class ReportsService {
 
     if (period === 'daily') {
       const orders = await this.db.all(
-        `SELECT id, total, globalDiscount, created_at, status, 'dine_in' as order_type, created_by_user_id
+        `SELECT id, total, globalDiscount, created_at, business_date, shift_definition_id, status, 'dine_in' as order_type, created_by_user_id
          FROM dine_in_orders 
-         WHERE date(created_at) = ? AND status = 'completed'
+         WHERE business_date = ? AND status IN ('completed', 'archived')
          UNION ALL
-         SELECT id, total, globalDiscount, created_at, status, 'pickup' as order_type, created_by_user_id
+         SELECT id, total, globalDiscount, created_at, business_date, shift_definition_id, status, 'pickup' as order_type, created_by_user_id
          FROM pickup_orders 
-         WHERE date(created_at) = ? AND status IN ('completed', 'archived')
+         WHERE business_date = ? AND status IN ('completed', 'archived')
          UNION ALL
-         SELECT id, total, globalDiscount, created_at, status, 'delivery' as order_type, created_by_user_id
+         SELECT id, total, globalDiscount, created_at, business_date, shift_definition_id, status, 'delivery' as order_type, created_by_user_id
          FROM delivery_orders 
-         WHERE date(created_at) = ? AND status IN ('completed', 'archived')`,
+         WHERE business_date = ? AND status IN ('completed', 'archived')`,
         [dateStr, dateStr, dateStr],
       );
-      return this.processOrdersForReport(period, orders || [], dateStr);
+      const result = await this.processOrdersForReport(period, orders || [], dateStr);
+      const config = await getShiftConfig();
+      if (config.shift_mode === 'multi') {
+        result.shiftBreakdown = await this.buildShiftBreakdown(orders || [], dateStr);
+        result.shiftBreakdownByDay = await this.buildShiftBreakdownByDay(orders || []);
+        result.shiftBreakdownTotals = result.shiftBreakdown;
+      }
+      return result;
     }
 
     if (period === 'weekly') {
-      const weekEnd = new Date(dateStr);
-      weekEnd.setHours(23, 59, 59, 999);
+      const weekEnd = new Date(`${dateStr}T12:00:00`);
       const weekStart = new Date(weekEnd);
       weekStart.setDate(weekStart.getDate() - 6);
-      weekStart.setHours(0, 0, 0, 0);
-      const orders = await this.getOrdersByDateRange(weekStart.toISOString(), weekEnd.toISOString());
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const startStr = `${weekStart.getFullYear()}-${pad(weekStart.getMonth() + 1)}-${pad(weekStart.getDate())}`;
+      const orders = await this.getOrdersByBusinessDateRange(startStr, dateStr);
       return this.processWeeklyFromOrders(orders, dateStr);
     }
 
     if (period === 'monthly') {
       const monthStart = new Date(date.getFullYear(), date.getMonth(), 1);
-      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0, 23, 59, 59, 999);
-      const orders = await this.getOrdersByDateRange(monthStart.toISOString(), monthEnd.toISOString());
+      const monthEnd = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const startStr = `${monthStart.getFullYear()}-${pad(monthStart.getMonth() + 1)}-${pad(monthStart.getDate())}`;
+      const endStr = `${monthEnd.getFullYear()}-${pad(monthEnd.getMonth() + 1)}-${pad(monthEnd.getDate())}`;
+      const orders = await this.getOrdersByBusinessDateRange(startStr, endStr);
+      const config = await getShiftConfig();
+      if (config.shift_mode === 'multi') {
+        return this.processMonthlyDaysFromOrders(orders, monthStart);
+      }
       return this.processMonthlyFromOrders(orders, monthStart);
     }
 
-    // Yearly
-    const yearStart = new Date(date.getFullYear(), 0, 1);
-    const yearEnd = new Date(date.getFullYear(), 11, 31, 23, 59, 59, 999);
-    const orders = await this.getOrdersByDateRange(yearStart.toISOString(), yearEnd.toISOString());
+    const yearStart = `${date.getFullYear()}-01-01`;
+    const yearEnd = `${date.getFullYear()}-12-31`;
+    const orders = await this.getOrdersByBusinessDateRange(yearStart, yearEnd);
+    const config = await getShiftConfig();
+    if (config.shift_mode === 'multi') {
+      return this.processYearlyMultiFromOrders(orders, date.getFullYear());
+    }
     return this.processYearlyFromOrders(orders, date.getFullYear());
   }
 
@@ -208,25 +242,18 @@ class ReportsService {
     // Process each business day and get its orders
     const businessDayData = await Promise.all(businessDays.map(async (businessDay) => {
       try {
-        // For active business day, use datetime('now') as end, otherwise use end_at
+        // For active business day, use CURRENT_TIMESTAMP as end, otherwise use end_at
         const endDate = businessDay.is_active === 1
-          ? "datetime('now')"
-          : (businessDay.end_at || "datetime('now')");
+          ? "CURRENT_TIMESTAMP"
+          : (businessDay.end_at || "CURRENT_TIMESTAMP");
 
         // Query orders for this specific business day
-        // Use parameterized query for start_at, but end_at might be datetime('now')
-        const endDateCondition = endDate === "datetime('now')"
-          ? "datetime('now')"
+        // Use parameterized query for start_at, but end_at might be CURRENT_TIMESTAMP
+        const endDateCondition = endDate === "CURRENT_TIMESTAMP"
+          ? "CURRENT_TIMESTAMP"
           : "?";
 
-        const ordersQuery = `SELECT id, table_id, 'dine-in' as order_type, status, total, globalDiscount, 
-              created_at, updated_at
-           FROM orders
-           WHERE status = 'completed'
-             AND created_at >= ?
-             AND created_at <= ${endDateCondition}
-           UNION ALL
-           SELECT id, NULL as table_id, 'pickup' as order_type, status, total, globalDiscount,
+        const ordersQuery = `SELECT id, NULL as table_id, 'pickup' as order_type, status, total, globalDiscount,
               created_at, updated_at
            FROM pickup_orders
            WHERE status IN ('completed', 'archived')
@@ -236,7 +263,7 @@ class ReportsService {
            SELECT id, table_id, 'dine-in' as order_type, status, total, globalDiscount,
               created_at, updated_at
            FROM dine_in_orders
-           WHERE status = 'completed'
+           WHERE status IN ('completed', 'archived')
              AND created_at >= ?
              AND created_at <= ${endDateCondition}
            UNION ALL
@@ -247,9 +274,9 @@ class ReportsService {
              AND created_at >= ?
              AND created_at <= ${endDateCondition}`;
 
-        const queryParams = endDate === "datetime('now')"
-          ? [businessDay.start_at, businessDay.start_at, businessDay.start_at, businessDay.start_at]
-          : [businessDay.start_at, businessDay.end_at, businessDay.start_at, businessDay.end_at, businessDay.start_at, businessDay.end_at, businessDay.start_at, businessDay.end_at];
+        const queryParams = endDate === "CURRENT_TIMESTAMP"
+          ? [businessDay.start_at, businessDay.start_at, businessDay.start_at]
+          : [businessDay.start_at, businessDay.end_at, businessDay.start_at, businessDay.end_at, businessDay.start_at, businessDay.end_at];
 
         console.log(`Querying orders for business day ${businessDay.id}:`, {
           start_at: businessDay.start_at,
@@ -262,11 +289,11 @@ class ReportsService {
         const ordersArray = orders || [];
 
         // Get shelf sales for this business day
-        const shelfSalesEndDateCondition = endDate === "datetime('now')"
-          ? "datetime('now')"
+        const shelfSalesEndDateCondition = endDate === "CURRENT_TIMESTAMP"
+          ? "CURRENT_TIMESTAMP"
           : "?";
         
-        const shelfSalesQueryParams = endDate === "datetime('now')"
+        const shelfSalesQueryParams = endDate === "CURRENT_TIMESTAMP"
           ? [businessDay.start_at]
           : [businessDay.start_at, businessDay.end_at];
 
@@ -304,9 +331,7 @@ class ReportsService {
         });
 
         const orderCount = ordersArray.length;
-        const shelfSaleCount = shelfSales.length;
-        const totalTransactionCount = orderCount + shelfSaleCount;
-        const averageOrder = totalTransactionCount > 0 ? Math.round(totalSales / totalTransactionCount) : 0;
+        const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
         const netProfit = totalSales;
 
         // Format date from start_at - handle invalid dates
@@ -358,7 +383,7 @@ class ReportsService {
           id: businessDay.id || 0,
           date: dateString || '-',
           day: dayName || '-',
-          orderCount: Number(totalTransactionCount || 0), // Include shelf sales in count
+          orderCount: Number(orderCount || 0),
           totalSales: Number(totalSales || 0),
           totalDiscounts: Number(totalDiscounts || 0),
           netProfit: Number(netProfit || 0),
@@ -549,20 +574,14 @@ class ReportsService {
       // Build query - use week range for efficiency
       const weekStartDate = weekEarliestStart!;
       const weekEndDate = hasActiveDay 
-        ? "datetime('now')" 
-        : (weekLatestEnd || "datetime('now')");
+        ? "CURRENT_TIMESTAMP" 
+        : (weekLatestEnd || "CURRENT_TIMESTAMP");
 
-      const endDateCondition = weekEndDate === "datetime('now')"
-        ? "datetime('now')"
+      const endDateCondition = weekEndDate === "CURRENT_TIMESTAMP"
+        ? "CURRENT_TIMESTAMP"
         : "?";
 
       const ordersQuery = `SELECT id, total, globalDiscount
-         FROM orders
-         WHERE status = 'completed'
-           AND created_at >= ?
-           AND created_at <= ${endDateCondition}
-         UNION ALL
-         SELECT id, total, globalDiscount
          FROM pickup_orders
          WHERE status IN ('completed', 'archived')
            AND created_at >= ?
@@ -570,7 +589,7 @@ class ReportsService {
          UNION ALL
          SELECT id, total, globalDiscount
          FROM dine_in_orders
-         WHERE status = 'completed'
+         WHERE status IN ('completed', 'archived')
            AND created_at >= ?
            AND created_at <= ${endDateCondition}
          UNION ALL
@@ -580,19 +599,19 @@ class ReportsService {
            AND created_at >= ?
            AND created_at <= ${endDateCondition}`;
 
-      const queryParams = weekEndDate === "datetime('now')"
-        ? [weekStartDate, weekStartDate, weekStartDate, weekStartDate]
-        : [weekStartDate, weekLatestEnd, weekStartDate, weekLatestEnd, weekStartDate, weekLatestEnd, weekStartDate, weekLatestEnd];
+      const queryParams = weekEndDate === "CURRENT_TIMESTAMP"
+        ? [weekStartDate, weekStartDate, weekStartDate]
+        : [weekStartDate, weekLatestEnd, weekStartDate, weekLatestEnd, weekStartDate, weekLatestEnd];
 
       try {
         const orders = await this.db.all(ordersQuery, queryParams) || [];
         
         // Get shelf sales for this week
-        const shelfSalesEndDateCondition = weekEndDate === "datetime('now')"
-          ? "datetime('now')"
+        const shelfSalesEndDateCondition = weekEndDate === "CURRENT_TIMESTAMP"
+          ? "CURRENT_TIMESTAMP"
           : "?";
         
-        const shelfSalesQueryParams = weekEndDate === "datetime('now')"
+        const shelfSalesQueryParams = weekEndDate === "CURRENT_TIMESTAMP"
           ? [weekStartDate]
           : [weekStartDate, weekLatestEnd];
 
@@ -630,9 +649,7 @@ class ReportsService {
         });
 
         const orderCount = orders.length;
-        const shelfSaleCount = shelfSales.length;
-        const totalTransactionCount = orderCount + shelfSaleCount;
-        const averageOrder = totalTransactionCount > 0 ? Math.round(totalSales / totalTransactionCount) : 0;
+        const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
         const netProfit = totalSales;
 
         // Format week label as numeric date (DD/MM/YYYY)
@@ -649,7 +666,7 @@ class ReportsService {
           totalSales,
           totalDiscounts,
           netProfit,
-          orderCount: totalTransactionCount, // Include shelf sales in count
+          orderCount,
           averageOrder,
         };
       } catch (err) {
@@ -839,20 +856,14 @@ class ReportsService {
       // Build query - use month range for efficiency
       const monthStartDate = monthEarliestStart!;
       const monthEndDate = hasActiveDay 
-        ? "datetime('now')" 
-        : (monthLatestEnd || "datetime('now')");
+        ? "CURRENT_TIMESTAMP" 
+        : (monthLatestEnd || "CURRENT_TIMESTAMP");
 
-      const endDateCondition = monthEndDate === "datetime('now')"
-        ? "datetime('now')"
+      const endDateCondition = monthEndDate === "CURRENT_TIMESTAMP"
+        ? "CURRENT_TIMESTAMP"
         : "?";
 
       const ordersQuery = `SELECT id, total, globalDiscount
-         FROM orders
-         WHERE status = 'completed'
-           AND created_at >= ?
-           AND created_at <= ${endDateCondition}
-         UNION ALL
-         SELECT id, total, globalDiscount
          FROM pickup_orders
          WHERE status IN ('completed', 'archived')
            AND created_at >= ?
@@ -860,7 +871,7 @@ class ReportsService {
          UNION ALL
          SELECT id, total, globalDiscount
          FROM dine_in_orders
-         WHERE status = 'completed'
+         WHERE status IN ('completed', 'archived')
            AND created_at >= ?
            AND created_at <= ${endDateCondition}
          UNION ALL
@@ -870,19 +881,19 @@ class ReportsService {
            AND created_at >= ?
            AND created_at <= ${endDateCondition}`;
 
-      const queryParams = monthEndDate === "datetime('now')"
-        ? [monthStartDate, monthStartDate, monthStartDate, monthStartDate]
-        : [monthStartDate, monthLatestEnd, monthStartDate, monthLatestEnd, monthStartDate, monthLatestEnd, monthStartDate, monthLatestEnd];
+      const queryParams = monthEndDate === "CURRENT_TIMESTAMP"
+        ? [monthStartDate, monthStartDate, monthStartDate]
+        : [monthStartDate, monthLatestEnd, monthStartDate, monthLatestEnd, monthStartDate, monthLatestEnd];
 
       try {
         const orders = await this.db.all(ordersQuery, queryParams) || [];
         
         // Get shelf sales for this month
-        const shelfSalesEndDateCondition = monthEndDate === "datetime('now')"
-          ? "datetime('now')"
+        const shelfSalesEndDateCondition = monthEndDate === "CURRENT_TIMESTAMP"
+          ? "CURRENT_TIMESTAMP"
           : "?";
         
-        const shelfSalesQueryParams = monthEndDate === "datetime('now')"
+        const shelfSalesQueryParams = monthEndDate === "CURRENT_TIMESTAMP"
           ? [monthStartDate]
           : [monthStartDate, monthLatestEnd];
 
@@ -920,9 +931,7 @@ class ReportsService {
         });
 
         const orderCount = orders.length;
-        const shelfSaleCount = shelfSales.length;
-        const totalTransactionCount = orderCount + shelfSaleCount;
-        const averageOrder = totalTransactionCount > 0 ? Math.round(totalSales / totalTransactionCount) : 0;
+        const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
         const netProfit = totalSales;
 
         // Format month label
@@ -936,7 +945,7 @@ class ReportsService {
           totalSales,
           totalDiscounts,
           netProfit,
-          orderCount: totalTransactionCount, // Include shelf sales in count
+          orderCount,
           averageOrder,
         };
       } catch (err) {
@@ -1072,14 +1081,14 @@ class ReportsService {
     
     // Build query with proper date handling
     // Use parameterized queries for both startDate and endDate
-    const endDateCondition = endDate === "datetime('now')" 
-      ? "datetime('now')" 
+    const endDateCondition = endDate === "CURRENT_TIMESTAMP" 
+      ? "CURRENT_TIMESTAMP" 
       : "?";
     
     // Prepare query parameters - need startDate and endDate for each UNION query
-    const queryParams = endDate === "datetime('now')"
-      ? [startDate, startDate, startDate, startDate]
-      : [startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate];
+    const queryParams = endDate === "CURRENT_TIMESTAMP"
+      ? [startDate, startDate, startDate]
+      : [startDate, endDate, startDate, endDate, startDate, endDate];
 
     console.log('[REPORTS] fetchOrdersAndProcess - query params:', {
       period,
@@ -1091,11 +1100,11 @@ class ReportsService {
 
     // Get shelf sales (direct sales, not through orders)
     // IMPORTANT: Uses the same date range as orders (business day range for daily reports, calendar dates for others)
-    const shelfSalesEndDateCondition = endDate === "datetime('now')" 
-      ? "datetime('now')" 
+    const shelfSalesEndDateCondition = endDate === "CURRENT_TIMESTAMP" 
+      ? "CURRENT_TIMESTAMP" 
       : "?";
     
-    const shelfSalesQueryParams = endDate === "datetime('now')"
+    const shelfSalesQueryParams = endDate === "CURRENT_TIMESTAMP"
       ? [startDate]
       : [startDate, endDate];
 
@@ -1110,20 +1119,9 @@ class ReportsService {
 
     console.log('[REPORTS] fetchOrdersAndProcess - shelf sales found:', shelfSales.length, 'using date range:', startDate, 'to', endDate);
 
-    // Get all orders from all order tables (orders, pickup_orders, dine_in_orders, delivery_orders)
-    // Only include completed orders: dine-in after table cleared, pickup/delivery after complete
-    // IMPORTANT: Select discount and globalDiscount columns for proper calculation
-    // Note: delivery_orders has customer_address (not customer_location), and other tables don't have customer fields
+    // Get all orders from pickup, dine-in, and delivery tables
     const orders = await this.db.all(
-      `SELECT id, table_id, 'dine-in' as order_type, status, total, globalDiscount, 
-              created_at, updated_at, customer_name, customer_phone, customer_location,
-              NULL as created_by_user_id
-       FROM orders
-       WHERE status = 'completed'
-         AND created_at >= ? 
-         AND created_at < ${endDateCondition}
-       UNION ALL
-       SELECT id, NULL as table_id, 'pickup' as order_type, status, total, globalDiscount,
+      `SELECT id, NULL as table_id, 'pickup' as order_type, status, total, globalDiscount,
               created_at, updated_at, NULL as customer_name, NULL as customer_phone, NULL as customer_location,
               created_by_user_id
        FROM pickup_orders
@@ -1135,7 +1133,7 @@ class ReportsService {
               created_at, updated_at, NULL as customer_name, NULL as customer_phone, NULL as customer_location,
               created_by_user_id
        FROM dine_in_orders
-       WHERE status = 'completed'
+       WHERE status IN ('completed', 'archived')
          AND created_at >= ? 
          AND created_at < ${endDateCondition}
        UNION ALL
@@ -1216,7 +1214,7 @@ class ReportsService {
     // Create a map of order_id -> order_type from the orders we fetched
     const orderTypeMap = new Map<number, string>();
     orders.forEach((o: any) => {
-      orderTypeMap.set(o.id, o.order_type);
+      orderTypeMap.set(o.id, this.orderTypeForItems(o.order_type || 'dine_in'));
     });
     
     // Build query that filters by both order_id and order_type
@@ -1225,7 +1223,7 @@ class ReportsService {
       // Group orders by type and query separately to ensure correct filtering
       const ordersByType = new Map<string, number[]>();
       orders.forEach((o: any) => {
-        const type = o.order_type || 'dine-in';
+        const type = this.orderTypeForItems(o.order_type || 'dine_in');
         if (!ordersByType.has(type)) {
           ordersByType.set(type, []);
         }
@@ -1275,9 +1273,7 @@ class ReportsService {
     });
 
     const orderCount = orders.length;
-    const shelfSaleCount = shelfSales.length;
-    const totalTransactionCount = orderCount + shelfSaleCount;
-    const averageOrder = totalTransactionCount > 0 ? Math.round(totalSales / totalTransactionCount) : 0;
+    const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
     const cancellations = orders.filter((o) => o.status === 'cancelled').length;
     const netProfit = totalSales; // totalSales is already NET
 
@@ -1296,20 +1292,17 @@ class ReportsService {
     // Process shelf items from order_items (shelf items sold through orders)
     // IMPORTANT: Uses the same date range as orders (business day range for daily reports)
     // Need to query from all order tables
-    const shelfEndDateCondition = endDate === "datetime('now')" 
-      ? "datetime('now')" 
+    const shelfEndDateCondition = endDate === "CURRENT_TIMESTAMP" 
+      ? "CURRENT_TIMESTAMP" 
       : "?";
     
     const shelfItemsQuery = `SELECT oi.shelf_item_id, oi.item_name, oi.quantity, oi.price
       FROM order_items oi
       INNER JOIN (
-        SELECT id FROM orders WHERE status = 'completed'
-          AND created_at >= ? AND created_at <= ${shelfEndDateCondition}
-        UNION ALL
         SELECT id FROM pickup_orders WHERE status IN ('completed', 'archived')
           AND created_at >= ? AND created_at <= ${shelfEndDateCondition}
         UNION ALL
-        SELECT id FROM dine_in_orders WHERE status = 'completed'
+        SELECT id FROM dine_in_orders WHERE status IN ('completed', 'archived')
           AND created_at >= ? AND created_at <= ${shelfEndDateCondition}
         UNION ALL
         SELECT id FROM delivery_orders WHERE status IN ('completed', 'archived')
@@ -1319,9 +1312,9 @@ class ReportsService {
     
     let shelfItems: any[] = [];
     try {
-      const shelfQueryParams = endDate === "datetime('now')"
-        ? [startDate, startDate, startDate, startDate]
-        : [startDate, endDate, startDate, endDate, startDate, endDate, startDate, endDate];
+      const shelfQueryParams = endDate === "CURRENT_TIMESTAMP"
+        ? [startDate, startDate, startDate]
+        : [startDate, endDate, startDate, endDate, startDate, endDate];
       
       shelfItems = await this.db.all(shelfItemsQuery, shelfQueryParams) || [];
     } catch (shelfErr) {
@@ -1413,7 +1406,7 @@ class ReportsService {
         totalSales,
         totalDiscounts: totalDiscounts,
         netProfit: netProfit,
-        orderCount: totalTransactionCount, // Include shelf sales in count
+        orderCount,
         averageOrder: averageOrder,
       }];
     } else {
@@ -1445,7 +1438,7 @@ class ReportsService {
     return {
       summary: {
         totalSales,
-        orderCount: totalTransactionCount, // Include shelf sales in count
+        orderCount,
         averageOrder,
         discounts: totalDiscounts,
         cancellations,
@@ -2007,7 +2000,7 @@ class ReportsService {
     const orders = await this.db.all(
       `SELECT id, total, globalDiscount, created_at, status, 'dine_in' as order_type, shift_id, created_by_user_id
        FROM dine_in_orders 
-       WHERE shift_id IN (${placeholders}) AND status = 'completed'
+       WHERE shift_id IN (${placeholders}) AND status IN ('completed', 'archived')
        UNION ALL
        SELECT id, total, globalDiscount, created_at, status, 'pickup' as order_type, shift_id, created_by_user_id
        FROM pickup_orders 
@@ -2020,6 +2013,96 @@ class ReportsService {
     );
 
     return this.processOrdersForReport(period, orders, dateStr);
+  }
+
+  /** Per-shift sales within a business day (multi mode). */
+  private async buildShiftBreakdown(orders: any[], _dateStr: string): Promise<any[]> {
+    const definitions = await getShiftDefinitions(true);
+    return this.buildShiftBreakdownForOrders(orders, definitions);
+  }
+
+  private buildShiftBreakdownForOrders(orders: any[], definitions: any[]): any[] {
+    const buckets = new Map<number | 'unassigned', { sales: number; count: number }>();
+
+    for (const order of orders) {
+      const key = order.shift_definition_id ?? 'unassigned';
+      if (!buckets.has(key)) buckets.set(key, { sales: 0, count: 0 });
+      const b = buckets.get(key)!;
+      b.sales += order.total || 0;
+      b.count += 1;
+    }
+
+    const rows: any[] = [];
+    for (const def of definitions) {
+      const b = buckets.get(def.id) || { sales: 0, count: 0 };
+      rows.push({
+        shiftId: def.id,
+        shiftName: def.name,
+        startTime: def.start_time,
+        endTime: def.end_time,
+        totalSales: b.sales,
+        orderCount: b.count,
+        averageOrder: b.count > 0 ? Math.round(b.sales / b.count) : 0,
+      });
+    }
+
+    const unassigned = buckets.get('unassigned');
+    if (unassigned && unassigned.count > 0) {
+      rows.push({
+        shiftId: null,
+        shiftName: 'غير محدد',
+        startTime: null,
+        endTime: null,
+        totalSales: unassigned.sales,
+        orderCount: unassigned.count,
+        averageOrder: unassigned.count > 0 ? Math.round(unassigned.sales / unassigned.count) : 0,
+      });
+    }
+
+    return rows;
+  }
+
+  private async buildShiftBreakdownByDay(orders: any[]): Promise<Record<string, any[]>> {
+    const definitions = await getShiftDefinitions(true);
+    const byDate = new Map<string, any[]>();
+    for (const order of orders) {
+      const key = this.orderBusinessDateKey(order);
+      if (!byDate.has(key)) byDate.set(key, []);
+      byDate.get(key)!.push(order);
+    }
+    const result: Record<string, any[]> = {};
+    for (const [date, dayOrders] of byDate) {
+      result[date] = this.buildShiftBreakdownForOrders(dayOrders, definitions);
+    }
+    return result;
+  }
+
+  private async buildShiftBreakdownByMonth(orders: any[]): Promise<Record<string, Record<string, any[]>>> {
+    const byDay = await this.buildShiftBreakdownByDay(orders);
+    const result: Record<string, Record<string, any[]>> = {};
+    for (const [date, rows] of Object.entries(byDay)) {
+      const monthKey = date.slice(0, 7);
+      if (!result[monthKey]) result[monthKey] = {};
+      result[monthKey][date] = rows;
+    }
+    return result;
+  }
+
+  private monthBusinessDatePrefix(year: number, monthIndex: number): string {
+    return `${year}-${String(monthIndex + 1).padStart(2, '0')}-`;
+  }
+
+  private filterOrdersByBusinessMonth(orders: any[], year: number, monthIndex: number): any[] {
+    const prefix = this.monthBusinessDatePrefix(year, monthIndex);
+    return orders.filter((o) => this.orderBusinessDateKey(o).startsWith(prefix));
+  }
+
+  private async attachMultiShiftFields(result: any, orders: any[]): Promise<any> {
+    const config = await getShiftConfig();
+    if (config.shift_mode !== 'multi') return result;
+    result.shiftBreakdownByDay = await this.buildShiftBreakdownByDay(orders);
+    result.shiftBreakdownTotals = await this.buildShiftBreakdown(orders, '');
+    return result;
   }
 
   /**
@@ -2235,7 +2318,7 @@ class ReportsService {
       return { items: [], soldItemIds: [] };
     }
 
-    const dineInIds = orders.filter((o) => o.order_type === 'dine_in').map((o) => o.id);
+    const dineInIds = orders.filter((o) => this.orderTypeForItems(o.order_type) === 'dine_in').map((o) => o.id);
     const pickupIds = orders.filter((o) => o.order_type === 'pickup').map((o) => o.id);
     const deliveryIds = orders.filter((o) => o.order_type === 'delivery').map((o) => o.id);
 
@@ -2245,7 +2328,7 @@ class ReportsService {
       const items = await this.db.all(
         `SELECT item_id, item_name, SUM(quantity) as quantity, SUM(price * quantity) as revenue
          FROM order_items 
-         WHERE order_id IN (${dineInIds.join(',')}) AND order_type = 'dine-in'
+         WHERE order_id IN (${dineInIds.join(',')}) AND order_type = 'dine_in'
          GROUP BY item_id, item_name`,
       );
       allItems = allItems.concat(items);
@@ -2585,17 +2668,27 @@ class ReportsService {
 
     const byDate = new Map<string, { sales: number; orders: any[] }>();
     orders.forEach((o: any) => {
-      const d = new Date(o.created_at);
-      const key = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+      const key = this.orderBusinessDateKey(o);
       if (!byDate.has(key)) byDate.set(key, { sales: 0, orders: [] });
       const entry = byDate.get(key)!;
       entry.sales += this.getOrderSales(o);
       entry.orders.push(o);
     });
-    const sortedDates = Array.from(byDate.keys()).sort();
-    const graphData = sortedDates.map((key, i) => {
-      const entry = byDate.get(key)!;
-      const d = new Date(key);
+
+    const weekEnd = new Date(`${dateStr}T12:00:00`);
+    const weekStart = new Date(weekEnd);
+    weekStart.setDate(weekStart.getDate() - 6);
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const allDates: string[] = [];
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(weekStart);
+      d.setDate(d.getDate() + i);
+      allDates.push(`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`);
+    }
+
+    const graphData = allDates.map((key, i) => {
+      const entry = byDate.get(key) || { sales: 0, orders: [] };
+      const d = new Date(`${key}T12:00:00`);
       return {
         id: i + 1,
         day: String(d.getDate()).padStart(2, '0') + '/' + String(d.getMonth() + 1).padStart(2, '0'),
@@ -2612,7 +2705,7 @@ class ReportsService {
       try {
         const amt = (typeof o.globalDiscount === 'string' ? JSON.parse(o.globalDiscount) : o.globalDiscount)?.amount || 0;
         if (amt) {
-          const key = new Date(o.created_at).getFullYear() + '-' + String(new Date(o.created_at).getMonth() + 1).padStart(2, '0') + '-' + String(new Date(o.created_at).getDate()).padStart(2, '0');
+          const key = this.orderBusinessDateKey(o);
           dayDiscounts.set(key, (dayDiscounts.get(key) || 0) + amt);
         }
       } catch (e) {}
@@ -2630,6 +2723,151 @@ class ReportsService {
 
     const { itemsPerformance, unsoldMenuItems } = await this.attachItemsReportFromOrders(orders);
     const employeeSummary = await this.buildEmployeeSummaryFromOrders(orders);
+    const result = {
+      summary: { totalSales, orderCount, averageOrder, discounts: totalDiscounts, cancellations: 0, netProfit: totalSales, salesByType },
+      graphData,
+      itemsPerformance,
+      unsoldMenuItems,
+      employeeSummary,
+      orders: ordersReport,
+    };
+    return this.attachMultiShiftFields(result, orders);
+  }
+
+  /** Process monthly report grouped by business day (multi shift mode). */
+  private async processMonthlyDaysFromOrders(orders: any[], monthStart: Date): Promise<any> {
+    let totalSales = 0;
+    let totalDiscounts = 0;
+    const salesByType = { dineIn: 0, pickup: 0, delivery: 0 };
+    orders.forEach((o: any) => {
+      const sales = this.getOrderSales(o);
+      totalSales += sales;
+      try {
+        totalDiscounts += (typeof o.globalDiscount === 'string' ? JSON.parse(o.globalDiscount) : o.globalDiscount)?.amount || 0;
+      } catch (e) {}
+      const type = (o.order_type || 'dine_in').replace('-', '_');
+      if (type === 'dine_in') salesByType.dineIn += sales;
+      else if (type === 'pickup') salesByType.pickup += sales;
+      else if (type === 'delivery') salesByType.delivery += sales;
+    });
+    const orderCount = orders.length;
+    const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
+
+    const byDate = new Map<string, { sales: number; orders: any[] }>();
+    orders.forEach((o: any) => {
+      const key = this.orderBusinessDateKey(o);
+      if (!byDate.has(key)) byDate.set(key, { sales: 0, orders: [] });
+      const entry = byDate.get(key)!;
+      entry.sales += this.getOrderSales(o);
+      entry.orders.push(o);
+    });
+
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
+    const graphData: any[] = [];
+    const ordersReport: any[] = [];
+    const dayDiscounts = new Map<string, number>();
+    orders.forEach((o: any) => {
+      try {
+        const amt = (typeof o.globalDiscount === 'string' ? JSON.parse(o.globalDiscount) : o.globalDiscount)?.amount || 0;
+        if (amt) {
+          const key = this.orderBusinessDateKey(o);
+          dayDiscounts.set(key, (dayDiscounts.get(key) || 0) + amt);
+        }
+      } catch (e) {}
+    });
+
+    let id = 1;
+    for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
+      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+      const entry = byDate.get(key) || { sales: 0, orders: [] };
+      const dayLabel = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
+      graphData.push({
+        id,
+        day: dayLabel,
+        date: key,
+        totalSales: entry.sales,
+        orderCount: entry.orders.length,
+        averageOrder: entry.orders.length > 0 ? Math.round(entry.sales / entry.orders.length) : 0,
+      });
+      ordersReport.push({
+        id,
+        day: dayLabel,
+        date: key,
+        totalSales: entry.sales,
+        orderCount: entry.orders.length,
+        averageOrder: entry.orders.length > 0 ? Math.round(entry.sales / entry.orders.length) : 0,
+        totalDiscounts: dayDiscounts.get(key) || 0,
+        netProfit: entry.sales,
+      });
+      id += 1;
+    }
+
+    const { itemsPerformance, unsoldMenuItems } = await this.attachItemsReportFromOrders(orders);
+    const employeeSummary = await this.buildEmployeeSummaryFromOrders(orders);
+    const result = {
+      summary: { totalSales, orderCount, averageOrder, discounts: totalDiscounts, cancellations: 0, netProfit: totalSales, salesByType },
+      graphData,
+      itemsPerformance,
+      unsoldMenuItems,
+      employeeSummary,
+      orders: ordersReport,
+    };
+    return this.attachMultiShiftFields(result, orders);
+  }
+
+  /** Process yearly report in multi shift mode (months → days → shifts). */
+  private async processYearlyMultiFromOrders(orders: any[], year: number): Promise<any> {
+    let totalSales = 0;
+    let totalDiscounts = 0;
+    const salesByType = { dineIn: 0, pickup: 0, delivery: 0 };
+    orders.forEach((o: any) => {
+      const sales = this.getOrderSales(o);
+      totalSales += sales;
+      try {
+        totalDiscounts += (typeof o.globalDiscount === 'string' ? JSON.parse(o.globalDiscount) : o.globalDiscount)?.amount || 0;
+      } catch (e) {}
+      const type = (o.order_type || 'dine_in').replace('-', '_');
+      if (type === 'dine_in') salesByType.dineIn += sales;
+      else if (type === 'pickup') salesByType.pickup += sales;
+      else if (type === 'delivery') salesByType.delivery += sales;
+    });
+    const orderCount = orders.length;
+    const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
+    const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+    const graphData: any[] = [];
+    const ordersReport: any[] = [];
+
+    for (let month = 0; month < 12; month++) {
+      const monthOrders = this.filterOrdersByBusinessMonth(orders, year, month);
+      let monthSales = 0;
+      monthOrders.forEach((o: any) => { monthSales += this.getOrderSales(o); });
+      const monthStartStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
+      graphData.push({
+        id: month + 1,
+        month: monthNames[month],
+        date: monthStartStr,
+        totalSales: monthSales,
+        orderCount: monthOrders.length,
+        averageOrder: monthOrders.length > 0 ? Math.round(monthSales / monthOrders.length) : 0,
+      });
+      ordersReport.push({
+        id: month + 1,
+        day: monthNames[month],
+        date: monthStartStr,
+        monthKey: `${year}-${String(month + 1).padStart(2, '0')}`,
+        totalSales: monthSales,
+        orderCount: monthOrders.length,
+        averageOrder: monthOrders.length > 0 ? Math.round(monthSales / monthOrders.length) : 0,
+        totalDiscounts: 0,
+        netProfit: monthSales,
+      });
+    }
+
+    const { itemsPerformance, unsoldMenuItems } = await this.attachItemsReportFromOrders(orders);
+    const employeeSummary = await this.buildEmployeeSummaryFromOrders(orders);
+    const shiftBreakdownByMonth = await this.buildShiftBreakdownByMonth(orders);
+    const shiftBreakdownTotals = await this.buildShiftBreakdown(orders, '');
     return {
       summary: { totalSales, orderCount, averageOrder, discounts: totalDiscounts, cancellations: 0, netProfit: totalSales, salesByType },
       graphData,
@@ -2637,6 +2875,8 @@ class ReportsService {
       unsoldMenuItems,
       employeeSummary,
       orders: ordersReport,
+      shiftBreakdownByMonth,
+      shiftBreakdownTotals,
     };
   }
 
@@ -2660,18 +2900,20 @@ class ReportsService {
     const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
 
     const weeklyData: any[] = [];
+    const pad = (n: number) => String(n).padStart(2, '0');
     for (let week = 0; week < 4; week++) {
       const weekStart = new Date(monthStart);
       weekStart.setDate(weekStart.getDate() + (week * 7));
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekEnd.getDate() + 7);
+      const weekStartStr = `${weekStart.getFullYear()}-${pad(weekStart.getMonth() + 1)}-${pad(weekStart.getDate())}`;
+      const weekEndStr = `${weekEnd.getFullYear()}-${pad(weekEnd.getMonth() + 1)}-${pad(weekEnd.getDate())}`;
       const weekOrders = orders.filter((o: any) => {
-        const d = new Date(o.created_at);
-        return d >= weekStart && d < weekEnd;
+        const key = this.orderBusinessDateKey(o);
+        return key >= weekStartStr && key < weekEndStr;
       });
       let weekSales = 0;
       weekOrders.forEach((o: any) => { weekSales += this.getOrderSales(o); });
-      const weekStartStr = weekStart.toISOString().split('T')[0];
       weeklyData.push({
         id: week + 1,
         week: `أسبوع ${week + 1}`,
@@ -2725,7 +2967,7 @@ class ReportsService {
     const monthNames = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
     const monthlyData: any[] = [];
     for (let month = 0; month < 12; month++) {
-      const monthOrders = orders.filter((o: any) => new Date(o.created_at).getMonth() === month);
+      const monthOrders = this.filterOrdersByBusinessMonth(orders, year, month);
       let monthSales = 0;
       monthOrders.forEach((o: any) => { monthSales += this.getOrderSales(o); });
       const monthStartStr = `${year}-${String(month + 1).padStart(2, '0')}-01`;
@@ -2772,7 +3014,7 @@ class ReportsService {
     return this.db.all(
       `SELECT id, total, globalDiscount, created_at, status, 'dine_in' as order_type, shift_id, created_by_user_id
        FROM dine_in_orders 
-       WHERE shift_id IN (${placeholders}) AND status = 'completed'
+       WHERE shift_id IN (${placeholders}) AND status IN ('completed', 'archived')
        UNION ALL
        SELECT id, total, globalDiscount, created_at, status, 'pickup' as order_type, shift_id, created_by_user_id
        FROM pickup_orders 

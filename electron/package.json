@@ -1,6 +1,6 @@
 {
   "name": "sufra-lite-electron",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "private": true,
   "description": "Sufra Lite POS System",
   "author": "Aman Technology",
@@ -17,6 +17,7 @@
     "build:frontend": "cd ../frontend && npm run build",
     "build:backend": "cd backend && npm run build",
     "ensure-electron-deps": "node scripts/ensure-electron-deps.js",
+    "rebuild:native": "npx electron-rebuild -f -w better-sqlite3,bcrypt -m ./backend",
     "dist": "node scripts/prepare-installer-assets.js && node scripts/convert-icon.js && cross-env CSC_IDENTITY_AUTO_DISCOVERY=false npm run build:frontend && npm run build:backend && node scripts/prepare-dist.js && npm run ensure-electron-deps && npm run build && electron-builder --win && node scripts/restore-backend-dev.js",
     "dist:timed": "node scripts/dist-timed.js",
     "start": "npx electron .",

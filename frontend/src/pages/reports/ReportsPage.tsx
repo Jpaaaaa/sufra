@@ -10,6 +10,7 @@ import ItemsSalesReportSection from '../../components/reports/ItemsSalesReportSe
 import EmployeesBestReportSection from '../../components/reports/EmployeesBestReportSection';
 import OrdersTable from '../../components/reports/OrdersTable';
 import DailySummaryTable from '../../components/reports/DailySummaryTable';
+import PeriodShiftReport from '../../components/reports/PeriodShiftReport';
 import CashDrawer from '../../components/reports/CashDrawer';
 import TabTransition from '../../components/ui/TabTransition';
 import {
@@ -264,6 +265,22 @@ export default function ReportsPage() {
               <div className="space-y-6">
                 <ReportSummaryCards summary={reportData.summary} />
 
+                {(reportData.shiftBreakdownByDay || reportData.shiftBreakdownByMonth) &&
+                (activeTab === 'daily' || activeTab === 'weekly' || activeTab === 'monthly' || activeTab === 'yearly') ? (
+                  <PeriodShiftReport
+                    period={activeTab}
+                    data={reportData.orders as DailyAggregate[]}
+                    shiftBreakdownByDay={reportData.shiftBreakdownByDay}
+                    shiftBreakdownByMonth={reportData.shiftBreakdownByMonth}
+                    shiftBreakdownTotals={reportData.shiftBreakdownTotals}
+                    defaultExpanded={activeTab === 'daily'}
+                  />
+                ) : activeTab === 'daily' || activeTab === 'weekly' || activeTab === 'monthly' || activeTab === 'yearly' ? (
+                  <DailySummaryTable data={reportData.orders as DailyAggregate[]} />
+                ) : (
+                  <OrdersTable data={reportData.orders as OrderReport[]} />
+                )}
+
                 <ReportGraph data={reportData.graphData} period={activeTab} />
 
                 <ItemsSalesReportSection
@@ -275,12 +292,6 @@ export default function ReportsPage() {
 
                 {activeTab === 'daily' && reportData.cashDrawer && (
                   <CashDrawer data={reportData.cashDrawer} />
-                )}
-
-                {activeTab === 'daily' || activeTab === 'weekly' || activeTab === 'monthly' || activeTab === 'yearly' ? (
-                  <DailySummaryTable data={reportData.orders as DailyAggregate[]} />
-                ) : (
-                  <OrdersTable data={reportData.orders as OrderReport[]} />
                 )}
               </div>
             </TabTransition>

@@ -1,17 +1,14 @@
-// @ts-ignore - sql.js doesn't have types
-import initSqlJs from 'sql.js';
-import * as path from 'path';
+import Database, { type Database as BetterSqliteDatabase } from 'better-sqlite3';
 import * as fs from 'fs';
 import * as bcrypt from 'bcrypt';
 import { getAppDataPath, ensureDirectoryExists } from '../utils/app-data-path';
-
-interface SqlJsDatabase {
-  run(sql: string, params?: any[]): void;
-  prepare(sql: string): any;
-  exec(sql: string): any;
-  export(): Uint8Array;
-  close(): void;
-}
+import {
+  computeBusinessDate,
+  DEFAULT_BUSINESS_DAY_START,
+  DEFAULT_SHIFT_END,
+  DEFAULT_SHIFT_START,
+} from '../utils/business-date';
+import { resolveOrderShift } from '../utils/shift-window';
 
 /**
  * Type definitions for database query results
@@ -21,12 +18,11 @@ export interface DatabaseRow {
 }
 
 export class DatabaseService {
-  private db!: SqlJsDatabase;
+  private db!: BetterSqliteDatabase;
   private migrationInProgress = false;
   private dbPath!: string;
-  private SQL!: any;
   private lastInsertRowId = 0;
-  
+
   // Async initialization tracking
   private initPromise!: Promise<void>;
   private isInitialized = false;
@@ -34,10 +30,9 @@ export class DatabaseService {
 
   async initialize() {
     console.log('[DB] Starting database initialization...');
-    
-    // Create initialization promise
+
     this.initPromise = this.initializeDatabase();
-    
+
     try {
       await this.initPromise;
       console.log('[DB] ✓ Database initialized successfully');
@@ -49,125 +44,28 @@ export class DatabaseService {
   }
 
   private async initializeDatabase(): Promise<void> {
-    // Initialize sql.js
-    // Handle both dev mode (node_modules) and production bundled mode
-    console.log('[DB] Loading sql.js WASM...');
-    console.log('[DB] __dirname:', __dirname);
-    console.log('[DB] process.cwd():', process.cwd());
-    
-    // Try multiple paths for WASM file (dev and production)
-    // In bundled mode, sql.js WASM files are in backend/sql.js/dist (same directory as main.js)
-    const possibleWasmPaths = [
-      // Bundled mode: WASM files in same directory as main.js (most common case)
-      path.join(__dirname, 'sql.js/dist'),
-      // Alternative bundled path (if structure is different)
-      path.join(__dirname, '../sql.js/dist'),
-      // Try using the actual file location of this module (for bundled code)
-      (() => {
-        try {
-          // Get the directory of the main.js file (in bundled mode, this is the bundle location)
-          const mainModule = require.main;
-          if (mainModule && mainModule.filename) {
-            const mainDir = path.dirname(mainModule.filename);
-            return path.join(mainDir, 'sql.js/dist');
-          }
-        } catch {
-          // Ignore errors
-        }
-        return null;
-      })(),
-      // Dev mode: node_modules relative to dist
-      path.join(__dirname, '../../node_modules/sql.js/dist'),
-      // Try from process.cwd() (working directory)
-      path.join(process.cwd(), 'node_modules/sql.js/dist'),
-      // Try from require.resolve (if sql.js is available)
-      (() => {
-        try {
-          const sqlJsPath = require.resolve('sql.js/package.json');
-          return path.join(path.dirname(sqlJsPath), 'dist');
-        } catch {
-          return null;
-        }
-      })(),
-    ].filter(Boolean) as string[];
-    
-    console.log('[DB] Trying WASM paths:', possibleWasmPaths);
-    
-    let sqlJsInitialized = false;
-    for (const wasmPath of possibleWasmPaths) {
-      try {
-        if (fs.existsSync(wasmPath)) {
-          console.log(`[DB] Trying WASM path: ${wasmPath}`);
-          this.SQL = await initSqlJs({
-            locateFile: (file: string) => {
-              const fullPath = path.join(wasmPath, file);
-              console.log(`[DB] Locating WASM file: ${file} -> ${fullPath}`);
-              return fullPath;
-            },
-          });
-          console.log('[DB] ✓ sql.js WASM loaded from:', wasmPath);
-          sqlJsInitialized = true;
-          break;
-        }
-      } catch (error: any) {
-        console.warn(`[DB] Failed to load from ${wasmPath}:`, error.message);
-        continue;
-      }
-    }
-    
-    // Final fallback: try without locateFile (sql.js will try to find it automatically)
-    if (!sqlJsInitialized) {
-      try {
-        console.log('[DB] Trying automatic WASM location (no locateFile)...');
-        this.SQL = await initSqlJs();
-        console.log('[DB] ✓ sql.js loaded via automatic detection');
-        sqlJsInitialized = true;
-      } catch (error: any) {
-        console.error('[DB] ✗ All sql.js initialization attempts failed');
-        console.error('[DB] Error:', error.message);
-        console.error('[DB] Stack:', error.stack);
-        throw new Error(`Failed to initialize sql.js: ${error.message}. Check that sql.js WASM files are accessible.`);
-      }
-    }
-
-    // Use Electron's userData directory in production, or local data in dev
     const dataDir = getAppDataPath();
     ensureDirectoryExists(dataDir);
     console.log('[DB] Data directory:', dataDir);
 
-    // FIXED: Force single database path - always use getAppDataPath, never DB_PATH env var
-    // This ensures orders are written to and read from the same database file
     this.dbPath = getAppDataPath('sufra.sqlite');
     console.log('[DB] Database path:', this.dbPath);
-    console.log('[DB] Using single database path (no migration/copy logic)');
-    
-    // Check if database exists
+
     const isNewDatabase = !fs.existsSync(this.dbPath);
-    
     if (isNewDatabase) {
       console.log('[DB] Creating new database...');
-      this.db = new this.SQL.Database();
-      console.log('[DB] ✓ Created new database');
-      console.log('[DB] 📍 DATABASE CONNECTION CREATED - Using database file:', this.dbPath);
     } else {
-      console.log('[DB] Loading existing database...');
-      const buffer = fs.readFileSync(this.dbPath);
-      this.db = new this.SQL.Database(new Uint8Array(buffer));
-      console.log(`[DB] ✓ Loaded existing database (${(buffer.length / 1024).toFixed(2)} KB)`);
-      console.log('[DB] 📍 DATABASE CONNECTION CREATED - Using database file:', this.dbPath);
+      console.log('[DB] Opening existing database...');
     }
+
+    this.db = new Database(this.dbPath);
+    this.db.pragma('journal_mode = WAL');
+    this.db.pragma('foreign_keys = ON');
+    console.log('[DB] ✓ better-sqlite3 connected:', this.dbPath);
 
     console.log('[DB] Initializing schema and seeding data...');
     this.initializeSchemaAndSeed();
-    
-    // Only save to disk if this is a new database
-    // Existing databases are already on disk and will be saved via run() method
-    if (isNewDatabase) {
-      await this.saveDatabase();
-      console.log('[DB] ✓ Saved new database to disk');
-    }
-    
-    // Mark as initialized
+
     this.isInitialized = true;
     console.log('[DB] ✓ Database ready for queries');
   }
@@ -179,16 +77,15 @@ export class DatabaseService {
     if (this.isInitialized) {
       return;
     }
-    
+
     if (this.initError) {
       throw new Error(`Database initialization failed: ${this.initError.message}`);
     }
-    
+
     if (!this.initPromise) {
       throw new Error('Database initialization not started');
     }
-    
-    // Wait for initialization to complete
+
     await this.initPromise;
   }
 
@@ -201,13 +98,16 @@ export class DatabaseService {
 
   async shutdown() {
     if (this.db) {
-      // Await save to ensure data is persisted before closing
-      await this.saveDatabase();
+      try {
+        this.db.pragma('wal_checkpoint(TRUNCATE)');
+      } catch (error) {
+        console.warn('[DB] WAL checkpoint during shutdown failed:', error);
+      }
       this.db.close();
     }
   }
 
-  getConnection(): SqlJsDatabase {
+  getConnection(): BetterSqliteDatabase {
     if (!this.isInitialized) {
       throw new Error('Database not initialized. Call ensureInitialized() first or wait for initialize() to complete.');
     }
@@ -215,27 +115,14 @@ export class DatabaseService {
   }
 
   // Public helper methods for services to use
-  // All methods now wait for initialization before executing
   async run(sql: string, params: any[] = []): Promise<void> {
     await this.ensureInitialized();
-    
+
     try {
-      if (params.length > 0) {
-        const stmt = this.db.prepare(sql);
-        stmt.bind(params);
-        stmt.step();
-        stmt.free();
-      } else {
-        this.db.run(sql);
-      }
-      // Capture last_insert_rowid BEFORE saveDatabase - export() can reset it
+      const result = this.db.prepare(sql).run(...params);
       if (sql.trim().toUpperCase().startsWith('INSERT')) {
-        const idStmt = this.db.prepare('SELECT last_insert_rowid() as id');
-        idStmt.step();
-        this.lastInsertRowId = (idStmt.getAsObject() as { id: number }).id;
-        idStmt.free();
+        this.lastInsertRowId = Number(result.lastInsertRowid);
       }
-      await this.saveDatabase();
     } catch (error) {
       console.error('[DB] Run error:', error);
       console.error('[DB] SQL:', sql);
@@ -246,20 +133,10 @@ export class DatabaseService {
 
   async get(sql: string, params: any[] = []): Promise<DatabaseRow | null> {
     await this.ensureInitialized();
-    
+
     try {
-      const stmt = this.db.prepare(sql);
-      if (params.length > 0) {
-        stmt.bind(params);
-      }
-      const hasRow = stmt.step();
-      if (!hasRow) {
-        stmt.free();
-        return null;
-      }
-      const row = stmt.getAsObject();
-      stmt.free();
-      return row;
+      const row = this.db.prepare(sql).get(...params) as DatabaseRow | undefined;
+      return row ?? null;
     } catch (error) {
       console.error('[DB] Get error:', error);
       console.error('[DB] SQL:', sql);
@@ -270,18 +147,9 @@ export class DatabaseService {
 
   async all(sql: string, params: any[] = []): Promise<DatabaseRow[]> {
     await this.ensureInitialized();
-    
+
     try {
-      const stmt = this.db.prepare(sql);
-      if (params.length > 0) {
-        stmt.bind(params);
-      }
-      const rows: DatabaseRow[] = [];
-      while (stmt.step()) {
-        rows.push(stmt.getAsObject());
-      }
-      stmt.free();
-      return rows;
+      return this.db.prepare(sql).all(...params) as DatabaseRow[];
     } catch (error) {
       console.error('[DB] All error:', error);
       console.error('[DB] SQL:', sql);
@@ -292,38 +160,16 @@ export class DatabaseService {
 
   async getLastInsertRowId(): Promise<number> {
     await this.ensureInitialized();
-    const id = this.lastInsertRowId;
-    console.log('[DB] getLastInsertRowId result:', id);
-    return id;
-  }
-
-  private async saveDatabase(): Promise<void> {
-    try {
-      const data = this.db.export();
-      const buffer = Buffer.from(data);
-      // Ensure directory exists before writing
-      const dbDir = path.dirname(this.dbPath);
-      ensureDirectoryExists(dbDir);
-      // Use async writeFile with promisify to avoid blocking
-      await fs.promises.writeFile(this.dbPath, buffer);
-    } catch (error) {
-      // Log error but don't throw - in-memory DB has the data, disk save failure is non-critical
-      // This prevents 500 errors when disk write fails but DB operation succeeded
-      console.error('[DB] Failed to save database to disk (non-critical):', error);
-    }
+    console.log('[DB] getLastInsertRowId result:', this.lastInsertRowId);
+    return this.lastInsertRowId;
   }
 
   // Internal sync methods for use during initialization only
-  // These don't check initialization because they're called during init
   private runSync(sql: string, params: any[] = []): void {
     try {
-      if (params.length > 0) {
-        const stmt = this.db.prepare(sql);
-        stmt.bind(params);
-        stmt.step();
-        stmt.free();
-      } else {
-        this.db.run(sql);
+      const result = this.db.prepare(sql).run(...params);
+      if (sql.trim().toUpperCase().startsWith('INSERT')) {
+        this.lastInsertRowId = Number(result.lastInsertRowid);
       }
     } catch (error) {
       console.error('[DB] RunSync error:', error);
@@ -334,18 +180,8 @@ export class DatabaseService {
 
   private getSync(sql: string, params: any[] = []): DatabaseRow | null {
     try {
-      const stmt = this.db.prepare(sql);
-      if (params.length > 0) {
-        stmt.bind(params);
-      }
-      const hasRow = stmt.step();
-      if (!hasRow) {
-        stmt.free();
-        return null;
-      }
-      const row = stmt.getAsObject();
-      stmt.free();
-      return row;
+      const row = this.db.prepare(sql).get(...params) as DatabaseRow | undefined;
+      return row ?? null;
     } catch (error) {
       console.error('[DB] GetSync error:', error);
       console.error('[DB] SQL:', sql);
@@ -355,16 +191,7 @@ export class DatabaseService {
 
   private allSync(sql: string, params: any[] = []): DatabaseRow[] {
     try {
-      const stmt = this.db.prepare(sql);
-      if (params.length > 0) {
-        stmt.bind(params);
-      }
-      const rows: DatabaseRow[] = [];
-      while (stmt.step()) {
-        rows.push(stmt.getAsObject());
-      }
-      stmt.free();
-      return rows;
+      return this.db.prepare(sql).all(...params) as DatabaseRow[];
     } catch (error) {
       console.error('[DB] AllSync error:', error);
       console.error('[DB] SQL:', sql);
@@ -664,14 +491,14 @@ export class DatabaseService {
       `CREATE TABLE IF NOT EXISTS order_items (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         order_id INTEGER NOT NULL,
-        item_id INTEGER NOT NULL,
+        item_id INTEGER,
         item_name TEXT NOT NULL,
         quantity INTEGER NOT NULL DEFAULT 1,
         price INTEGER NOT NULL,
         kitchen_id INTEGER,
         service_type TEXT DEFAULT 'dine-in',
         shelf_item_id INTEGER,
-        FOREIGN KEY(order_id) REFERENCES orders(id) ON DELETE CASCADE,
+        order_type TEXT DEFAULT 'dine_in',
         FOREIGN KEY(item_id) REFERENCES items(id),
         FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
         FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
@@ -743,6 +570,102 @@ export class DatabaseService {
         console.log('[DB] ✅ Added order_type column to order_items table');
       } catch (error) {
         console.error('[DB] Failed to add order_type to order_items', error);
+      }
+    }
+
+    // Migration: order_items.order_id used to FK orders(id), but dine_in/pickup/delivery
+    // orders now live in separate tables. Drop that FK so inserts work with FK enforcement on.
+    const orderItemsSchema = this.getSync(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='order_items'",
+    );
+    if (orderItemsSchema?.sql && orderItemsSchema.sql.includes('REFERENCES orders(id)')) {
+      console.log('[DB] 🔄 Migrating order_items: removing legacy orders(id) foreign key...');
+      try {
+        this.db.pragma('foreign_keys = OFF');
+        this.runSync(
+          `CREATE TABLE order_items_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            item_id INTEGER,
+            item_name TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price INTEGER NOT NULL,
+            kitchen_id INTEGER,
+            service_type TEXT DEFAULT 'dine-in',
+            shelf_item_id INTEGER,
+            order_type TEXT DEFAULT 'dine_in',
+            FOREIGN KEY(item_id) REFERENCES items(id),
+            FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
+            FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
+          )`,
+        );
+        this.runSync(
+          `INSERT INTO order_items_new (
+            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+          )
+          SELECT
+            id, order_id,
+            CASE WHEN shelf_item_id IS NOT NULL THEN NULL ELSE item_id END,
+            item_name, quantity, price, kitchen_id, service_type, shelf_item_id,
+            COALESCE(order_type, 'dine_in')
+          FROM order_items`,
+        );
+        this.runSync('DROP TABLE order_items');
+        this.runSync('ALTER TABLE order_items_new RENAME TO order_items');
+        this.db.pragma('foreign_keys = ON');
+        console.log('[DB] ✅ Migrated order_items without legacy orders(id) foreign key');
+      } catch (error) {
+        this.db.pragma('foreign_keys = ON');
+        console.error('[DB] Failed to migrate order_items foreign keys', error);
+      }
+    }
+
+    // Migration: allow NULL item_id for shelf-only order lines (shelf_item_id set).
+    const orderItemsItemIdSchema = this.getSync(
+      "SELECT sql FROM sqlite_master WHERE type='table' AND name='order_items'",
+    );
+    if (
+      orderItemsItemIdSchema?.sql &&
+      orderItemsItemIdSchema.sql.includes('item_id INTEGER NOT NULL')
+    ) {
+      console.log('[DB] 🔄 Migrating order_items: nullable item_id for shelf lines...');
+      try {
+        this.db.pragma('foreign_keys = OFF');
+        this.runSync(
+          `CREATE TABLE order_items_shelf_fix (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            order_id INTEGER NOT NULL,
+            item_id INTEGER,
+            item_name TEXT NOT NULL,
+            quantity INTEGER NOT NULL DEFAULT 1,
+            price INTEGER NOT NULL,
+            kitchen_id INTEGER,
+            service_type TEXT DEFAULT 'dine-in',
+            shelf_item_id INTEGER,
+            order_type TEXT DEFAULT 'dine_in',
+            FOREIGN KEY(item_id) REFERENCES items(id),
+            FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
+            FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
+          )`,
+        );
+        this.runSync(
+          `INSERT INTO order_items_shelf_fix (
+            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+          )
+          SELECT
+            id, order_id,
+            CASE WHEN shelf_item_id IS NOT NULL THEN NULL ELSE item_id END,
+            item_name, quantity, price, kitchen_id, service_type, shelf_item_id,
+            COALESCE(order_type, 'dine_in')
+          FROM order_items`,
+        );
+        this.runSync('DROP TABLE order_items');
+        this.runSync('ALTER TABLE order_items_shelf_fix RENAME TO order_items');
+        this.db.pragma('foreign_keys = ON');
+        console.log('[DB] ✅ order_items item_id nullable for shelf lines');
+      } catch (error) {
+        this.db.pragma('foreign_keys = ON');
+        console.error('[DB] Failed to migrate order_items nullable item_id', error);
       }
     }
 
@@ -956,7 +879,7 @@ export class DatabaseService {
             `INSERT INTO shifts (id, start_time, end_time, status, created_at)
              SELECT id, openedAt, closedAt, 
                     CASE WHEN closedAt IS NULL THEN 'open' ELSE 'closed' END,
-                    COALESCE(openedAt, datetime('now'))
+                    COALESCE(openedAt, CURRENT_TIMESTAMP)
              FROM shifts_old`,
           );
 
@@ -979,7 +902,7 @@ export class DatabaseService {
         console.log('🔄 Adding new columns to shifts table...');
 
         // Get admin user ID as default
-        const userRow = this.getSync('SELECT id FROM users WHERE role = "admin" LIMIT 1');
+        const userRow = this.getSync('SELECT id FROM users WHERE role = \'admin\' LIMIT 1');
         const defaultUserId = userRow?.id || 1;
 
         // Add new columns one by one
@@ -1034,7 +957,7 @@ export class DatabaseService {
           this.runSync(
             `UPDATE shifts 
              SET started_by = ?, 
-                 start_time = COALESCE(openedAt, datetime('now')),
+                 start_time = COALESCE(openedAt, CURRENT_TIMESTAMP),
                  end_time = closedAt,
                  status = CASE WHEN closedAt IS NULL THEN 'open' ELSE 'closed' END
              WHERE started_by IS NULL`,
@@ -1179,12 +1102,12 @@ export class DatabaseService {
           this.runSync(
             `INSERT INTO expenses_new (id, date, category, amount, notes, user_id, created_at)
              SELECT id, 
-                    COALESCE(createdAt, datetime('now')) as date,
+                    COALESCE(createdAt, CURRENT_TIMESTAMP) as date,
                     COALESCE(description, 'Uncategorized') as category,
                     amount,
                     NULL as notes,
                     NULL as user_id,
-                    COALESCE(createdAt, datetime('now')) as created_at
+                    COALESCE(createdAt, CURRENT_TIMESTAMP) as created_at
              FROM expenses`,
           );
 
@@ -1204,7 +1127,7 @@ export class DatabaseService {
       if (expensesCategoryCheck && expensesCategoryCheck.cnt === 0) {
         // Has date but no category - add missing columns
         try {
-          this.runSync('ALTER TABLE expenses ADD COLUMN category TEXT NOT NULL DEFAULT "Uncategorized"');
+          this.runSync('ALTER TABLE expenses ADD COLUMN category TEXT NOT NULL DEFAULT \'Uncategorized\'');
           console.log('[DB] ✅ Added category column to expenses table');
         } catch (error) {
           console.error('[DB] Failed to add category to expenses', error);
@@ -1375,7 +1298,7 @@ export class DatabaseService {
 
       try {
         this.runSync(
-          'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, datetime("now"), datetime("now"))',
+          'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
           ['admin', defaultPasswordHash, 'admin'],
         );
         console.log('[DB] ✅ Seeded default admin user (username: admin, password: admin123)');
@@ -1388,7 +1311,7 @@ export class DatabaseService {
     const businessDaysCount = this.getSync('SELECT COUNT(*) as count FROM business_days WHERE is_active = 1');
     if (businessDaysCount && businessDaysCount.count === 0) {
       try {
-        this.runSync('INSERT INTO business_days (start_at, is_active) VALUES (datetime("now"), 1)');
+        this.runSync('INSERT INTO business_days (start_at, is_active) VALUES (CURRENT_TIMESTAMP, 1)');
         console.log('[DB] ✅ Seeded initial business day');
       } catch (error) {
         console.error('[DB] Failed to seed business day', error);
@@ -1513,24 +1436,14 @@ export class DatabaseService {
     // Seed basic categories/items if empty
     const categoriesCount = this.getSync('SELECT COUNT(*) as count FROM categories');
     if (categoriesCount && categoriesCount.count === 0) {
-      const stmtCat = this.db.prepare('INSERT INTO categories (name) VALUES (?)');
       const baseCategories = ['مشويات', 'مقبلات', 'مشروبات'];
-      baseCategories.forEach((name) => {
-        stmtCat.bind([name]);
-        stmtCat.step();
-      });
-      stmtCat.free();
+      for (const name of baseCategories) {
+        this.runSync('INSERT INTO categories (name) VALUES (?)', [name]);
+      }
 
-      const stmtItem = this.db.prepare('INSERT INTO items (name, price, categoryId) VALUES (?, ?, ?)');
-      stmtItem.bind(['كباب', 5000, 1]);
-      stmtItem.step();
-      stmtItem.reset();
-      stmtItem.bind(['تبولة', 3000, 2]);
-      stmtItem.step();
-      stmtItem.reset();
-      stmtItem.bind(['بيبسي', 1000, 3]);
-      stmtItem.step();
-      stmtItem.free();
+      this.runSync('INSERT INTO items (name, price, categoryId) VALUES (?, ?, ?)', ['كباب', 5000, 1]);
+      this.runSync('INSERT INTO items (name, price, categoryId) VALUES (?, ?, ?)', ['تبولة', 3000, 2]);
+      this.runSync('INSERT INTO items (name, price, categoryId) VALUES (?, ?, ?)', ['بيبسي', 1000, 3]);
     }
 
     // Domain separation tables (Option 3)
@@ -1837,6 +1750,152 @@ export class DatabaseService {
     } catch (error: any) {
       console.error('[DB] ⚠️  Error during order migration:', error.message);
       // Don't throw - allow app to continue even if migration fails
+    }
+
+    this.migrateAppSettingsAndBusinessDate();
+  }
+
+  /** App settings (shift hours) + business_date on order tables. */
+  private migrateAppSettingsAndBusinessDate(): void {
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS app_settings (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL
+      )`,
+    );
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS shift_definitions (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT NOT NULL,
+        start_time TEXT NOT NULL,
+        end_time TEXT NOT NULL,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        is_active INTEGER NOT NULL DEFAULT 1
+      )`,
+    );
+
+    const seedSetting = (key: string, value: string) => {
+      const exists = this.getSync('SELECT 1 FROM app_settings WHERE key = ?', [key]);
+      if (!exists) {
+        this.runSync('INSERT INTO app_settings (key, value) VALUES (?, ?)', [key, value]);
+      }
+    };
+    seedSetting('shift_mode', 'single');
+    seedSetting('business_day_start_time', DEFAULT_BUSINESS_DAY_START);
+    seedSetting('shift_start_time', DEFAULT_SHIFT_START);
+    seedSetting('shift_end_time', DEFAULT_SHIFT_END);
+
+    const legacyStart = this.getSync("SELECT value FROM app_settings WHERE key = 'shift_start_time'");
+    const businessStart = this.getSync(
+      "SELECT value FROM app_settings WHERE key = 'business_day_start_time'",
+    );
+    if (legacyStart?.value && !businessStart?.value) {
+      this.runSync(
+        `INSERT INTO app_settings (key, value) VALUES ('business_day_start_time', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`,
+        [legacyStart.value],
+      );
+    }
+
+    const orderTables = ['dine_in_orders', 'pickup_orders', 'delivery_orders'] as const;
+    for (const table of orderTables) {
+      const col = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name='business_date'`,
+      );
+      if (col && col.cnt === 0) {
+        try {
+          this.runSync(`ALTER TABLE ${table} ADD COLUMN business_date TEXT`);
+          this.runSync(
+            `CREATE INDEX IF NOT EXISTS idx_${table}_business_date ON ${table}(business_date)`,
+          );
+          console.log(`[DB] ✅ Added business_date to ${table}`);
+        } catch (error) {
+          console.error(`[DB] Failed to add business_date to ${table}`, error);
+        }
+      }
+
+      const shiftCol = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name='shift_definition_id'`,
+      );
+      if (shiftCol && shiftCol.cnt === 0) {
+        try {
+          this.runSync(`ALTER TABLE ${table} ADD COLUMN shift_definition_id INTEGER`);
+          this.runSync(
+            `CREATE INDEX IF NOT EXISTS idx_${table}_shift_def ON ${table}(shift_definition_id)`,
+          );
+          console.log(`[DB] ✅ Added shift_definition_id to ${table}`);
+        } catch (error) {
+          console.error(`[DB] Failed to add shift_definition_id to ${table}`, error);
+        }
+      }
+    }
+
+    const shelfCol = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('shelf_sales') WHERE name='business_date'",
+    );
+    if (shelfCol && shelfCol.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE shelf_sales ADD COLUMN business_date TEXT');
+        this.runSync(
+          'CREATE INDEX IF NOT EXISTS idx_shelf_sales_business_date ON shelf_sales(business_date)',
+        );
+        console.log('[DB] ✅ Added business_date to shelf_sales');
+      } catch (error) {
+        console.error('[DB] Failed to add business_date to shelf_sales', error);
+      }
+    }
+
+    const modeRow = this.getSync("SELECT value FROM app_settings WHERE key = 'shift_mode'");
+    const mode = modeRow?.value === 'multi' ? 'multi' : 'single';
+    const dayStartRow = this.getSync(
+      "SELECT value FROM app_settings WHERE key = 'business_day_start_time'",
+    );
+    const dayStart = dayStartRow?.value || DEFAULT_BUSINESS_DAY_START;
+
+    const definitionRows = (this.allSync(
+      'SELECT id, name, start_time, end_time FROM shift_definitions WHERE is_active = 1 ORDER BY sort_order ASC, id ASC',
+    ) || []) as Array<{ id: number; name: string; start_time: string; end_time: string }>;
+
+    const backfillOrderTable = (table: string) => {
+      const nullFilter =
+        mode === 'multi'
+          ? `business_date IS NULL OR business_date = '' OR shift_definition_id IS NULL`
+          : `business_date IS NULL OR business_date = ''`;
+      const rows = this.allSync(`SELECT id, created_at FROM ${table} WHERE ${nullFilter}`);
+      if (!rows?.length) return;
+      const stmt = this.db.prepare(
+        `UPDATE ${table} SET business_date = ?, shift_definition_id = ? WHERE id = ?`,
+      );
+      let updated = 0;
+      for (const row of rows) {
+        if (!row.created_at) continue;
+        const resolved = resolveOrderShift(
+          String(row.created_at),
+          mode as 'single' | 'multi',
+          dayStart,
+          definitionRows,
+        );
+        stmt.run(resolved.business_date, resolved.shift_definition_id, row.id);
+        updated++;
+      }
+      if (updated > 0) {
+        console.log(`[DB] ✅ Backfilled business_date on ${updated} rows in ${table}`);
+      }
+    };
+
+    for (const table of orderTables) {
+      backfillOrderTable(table);
+    }
+
+    const shelfRows = this.allSync('SELECT id, created_at FROM shelf_sales');
+    if (shelfRows?.length) {
+      const stmt = this.db.prepare('UPDATE shelf_sales SET business_date = ? WHERE id = ?');
+      for (const row of shelfRows) {
+        if (row.created_at) {
+          stmt.run(computeBusinessDate(String(row.created_at), dayStart), row.id);
+        }
+      }
     }
   }
 }

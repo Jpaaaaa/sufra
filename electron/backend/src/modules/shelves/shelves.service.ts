@@ -1,5 +1,6 @@
 import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
+import { resolveOrderShiftFields, getCurrentBusinessDateFromSettings } from '../settings/resolve-order-shift';
 
 export interface ShelfItem {
   id: number;
@@ -58,24 +59,11 @@ export class ShelvesService {
       throw new BadRequestException('Barcode already exists');
     }
 
-    // Use prepared statement to get last_insert_rowid correctly
-    const connection = this.db.getConnection();
-    
-    // Insert item
-    const insertStmt = connection.prepare(
-      'INSERT INTO shelf_items (name, barcode, price, quantity, created_at, updated_at) VALUES (?, ?, ?, ?, datetime("now"), datetime("now"))'
+    await this.db.run(
+      'INSERT INTO shelf_items (name, barcode, price, quantity, created_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+      [data.name, data.barcode, data.price, data.quantity],
     );
-    insertStmt.bind([data.name, data.barcode, data.price, data.quantity]);
-    insertStmt.step();
-    
-    // Get last_insert_rowid immediately (before freeing statement)
-    const rowIdStmt = connection.prepare('SELECT last_insert_rowid() as id');
-    rowIdStmt.step();
-    const rowIdResult = rowIdStmt.getAsObject();
-    const id = rowIdResult.id as number;
-    
-    insertStmt.free();
-    rowIdStmt.free();
+    const id = await this.db.getLastInsertRowId();
 
     // Fetch the created item using the ID we just got
     const createdRow = await this.db.get(
@@ -105,7 +93,7 @@ export class ShelvesService {
     // Proceed with update
     const merged = { ...existing, ...data };
     await this.db.run(
-      'UPDATE shelf_items SET name = ?, barcode = ?, price = ?, quantity = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE shelf_items SET name = ?, barcode = ?, price = ?, quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [merged.name, merged.barcode, merged.price, merged.quantity, id],
     );
     return merged;
@@ -129,7 +117,7 @@ export class ShelvesService {
 
     const newQuantity = existing.quantity - quantity;
     await this.db.run(
-      'UPDATE shelf_items SET quantity = ?, updated_at = datetime("now") WHERE id = ?',
+      'UPDATE shelf_items SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
       [newQuantity, id],
     );
     return { ...existing, quantity: newQuantity };
@@ -151,28 +139,16 @@ export class ShelvesService {
     try {
       // Decrease stock
       await this.db.run(
-        'UPDATE shelf_items SET quantity = ?, updated_at = datetime("now") WHERE id = ?',
+        'UPDATE shelf_items SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [newQuantity, item.id],
       );
 
-      // Create sale record using prepared statement and get last_insert_rowid
-      const connection = this.db.getConnection();
-      
-      // Insert sale
-      const insertStmt = connection.prepare(
-        'INSERT INTO shelf_sales (shelf_item_id, quantity, price, created_at) VALUES (?, ?, ?, datetime("now"))'
+      const shiftFields = await resolveOrderShiftFields();
+      await this.db.run(
+        'INSERT INTO shelf_sales (shelf_item_id, quantity, price, created_at, business_date) VALUES (?, ?, ?, datetime(\'now\', \'localtime\'), ?)',
+        [item.id, quantity, item.price, shiftFields.business_date],
       );
-      insertStmt.bind([item.id, quantity, item.price]);
-      insertStmt.step();
-      
-      // Get last_insert_rowid immediately (before freeing statement)
-      const rowIdStmt = connection.prepare('SELECT last_insert_rowid() as id');
-      rowIdStmt.step();
-      const rowIdResult = rowIdStmt.getAsObject();
-      const saleId = rowIdResult.id as number;
-      
-      insertStmt.free();
-      rowIdStmt.free();
+      const saleId = await this.db.getLastInsertRowId();
 
       // Fetch the created sale using the ID we just got
       const saleRow = await this.db.get(
@@ -191,7 +167,7 @@ export class ShelvesService {
     } catch (error) {
       // Rollback: restore stock
       await this.db.run(
-        'UPDATE shelf_items SET quantity = ?, updated_at = datetime("now") WHERE id = ?',
+        'UPDATE shelf_items SET quantity = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
         [item.quantity, item.id],
       );
       throw error;
@@ -199,6 +175,7 @@ export class ShelvesService {
   }
 
   async getTodaySales(): Promise<(ShelfSale & { item_name: string; item_barcode: string })[]> {
+    const today = await getCurrentBusinessDateFromSettings();
     const rows = await this.db.all(
       `SELECT 
         ss.id,
@@ -210,8 +187,9 @@ export class ShelvesService {
         si.barcode as item_barcode
       FROM shelf_sales ss
       INNER JOIN shelf_items si ON ss.shelf_item_id = si.id
-      WHERE DATE(ss.created_at) = DATE('now')
+      WHERE ss.business_date = ?
       ORDER BY ss.created_at DESC`,
+      [today],
     );
     return rows as (ShelfSale & { item_name: string; item_barcode: string })[];
   }

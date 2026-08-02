@@ -81,6 +81,16 @@ export interface ReportFilters {
   orderStatus?: 'pending' | 'printed' | 'completed' | 'cancelled';
 }
 
+export interface ShiftBreakdownRow {
+  shiftId: number | null;
+  shiftName: string;
+  startTime: string | null;
+  endTime: string | null;
+  totalSales: number;
+  orderCount: number;
+  averageOrder: number;
+}
+
 export interface ReportData {
   summary: ReportSummary;
   graphData: GraphDataPoint[];
@@ -90,5 +100,13 @@ export interface ReportData {
   employeeSummary: EmployeeSummary[];
   orders: OrderReport[] | DailyAggregate[];
   cashDrawer?: CashDrawerData;
+  /** Per-shift totals when shift_mode is multi (daily reports) */
+  shiftBreakdown?: ShiftBreakdownRow[];
+  /** Per-day shift breakdown for daily/weekly/monthly multi mode */
+  shiftBreakdownByDay?: Record<string, ShiftBreakdownRow[]>;
+  /** Per-month → per-day shift breakdown for yearly multi mode */
+  shiftBreakdownByMonth?: Record<string, Record<string, ShiftBreakdownRow[]>>;
+  /** Shift totals across the whole report period */
+  shiftBreakdownTotals?: ShiftBreakdownRow[];
 }
 
