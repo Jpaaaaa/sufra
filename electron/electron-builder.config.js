@@ -1,6 +1,6 @@
 /**
  * Alternate electron-builder config (mirrors electron-builder.json).
- * Live backend: electron/backend → packaged as resources/backend/
+ * Live backend: ncc bundle + minimal native runtime node_modules.
  */
 module.exports = {
   appId: 'com.sufra.lite.pos',
@@ -14,8 +14,9 @@ module.exports = {
   },
 
   asar: true,
+  compression: 'store',
 
-  files: ['dist/**/*', 'package.json', 'build/**/*'],
+  files: ['dist/**/*', '!dist/backend/**', 'package.json', 'build/**/*'],
 
   extraResources: [
     {
@@ -24,12 +25,12 @@ module.exports = {
       filter: ['**/*'],
     },
     {
-      from: 'backend/dist',
+      from: 'backend/dist-bundle',
       to: 'backend/dist',
       filter: ['**/*'],
     },
     {
-      from: 'backend/node_modules',
+      from: 'backend/runtime-node_modules',
       to: 'backend/node_modules',
       filter: [
         '**/*',
@@ -41,15 +42,10 @@ module.exports = {
         '!**/__tests__/**',
         '!**/.github/**',
         '!**/docs/**',
+        '!**/*.ts',
+        '!**/*.map',
+        '!**/src/**',
       ],
-    },
-    {
-      from: 'backend/package.json',
-      to: 'backend/package.json',
-    },
-    {
-      from: './node',
-      to: 'node',
     },
     {
       from: 'build/icon.ico',

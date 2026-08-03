@@ -2,6 +2,7 @@ import { DatabaseService } from './database/database.service';
 import { initializeUsers } from './modules/users/users.service';
 import { initializeAuth } from './modules/auth/auth.service';
 import { initializeItems } from './modules/items/items.service';
+import { initializeItemOptions } from './modules/items/item-options.service';
 import { initializeUpload } from './modules/items/upload.service';
 import { initializeCategories } from './modules/categories/categories.service';
 import { initializeFloors } from './modules/floors/floors.service';
@@ -25,6 +26,7 @@ export function initializeAllServices(db: DatabaseService): void {
   initializeUsers(db);
   initializeAuth();
   initializeItems(db);
+  initializeItemOptions(db);
   initializeUpload();
   initializeCategories(db);
   initializeFloors(db);

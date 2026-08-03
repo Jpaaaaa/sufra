@@ -22,6 +22,7 @@
     "react-i18next": "^16.5.4",
     "react-router-dom": "^6.28.0",
     "socket.io-client": "^4.8.3",
+    "sufra-lite-pos": "file:..",
     "zustand": "^5.0.9"
   },
   "devDependencies": {

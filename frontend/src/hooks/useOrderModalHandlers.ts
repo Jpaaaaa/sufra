@@ -6,6 +6,7 @@ import type { Item } from './useItems';
 import type { TableEntity } from '../utils';
 import { parseDiscountFromOrder, getOrdersWithDiscount } from './useOrderModalDiscountUtils';
 import { createClearTableHandler } from './useOrderModalClearTable';
+import { mapCartItemToOrderPayload, orderItemToCartLine } from './cart-item-utils';
 
 interface UserRole {
   role?: string;
@@ -109,18 +110,9 @@ export function createOrderModalHandlers(
       const payload: any = {
         table_id: table.id,
         hall_id: table.hall_id,
-        items: selectedItems.map((si) => ({
-          item_id: si.shelfItem?.id ? null : si.item.id,
-          item_name: si.item.name,
-          quantity: si.quantity,
-          price: si.item.price,
-          kitchen_id: si.item.kitchen_id ?? null,
-          service_type: si.order_type || 'dine-in',
-          shelf_item_id: si.shelfItem?.id,
-        })),
+        items: selectedItems.map(mapCartItemToOrderPayload),
         note: note?.trim() || null,
       };
-      if (appliedDiscount) payload.globalDiscount = { percent: appliedDiscount.percent, amount: appliedDiscount.amount };
 
       const serverUrl = getServerUrl();
       await fetchJson(`${serverUrl}/orders/dine-in`, {
@@ -128,6 +120,14 @@ export function createOrderModalHandlers(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
+      if (appliedDiscount) {
+        await fetchJson(`${serverUrl}/orders/table/${table.id}/global-discount`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ globalDiscount: appliedDiscount }),
+        });
+      }
 
       await new Promise((r) => setTimeout(r, 100));
       const previousIds = new Set(existingOrders.map((o) => o.id));
@@ -166,18 +166,9 @@ export function createOrderModalHandlers(
   );
 
   const handleEditOrder = (order: ExistingOrder) => {
-    const orderItems: CartItem[] = order.items.map((item: any) => {
-      const fullItem = items.find((i) => i.id === item.item_id);
-      const serviceType = item.service_type || 'dine-in';
-      if (!fullItem) {
-        return {
-          item: { id: item.item_id, name: item.item_name, price: item.price, categoryId: null, kitchen_id: item.kitchen_id || null },
-          quantity: item.quantity,
-          order_type: serviceType as 'dine-in' | 'pickup',
-        };
-      }
-      return { item: fullItem, quantity: item.quantity, order_type: serviceType as 'dine-in' | 'pickup' };
-    });
+    const orderItems: CartItem[] = order.items
+      .map((item: any) => orderItemToCartLine(item, items))
+      .filter((x): x is CartItem => x != null);
     setSelectedItems(orderItems);
     setEditingOrder(order);
     setEditingOrderType(order.order_type);
@@ -223,16 +214,7 @@ export function createOrderModalHandlers(
     try {
       const noteToSave = (editingNote?.trim() || note?.trim() || '').trim();
       const payload: any = {
-        items: selectedItems.map((si) => ({
-          item_id: si.shelfItem?.id ? null : si.item.id,
-          item_name: si.item.name,
-          quantity: si.quantity,
-          price: si.item.price,
-          kitchen_id: si.item.kitchen_id ?? null,
-          service_type: si.order_type || 'dine-in',
-          shelf_item_id: si.shelfItem?.id,
-        })),
-        globalDiscount: appliedDiscount ? { percent: appliedDiscount.percent, amount: appliedDiscount.amount } : undefined,
+        items: selectedItems.map(mapCartItemToOrderPayload),
         note: noteToSave || null,
       };
 
@@ -242,6 +224,14 @@ export function createOrderModalHandlers(
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
+
+      if (appliedDiscount) {
+        await fetchJson(`${serverUrl}/orders/table/${table.id}/global-discount`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ globalDiscount: appliedDiscount }),
+        });
+      }
 
       const ordersData = await fetchJson<any[]>(`${serverUrl}/orders/dine-in/table/${table.id}`);
       setExistingOrders(ordersData.filter((o: any) => o.status === 'pending' || o.status === 'printed'));

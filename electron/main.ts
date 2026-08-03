@@ -50,6 +50,7 @@ import { getStaticFrontendPath } from './init/paths';
 import { createWindow } from './windows/main-window';
 import { getMainWindow, setMainWindow, getBackendApp, setBackendApp, getIsQuitting, setIsQuitting } from './state';
 import { setupIpcHandlers } from './ipc/handlers';
+import { startBackupScheduler } from './backup/backup-scheduler';
 import { setupFastifyLanServer, shutdownFastifyLanServer } from './http-fastify/server';
 import { LAN_API_PORT } from './http-shared/lan-ports';
 import { registerLicenseIpc } from './license/register-license-ipc';
@@ -490,6 +491,7 @@ app.whenReady().then(async () => {
   // Setup IPC handlers (they will call backend services directly)
   console.log('[LIFECYCLE] Setting up IPC handlers...');
   setupIpcHandlers();
+  startBackupScheduler();
   console.log('[LIFECYCLE] ✓ IPC handlers registered');
   
   // Fastify LAN server (API + Socket.IO + uploads on port 3333)

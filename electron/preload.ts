@@ -72,6 +72,19 @@ contextBridge.exposeInMainWorld('sufra', {
     openAnyDesk: () => invoke('support:anydeskOpen'),
     openAnyDeskDownloadPage: () => invoke('support:anydeskDownloadPage'),
   },
+  backup: {
+    getSettings: () => invoke('backup:getSettings'),
+    updateSettings: (settings: {
+      enabled?: boolean;
+      scheduleHour?: number;
+      scheduleMinute?: number;
+      retentionCount?: number;
+    }) => invoke('backup:updateSettings', settings),
+    runNow: () => invoke('backup:runNow'),
+    list: () => invoke('backup:list'),
+    getStatus: () => invoke('backup:getStatus'),
+    restore: (backupId: string, accessToken: string) => invoke('backup:restore', backupId, accessToken),
+  },
   halls: {
     findAll: () => invoke('halls:findAll'),
     findOne: (id: number) => invoke('halls:findOne', id),
@@ -107,6 +120,8 @@ contextBridge.exposeInMainWorld('sufra', {
     create: (data: any) => invoke('items:create', data),
     update: (id: number, data: any) => invoke('items:update', id, data),
     remove: (id: number) => invoke('items:remove', id),
+    copyOptionsFromItem: (targetId: number, sourceId: number) =>
+      invoke('items:copyOptionsFromItem', targetId, sourceId),
   },
   categories: {
     findAll: () => invoke('categories:findAll'),
@@ -229,6 +244,7 @@ contextBridge.exposeInMainWorld('sufra', {
     getCurrent: () => invoke('business-day:getCurrent'),
     start: (data: any) => invoke('business-day:start', data),
     reset: (data?: any) => invoke('business-day:reset', data),
+    ensure: () => invoke('business-day:ensure'),
   },
   reports: {
     dailySummary: () => invoke('reports:dailySummary'),
@@ -368,6 +384,50 @@ declare global {
           { ok: true; action: 'launched' | 'openedDownloadPage' } | { ok: false; error: string }
         >;
         openAnyDeskDownloadPage: () => Promise<{ ok: true } | { ok: false; error: string }>;
+      };
+      backup?: {
+        getSettings: () => Promise<{
+          enabled: boolean;
+          scheduleHour: number;
+          scheduleMinute: number;
+          retentionCount: number;
+          lastRunAt: string | null;
+          lastRunSizeBytes: number | null;
+          lastBackupId: string | null;
+          lastError: string | null;
+          nextRunAt: string | null;
+        }>;
+        updateSettings: (settings: {
+          enabled?: boolean;
+          scheduleHour?: number;
+          scheduleMinute?: number;
+          retentionCount?: number;
+        }) => Promise<unknown>;
+        runNow: () => Promise<
+          { ok: true; backupId: string; sizeBytes: number } | { ok: false; error: string }
+        >;
+        list: () => Promise<
+          Array<{ id: string; createdAt: string; sizeBytes: number; storeName: string }>
+        >;
+        getStatus: () => Promise<{
+          settings: {
+            enabled: boolean;
+            scheduleHour: number;
+            scheduleMinute: number;
+            retentionCount: number;
+            lastRunAt: string | null;
+            lastRunSizeBytes: number | null;
+            lastBackupId: string | null;
+            lastError: string | null;
+            nextRunAt: string | null;
+          };
+          inProgress: boolean;
+          backups: Array<{ id: string; createdAt: string; sizeBytes: number; storeName: string }>;
+        }>;
+        restore: (
+          backupId: string,
+          accessToken: string,
+        ) => Promise<{ ok: true } | { ok: false; error: string }>;
       };
       orders: {
         findActive: () => Promise<any[]>;
@@ -563,6 +623,7 @@ declare global {
         getCurrent: () => Promise<any>;
         start: (data: any) => Promise<any>;
         reset: (data?: any) => Promise<any>;
+        ensure: () => Promise<any>;
       };
       export: {
         pdf: (exportData: {

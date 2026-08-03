@@ -99,6 +99,50 @@ declare global {
         >;
         openAnyDeskDownloadPage: () => Promise<{ ok: true } | { ok: false; error: string }>;
       };
+      backup?: {
+        getSettings: () => Promise<{
+          enabled: boolean;
+          scheduleHour: number;
+          scheduleMinute: number;
+          retentionCount: number;
+          lastRunAt: string | null;
+          lastRunSizeBytes: number | null;
+          lastBackupId: string | null;
+          lastError: string | null;
+          nextRunAt: string | null;
+        }>;
+        updateSettings: (settings: {
+          enabled?: boolean;
+          scheduleHour?: number;
+          scheduleMinute?: number;
+          retentionCount?: number;
+        }) => Promise<unknown>;
+        runNow: () => Promise<
+          { ok: true; backupId: string; sizeBytes: number } | { ok: false; error: string }
+        >;
+        list: () => Promise<
+          Array<{ id: string; createdAt: string; sizeBytes: number; storeName: string }>
+        >;
+        getStatus: () => Promise<{
+          settings: {
+            enabled: boolean;
+            scheduleHour: number;
+            scheduleMinute: number;
+            retentionCount: number;
+            lastRunAt: string | null;
+            lastRunSizeBytes: number | null;
+            lastBackupId: string | null;
+            lastError: string | null;
+            nextRunAt: string | null;
+          };
+          inProgress: boolean;
+          backups: Array<{ id: string; createdAt: string; sizeBytes: number; storeName: string }>;
+        }>;
+        restore: (
+          backupId: string,
+          accessToken: string,
+        ) => Promise<{ ok: true } | { ok: false; error: string }>;
+      };
       halls: {
         findAll: () => Promise<any[]>;
         findOne: (id: number) => Promise<any>;
@@ -134,6 +178,7 @@ declare global {
         create: (data: any) => Promise<any>;
         update: (id: number, data: any) => Promise<any>;
         remove: (id: number) => Promise<any>;
+        copyOptionsFromItem: (targetId: number, sourceId: number) => Promise<any>;
       };
       categories: {
         findAll: () => Promise<any[]>;
@@ -253,6 +298,7 @@ declare global {
         getCurrent: () => Promise<any>;
         start: (data: any) => Promise<any>;
         reset: (data?: any) => Promise<any>;
+        ensure: () => Promise<any>;
       };
       reports: {
         dailySummary: () => Promise<any>;

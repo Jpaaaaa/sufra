@@ -30,24 +30,7 @@ export default function LoginPage() {
 
     try {
       await login(username, password);
-      // Get user data from localStorage after login (login function stores it)
-      const storedUser = localStorage.getItem('sufra_auth_user');
-      if (storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
-          if (userData.role === 'admin') {
-            navigate('/marketing');
-          } else {
-            navigate('/');
-          }
-        } catch (parseError) {
-          // Fallback to home if parsing fails
-          navigate('/');
-        }
-      } else {
-        // Fallback to home if user data not available
-        navigate('/');
-      }
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'فشل تسجيل الدخول. يرجى التحقق من اسم الموظف (اسم الدخول) وكلمة المرور.');
     } finally {

@@ -113,13 +113,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const ensureBusinessDayExists = async (accessToken: string) => {
     try {
       console.log('[AUTH] Ensuring business day exists...');
+
+      if (window.sufra?.['business-day']?.ensure) {
+        const businessDay = await window.sufra['business-day'].ensure();
+        console.log('[AUTH] Business day ensured, ID:', businessDay?.id);
+        return;
+      }
+
       const serverUrl = getServerUrl();
-      const response = await fetch(`${serverUrl}/business-day/ensure`, {
+      const response = await fetch(`${serverUrl}/api/business-day/ensure`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${accessToken}`,
           'Content-Type': 'application/json',
         },
+        body: JSON.stringify({}),
       });
       
       if (response.ok) {

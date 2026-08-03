@@ -8,6 +8,7 @@ import { OrderSummary } from './OrderSummary';
 import { CartItem as CartItemComponent } from './CartItem';
 import { OrderActions } from './OrderActions';
 import { DiscountModal } from './DiscountModal';
+import { ItemOptionsModal } from './ItemOptionsModal';
 
 interface OrderModalCartProps {
   existingOrders: ExistingOrder[];
@@ -29,9 +30,14 @@ interface OrderModalCartProps {
   onPrintOrder: (orderId: number) => void;
   onCancelOrder?: (orderId: number) => void;
   onUpdateOrderType?: (orderId: number, newOrderType: 'dine-in' | 'pickup' | 'delivery') => void;
-  onUpdateQuantity: (itemId: number, quantity: number) => void;
-  onRemoveItem: (itemId: number) => void;
-  onUpdateItemOrderType: (itemId: number, newOrderType: 'dine-in' | 'pickup') => void;
+  onUpdateQuantity: (cartLineId: string, quantity: number) => void;
+  onRemoveItem: (cartLineId: string) => void;
+  onUpdateItemOrderType: (cartLineId: string, newOrderType: 'dine-in' | 'pickup') => void;
+  onUpdateCartLineOptions?: (
+    cartLineId: string,
+    selected: import('../../lib/item-options').SelectedItemOptions,
+    linePrice: number,
+  ) => void;
   onSubmit: () => void;
   onCancel: () => void;
   onClearCart: () => void;
@@ -69,7 +75,7 @@ function OrderModalCartComponent({
   selectedItems,
   ordersExpanded,
   editingOrder,
-  editingOrderType,
+  editingOrderType: _editingOrderType,
   animatedOrderId,
   isDelivery,
   kitchens,
@@ -108,9 +114,12 @@ function OrderModalCartComponent({
   selectedOrderIds,
   onToggleOrderSelect,
   onMoveSelected,
+  onUpdateCartLineOptions,
 }: OrderModalCartProps) {
   const { t } = useTranslation();
   const fmt = useOrderMoney();
+  const [editingCartLineId, setEditingCartLineId] = useState<string | null>(null);
+  const editingCartLine = selectedItems.find((si) => si.cartLineId === editingCartLineId) ?? null;
   const resolvedDiscountLabel = discountButtonLabel ?? t('orders.tableDiscount');
   // Use editingNote when editing, otherwise use note
   const currentNote = editingOrder ? editingNote : note;
@@ -269,14 +278,13 @@ function OrderModalCartComponent({
             >
               {selectedItems.map((si) => (
                 <CartItemComponent
-                  key={si.item.id}
+                  key={si.cartLineId}
                   cartItem={si}
-                  index={0}
                   isDelivery={isDelivery}
-                  editingOrderType={editingOrderType}
                   onUpdateQuantity={onUpdateQuantity}
                   onRemove={onRemoveItem}
                   onUpdateOrderType={onUpdateItemOrderType}
+                  onEditOptions={onUpdateCartLineOptions ? (id) => setEditingCartLineId(id) : undefined}
                 />
               ))}
             </div>
@@ -330,6 +338,24 @@ function OrderModalCartComponent({
           </div>
         </div>
       )}
+
+      {onUpdateCartLineOptions &&
+        createPortal(
+          <ItemOptionsModal
+            isOpen={!!editingCartLine}
+            item={editingCartLine?.item ?? null}
+            initialSelections={editingCartLine?.selectedOptions}
+            onClose={() => setEditingCartLineId(null)}
+            confirmLabel={t('orders.optionsSaveLine')}
+            onConfirm={(selected, linePrice) => {
+              if (editingCartLineId) {
+                onUpdateCartLineOptions(editingCartLineId, selected, linePrice);
+              }
+              setEditingCartLineId(null);
+            }}
+          />,
+          document.body,
+        )}
 
       {/* Discount modal (portaled to body so it overlays above order modal) */}
       {showDiscount && combinedSubtotal > 0 && onSetTableDiscount && onApplyDiscount &&

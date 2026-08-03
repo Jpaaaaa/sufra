@@ -1,21 +1,24 @@
 /**
- * Slims backend/node_modules for production packaging.
- * Removes devDependencies to speed up electron-builder and reduce installer size.
+ * Prepares backend for production packaging:
+ * 1. ncc bundle (all JS inlined)
+ * 2. minimal runtime-node_modules (native modules only)
  */
 const { execSync } = require('child_process');
 const path = require('path');
 
-const backendDir = path.join(__dirname, '..', 'backend');
 const electronDir = path.join(__dirname, '..');
-console.log('[DIST] Slimming backend node_modules (removing devDependencies)...');
+const backendDir = path.join(electronDir, 'backend');
+
 const start = Date.now();
-execSync('npm install --omit=dev', {
-  cwd: backendDir,
-  stdio: 'inherit',
-});
-console.log('[DIST] Rebuilding native modules for Electron ABI...');
-execSync('npx electron-rebuild -f -w better-sqlite3,bcrypt -m ./backend', {
+
+console.log('[DIST] Bundling backend with ncc...');
+execSync('node build-bundle.js', { cwd: backendDir, stdio: 'inherit', shell: true });
+
+console.log('[DIST] Creating minimal native runtime node_modules...');
+execSync('node scripts/create-runtime-node-modules.js', {
   cwd: electronDir,
   stdio: 'inherit',
+  shell: true,
 });
-console.log(`[DIST] Backend slimmed in ${((Date.now() - start) / 1000).toFixed(1)}s`);
+
+console.log(`[DIST] Backend packaging prep done in ${((Date.now() - start) / 1000).toFixed(1)}s`);

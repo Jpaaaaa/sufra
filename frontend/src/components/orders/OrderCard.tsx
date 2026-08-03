@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ExistingOrder } from '../../hooks/useOrderModal';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
 import { PrinterIcon, ReceiptIcon, PencilIcon, CheckCircleIcon, XIcon } from '../icons';
+import { OrderItemOptionLines } from './OrderItemOptionLines';
 
 interface OrderCardProps {
   order: ExistingOrder;
@@ -146,8 +147,13 @@ export const OrderCard = memo(function OrderCard({
       <div className="mb-4 rounded-soft-lg bg-cloud-soft-white p-3">
         <div className="space-y-2 text-[14px] leading-relaxed">
           {order.items?.slice(0, 3).map((item: any, idx: number) => (
-            <div key={idx} className="flex items-center justify-between py-1 border-b border-black/5 last:border-0">
-              <span className="truncate text-obsidian/90">{item.item_name} <span className="text-obsidian/60">×{item.quantity}</span></span>
+            <div key={idx} className="flex items-start justify-between py-1 border-b border-black/5 last:border-0 gap-2">
+              <OrderItemOptionLines
+                itemName={item.item_name}
+                options_json={item.options_json}
+                quantity={item.quantity}
+                nameClassName="truncate text-obsidian/90"
+              />
               <span className="font-bold whitespace-nowrap text-obsidian ms-2">
                 {(item.price * item.quantity).toLocaleString(numberLocale)} {t('orders.currency')}
               </span>

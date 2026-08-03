@@ -15,6 +15,7 @@
   "compression": "store",
   "files": [
     "dist/**/*",
+    "!dist/backend/**",
     "package.json",
     "build/**/*"
   ],
@@ -27,14 +28,14 @@
       ]
     },
     {
-      "from": "backend/dist",
+      "from": "backend/dist-bundle",
       "to": "backend/dist",
       "filter": [
         "**/*"
       ]
     },
     {
-      "from": "backend/node_modules",
+      "from": "backend/runtime-node_modules",
       "to": "backend/node_modules",
       "filter": [
         "**/*",
@@ -45,16 +46,11 @@
         "!**/tests/**",
         "!**/__tests__/**",
         "!**/.github/**",
-        "!**/docs/**"
+        "!**/docs/**",
+        "!**/*.ts",
+        "!**/*.map",
+        "!**/src/**"
       ]
-    },
-    {
-      "from": "backend/package.json",
-      "to": "backend/package.json"
-    },
-    {
-      "from": "./node",
-      "to": "node"
     },
     {
       "from": "build/icon.ico",
@@ -67,6 +63,7 @@
     ],
     "icon": "build/icon.ico",
     "sign": null,
+    "signAndEditExecutable": false,
     "forceCodeSigning": false,
     "signingHashAlgorithms": []
   },

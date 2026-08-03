@@ -107,6 +107,16 @@ export class DatabaseService {
     }
   }
 
+  /** Hot checkpoint before copying sufra.sqlite for backup (app keeps running). */
+  checkpointWal(): void {
+    if (!this.db) return;
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+      console.warn('[DB] WAL checkpoint failed:', error);
+    }
+  }
+
   getConnection(): BetterSqliteDatabase {
     if (!this.isInitialized) {
       throw new Error('Database not initialized. Call ensureInitialized() first or wait for initialize() to complete.');
@@ -116,6 +126,10 @@ export class DatabaseService {
 
   // Public helper methods for services to use
   async run(sql: string, params: any[] = []): Promise<void> {
+    await this.runInsert(sql, params).then(() => undefined);
+  }
+
+  async runInsert(sql: string, params: any[] = []): Promise<number> {
     await this.ensureInitialized();
 
     try {
@@ -123,6 +137,7 @@ export class DatabaseService {
       if (sql.trim().toUpperCase().startsWith('INSERT')) {
         this.lastInsertRowId = Number(result.lastInsertRowid);
       }
+      return this.lastInsertRowId;
     } catch (error) {
       console.error('[DB] Run error:', error);
       console.error('[DB] SQL:', sql);
@@ -356,6 +371,44 @@ export class DatabaseService {
       }
     }
 
+    const itemsHasOptionsCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('items') WHERE name='has_options'",
+    );
+    if (itemsHasOptionsCheck && itemsHasOptionsCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE items ADD COLUMN has_options INTEGER NOT NULL DEFAULT 0');
+        console.log('[DB] ✅ Added has_options column to items table');
+      } catch (error) {
+        console.error('[DB] Failed to add has_options to items', error);
+      }
+    }
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS item_option_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        pricing_mode TEXT NOT NULL,
+        min_select INTEGER NOT NULL DEFAULT 1,
+        max_select INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS item_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        price INTEGER NOT NULL DEFAULT 0,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        is_out_of_stock INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(group_id) REFERENCES item_option_groups(id) ON DELETE CASCADE
+      )`,
+    );
+
     // Shelf items table for barcoded products
     this.runSync(
       `CREATE TABLE IF NOT EXISTS shelf_items (
@@ -570,6 +623,18 @@ export class DatabaseService {
         console.log('[DB] ✅ Added order_type column to order_items table');
       } catch (error) {
         console.error('[DB] Failed to add order_type to order_items', error);
+      }
+    }
+
+    const orderItemsOptionsJsonCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('order_items') WHERE name='options_json'",
+    );
+    if (orderItemsOptionsJsonCheck && orderItemsOptionsJsonCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE order_items ADD COLUMN options_json TEXT');
+        console.log('[DB] ✅ Added options_json column to order_items table');
+      } catch (error) {
+        console.error('[DB] Failed to add options_json to order_items', error);
       }
     }
 

@@ -14,7 +14,7 @@ interface RecentOrder {
   orderId: string;
   tableNumber: string;
   total: number;
-  status: 'paid' | 'preparing' | 'waiting' | 'cancelled';
+  status: 'pending' | 'printed' | 'completed' | 'cancelled';
   time: string;
   note: string;
 }
@@ -51,31 +51,31 @@ function formatTimeAgo(createdAt: string, t: TFunction): string {
   return t('home.timeDaysAgo', { count: days });
 }
 
-const mapOrderStatus = (status: string): 'paid' | 'preparing' | 'waiting' | 'cancelled' => {
-  const statusMap: Record<string, 'paid' | 'preparing' | 'waiting' | 'cancelled'> = {
-    completed: 'paid',
-    printed: 'preparing',
-    pending: 'waiting',
+const mapOrderStatus = (status: string): RecentOrder['status'] => {
+  const statusMap: Record<string, RecentOrder['status']> = {
+    pending: 'pending',
+    printed: 'printed',
+    completed: 'completed',
     cancelled: 'cancelled',
   };
-  return statusMap[status] || 'waiting';
+  return statusMap[status] || 'pending';
 };
 
 function statusLabel(status: RecentOrder['status'], t: TFunction): string {
   const map: Record<RecentOrder['status'], string> = {
-    paid: t('home.recentStatusPaid'),
-    preparing: t('home.recentStatusPreparing'),
-    waiting: t('home.recentStatusWaiting'),
-    cancelled: t('home.recentStatusCancelled'),
+    pending: t('orders.statusPending'),
+    printed: t('orders.statusPrinted'),
+    completed: t('orders.statusCompleted'),
+    cancelled: t('orders.statusCancelled'),
   };
   return map[status];
 }
 
 function statusClass(status: RecentOrder['status']): string {
   const configs: Record<RecentOrder['status'], string> = {
-    paid: 'bg-green-100 text-green-700 border-green-200',
-    preparing: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    waiting: 'bg-blue-100 text-blue-700 border-blue-200',
+    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
+    printed: 'bg-cyber-aqua/10 text-cyber-aqua border-cyber-aqua/20',
+    completed: 'bg-green-100 text-green-700 border-green-200',
     cancelled: 'bg-red-100 text-red-700 border-red-200',
   };
   return configs[status];

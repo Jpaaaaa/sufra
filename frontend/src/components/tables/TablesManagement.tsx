@@ -53,10 +53,17 @@ export default function TablesManagement({
           </h2>
           {selectedHall ? (
             <p className="text-[13px] leading-relaxed text-slate-500">
-              {t('halls.selectedHallLine', {
-                name: selectedHall.name,
-                number: selectedHall.number,
-              })}
+              {selectedHall.floor
+                ? t('halls.selectedHallWithFloorLine', {
+                    name: selectedHall.name,
+                    number: selectedHall.number,
+                    floorName: selectedHall.floor.name,
+                    floorNumber: selectedHall.floor.number,
+                  })
+                : t('halls.selectedHallLine', {
+                    name: selectedHall.name,
+                    number: selectedHall.number,
+                  })}
             </p>
           ) : (
             <p className="text-[13px] leading-relaxed text-slate-500">
@@ -84,7 +91,14 @@ export default function TablesManagement({
               <option value="">{t('halls.selectHallPlaceholder')}</option>
               {halls.map((hall) => (
                 <option key={hall.id} value={hall.id}>
-                  {t('halls.hallOptionShort', { name: hall.name, number: hall.number })}
+                  {hall.floor
+                    ? t('halls.hallOptionWithFloor', {
+                        name: hall.name,
+                        number: hall.number,
+                        floorName: hall.floor.name,
+                        floorNumber: hall.floor.number,
+                      })
+                    : t('halls.hallOptionShort', { name: hall.name, number: hall.number })}
                 </option>
               ))}
             </select>

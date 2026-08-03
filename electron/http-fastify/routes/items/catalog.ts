@@ -6,6 +6,7 @@ import {
   itemsCreate,
   itemsUpdate,
   itemsRemove,
+  itemsCopyOptionsFromItem,
 } from '../../../init/backend-loader';
 import type { FastifyRouteContext } from '../../types';
 import { sendRouteError } from '../../errors';
@@ -61,6 +62,20 @@ function registerItemsAtPrefix(ctx: FastifyRouteContext, prefix: string): void {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
     }
   });
+
+  app.post<{ Params: { id: string; sourceId: string } }>(
+    `${prefix}/:id/copy-options-from/:sourceId`,
+    async (request, reply) => {
+      try {
+        return await itemsCopyOptionsFromItem(
+          parseId(request.params.id),
+          parseId(request.params.sourceId),
+        );
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
 }
 
 export function registerItemCatalogRoutes(ctx: FastifyRouteContext): void {

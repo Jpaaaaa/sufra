@@ -238,27 +238,11 @@ class ShiftsService {
       totalItemsSold += deliveryItems[0]?.total || 0;
     }
 
-    // Calculate total sales (including discounts)
+    // Calculate total sales (net, matches reports)
     orders.forEach((order: any) => {
-      let discountAmount = 0;
-
-      if (order.globalDiscount) {
-        try {
-          const globalDiscount = typeof order.globalDiscount === 'string'
-            ? JSON.parse(order.globalDiscount)
-            : order.globalDiscount;
-          discountAmount = globalDiscount?.amount || 0;
-        } catch (e) {
-          discountAmount = 0;
-        }
-      }
-
-      // Total sales = order total + discount (to get original amount)
-      const orderTotalBeforeDiscount = (order.total || 0) + discountAmount;
-      totalSales += orderTotalBeforeDiscount;
-
-      // For now, assume all payments are cash (can be enhanced with payment_method field)
-      paymentBreakdown.cash += orderTotalBeforeDiscount;
+      const orderNet = order.total || 0;
+      totalSales += orderNet;
+      paymentBreakdown.cash += orderNet;
     });
 
     return {

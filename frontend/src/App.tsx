@@ -32,7 +32,7 @@ const SettingsServerPage = lazy(() => import('./pages/settings/SettingsServerPag
 const SettingsRecipePrintPage = lazy(() => import('./pages/settings/SettingsRecipePrintPage'));
 const SettingsLicenseUpdatesPage = lazy(() => import('./pages/settings/SettingsLicenseUpdatesPage'));
 const SettingsShiftPage = lazy(() => import('./pages/settings/SettingsShiftPage'));
-const MarketingPage = lazy(() => import('./pages/marketing/MarketingPage'));
+const SettingsBackupPage = lazy(() => import('./pages/settings/SettingsBackupPage'));
 const RecipesPage = lazy(() => import('./pages/recipes/RecipesPage'));
 const DiningPage = lazy(() => import('./pages/dining/DiningPage'));
 
@@ -110,7 +110,8 @@ function App() {
                     <Route path="/settings/recipe-print" element={<SettingsRecipePrintPage />} />
                     <Route path="/settings/license-updates" element={<SettingsLicenseUpdatesPage />} />
                     <Route path="/settings/shift" element={<SettingsShiftPage />} />
-                    <Route path="/marketing" element={<MarketingPage />} />
+                    <Route path="/settings/backup" element={<SettingsBackupPage />} />
+                    <Route path="/marketing" element={<Navigate to="/" replace />} />
                     <Route path="/recipes" element={<RecipesPage />} />
                     <Route path="/dining" element={<DiningPage />} />
                     <Route path="*" element={<Navigate to="/" replace />} />

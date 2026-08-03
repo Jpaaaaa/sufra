@@ -27,6 +27,8 @@ interface ItemsManagementProps {
     description: string;
     is_out_of_stock: boolean;
     hidden_from_menu: boolean;
+    has_options: boolean;
+    option_groups: import('../../lib/item-options').ItemOptionGroupDraft[];
   };
   setFormState: React.Dispatch<React.SetStateAction<{
     id?: number;
@@ -38,6 +40,8 @@ interface ItemsManagementProps {
     description: string;
     is_out_of_stock: boolean;
     hidden_from_menu: boolean;
+    has_options: boolean;
+    option_groups: import('../../lib/item-options').ItemOptionGroupDraft[];
   }>>;
   isFormOpen: boolean;
   setIsFormOpen: (open: boolean) => void;
@@ -165,6 +169,7 @@ export default function ItemsManagement({
         loading={loading}
         categories={categories}
         kitchens={kitchens}
+        allItems={items}
       />
 
       {error && (

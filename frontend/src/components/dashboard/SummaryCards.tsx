@@ -80,7 +80,7 @@ export default function SummaryCards() {
       },
       {
         label: t('home.summaryOpenTables'),
-        value: summary.emptyTables.toString(),
+        value: (summary.emptyTables + summary.occupiedTables).toString(),
         icon: Square,
         iconBg: 'bg-cyber-aqua/10',
         iconColor: 'text-cyber-aqua',

@@ -13,7 +13,8 @@ type SettingsTabLabelKey =
   | 'tabServer'
   | 'tabUsers'
   | 'tabShift'
-  | 'tabLicenseUpdates';
+  | 'tabLicenseUpdates'
+  | 'tabBackup';
 
 const tabs: { key: SettingsTabKey; labelKey: SettingsTabLabelKey; href: string; roles?: string[] }[] = [
   { key: 'printers', labelKey: 'tabPrinters', href: '/settings', roles: ['admin', 'manager'] },
@@ -27,6 +28,7 @@ const tabs: { key: SettingsTabKey; labelKey: SettingsTabLabelKey; href: string; 
     href: '/settings/license-updates',
     roles: ['admin', 'manager'],
   },
+  { key: 'backup', labelKey: 'tabBackup', href: '/settings/backup', roles: ['admin', 'manager'] },
 ];
 
 export default function SettingsTabs() {

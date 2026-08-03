@@ -3,6 +3,7 @@ import { getServerUrl, Hall, TableEntity, fetchJson } from '../utils';
 import { showConfirm } from '../components/ui/ConfirmDialog';
 import { showToast } from '../components/ui/Toast';
 import { useHallStore } from '../../stores/hallStore';
+import type { Floor } from './useFloors';
 
 interface TableFormState {
   id?: number;
@@ -41,11 +42,27 @@ export function useTables(options?: UseTablesOptions) {
         const virtualHallNames = ['طلبات خارجية', 'طلبات سفري / توصيل'];
         const filteredRaw = raw.filter((h) => !virtualHallNames.includes(h.name));
         
-        const mapped: Hall[] = filteredRaw.map((h) => ({
-          id: h.id,
-          name: h.name,
-          number: h.number ?? h.hall_number,
-        }));
+        let floorsMap = new Map<number, Floor>();
+        try {
+          const floorsData = await fetchJson<Floor[]>(`${serverUrl}/floors`);
+          floorsMap = new Map(floorsData.map((f) => [f.id, f]));
+        } catch {
+          /* continue without floor info */
+        }
+
+        const mapped: Hall[] = filteredRaw.map((h) => {
+          const floorId = h.floor_id ?? null;
+          const floor = floorId ? floorsMap.get(floorId) ?? null : null;
+          return {
+            id: h.id,
+            name: h.name,
+            number: h.number ?? h.hall_number,
+            floor_id: floorId,
+            floor: floor
+              ? { id: floor.id, name: floor.name, number: floor.number }
+              : null,
+          };
+        });
         setHalls(mapped);
 
         // Validate activeHallId against loaded halls

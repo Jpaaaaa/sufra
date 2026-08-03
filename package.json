@@ -3,6 +3,7 @@
   "version": "0.1.2",
   "private": true,
   "scripts": {
+    "setup": "node scripts/setup-dev.js",
     "dev": "npm-run-all --parallel dev:frontend dev:electron",
     "dev:frontend": "npm run dev --prefix frontend",
     "dev:electron": "npm run dev --prefix electron",

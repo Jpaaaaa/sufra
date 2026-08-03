@@ -4,6 +4,17 @@ import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { requireTables, TablesService } from '../tables/tables.service';
 import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
 import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
+import { mapOrderItemRow, serializeOptionsJson } from '../../utils/order-item-options';
+import {
+  distributeTableDiscount,
+  parseStoredGlobalDiscount,
+  getTableDiscountTotal,
+  validateOrderItemPrices,
+} from '../../utils/order-pricing';
+
+function mapItemRows(rows: any[]) {
+  return rows.map((row) => mapOrderItemRow(row));
+}
 
 export interface DineInOrderItem {
   item_id: number | null;
@@ -13,6 +24,7 @@ export interface DineInOrderItem {
   kitchen_id?: number | null;
   service_type?: 'dine-in' | 'pickup';
   shelf_item_id?: number | null;
+  options_json?: unknown[] | null;
 }
 
 export interface CreateDineInOrderDto {
@@ -86,7 +98,7 @@ class DineInOrdersService {
         const placeholders = orderIds.map(() => '?').join(',');
         // CRITICAL: Always filter by order_type to ensure domain separation
         itemRows = await this.db.all(
-          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
            FROM order_items 
            WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
           orderIds,
@@ -104,7 +116,7 @@ class DineInOrdersService {
 
         return {
           ...order,
-          items: itemRows.filter((item: any) => item.order_id === order.id),
+          items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
         };
       });
 
@@ -141,7 +153,7 @@ class DineInOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
         // CRITICAL: Always filter by order_type to ensure domain separation
         itemRows = await this.db.all(
-          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
            FROM order_items 
            WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
           orderIds,
@@ -159,7 +171,7 @@ class DineInOrdersService {
 
       return {
         ...order,
-        items: itemRows.filter((item: any) => item.order_id === order.id),
+        items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
       };
     });
 
@@ -200,7 +212,7 @@ class DineInOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
         // CRITICAL: Always filter by order_type to ensure domain separation
         itemRows = await this.db.all(
-          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
            FROM order_items 
            WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
           orderIds,
@@ -209,7 +221,7 @@ class DineInOrdersService {
 
     const ordersWithItems: DineInOrderWithItems[] = orderRows.map((order: any) => ({
       ...order,
-      items: itemRows.filter((item: any) => item.order_id === order.id),
+      items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
     }));
 
     return ordersWithItems;
@@ -272,7 +284,7 @@ class DineInOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
         orderIds,
@@ -281,7 +293,7 @@ class DineInOrdersService {
 
     const ordersWithItems: DineInOrderWithItems[] = orderRows.map((order: any) => ({
       ...order,
-      items: itemRows.filter((item: any) => item.order_id === order.id),
+      items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
     }));
 
     return ordersWithItems;
@@ -352,9 +364,9 @@ class DineInOrdersService {
     }
 
     const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const discountAmount = data.globalDiscount?.amount ?? 0;
-    const total = Math.max(0, subtotal - discountAmount);
-    const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
+    await validateOrderItemPrices(this.db, data.items);
+    const total = subtotal;
+    const globalDiscountJson: string | null = null;
     const shiftFields = await resolveOrderShiftFields();
 
     await this.db.run(
@@ -380,8 +392,8 @@ class DineInOrdersService {
 
     for (const item of data.items) {
       await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
@@ -392,6 +404,7 @@ class DineInOrdersService {
           item.service_type || 'dine-in',
           item.shelf_item_id ?? null,
           'dine_in',
+          serializeOptionsJson(item.options_json),
         ],
       );
     }
@@ -419,6 +432,12 @@ class DineInOrdersService {
       throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'خطأ غير معروف'}`);
     }
 
+    if (data.globalDiscount) {
+      await this.setTableGlobalDiscount(data.table_id, data.globalDiscount);
+    } else {
+      await this.redistributeTableDiscountIfNeeded(data.table_id);
+    }
+
     const orderRow = await this.db.get(
       `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
        FROM dine_in_orders WHERE id = ?`,
@@ -439,7 +458,7 @@ class DineInOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'dine_in'`,
       [orderId],
@@ -449,7 +468,7 @@ class DineInOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as DineInOrderWithItems;
   }
 
@@ -502,15 +521,14 @@ class DineInOrdersService {
       throw new BadRequestException('Order must have at least one item');
     }
 
+    await validateOrderItemPrices(this.db, data.items);
     const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const discountAmount = data.globalDiscount?.amount ?? 0;
-    const total = Math.max(0, subtotal - discountAmount);
-    const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
+    const total = subtotal;
 
-    // Update order
+    // Update order (discount is applied at table level via setTableGlobalDiscount)
     await this.db.run(
-      'UPDATE dine_in_orders SET total = ?, globalDiscount = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-      [total, globalDiscountJson, data.note || null, id],
+      'UPDATE dine_in_orders SET total = ?, note = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+      [total, data.note || null, id],
     );
 
     // Delete old order items (only for this order_type to prevent accidental deletion)
@@ -518,8 +536,8 @@ class DineInOrdersService {
 
     for (const item of data.items) {
       await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
@@ -530,11 +548,18 @@ class DineInOrdersService {
           item.service_type || 'dine-in',
           item.shelf_item_id ?? null,
           'dine_in',
+          serializeOptionsJson(item.options_json),
         ],
       );
     }
 
     console.log('[DINE_IN_ORDERS] ✅ Order updated with id', id);
+
+    if (data.globalDiscount) {
+      await this.setTableGlobalDiscount(existing.table_id, data.globalDiscount);
+    } else {
+      await this.redistributeTableDiscountIfNeeded(existing.table_id);
+    }
 
     // Return the updated order with items
     const orderRow = await this.db.get(
@@ -564,7 +589,7 @@ class DineInOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as DineInOrderWithItems;
   }
 
@@ -602,7 +627,7 @@ class DineInOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as DineInOrderWithItems;
   }
 
@@ -762,12 +787,7 @@ class DineInOrdersService {
       return { updatedCount: 0 };
     }
 
-    const globalDiscountJson = globalDiscount ? JSON.stringify(globalDiscount) : null;
-    const discountAmount = globalDiscount?.amount ?? 0;
-
-    // Get subtotal for each order
-    let tableSubtotal = 0;
-    const orderSubtotals = new Map<number, number>();
+    const orderSubtotalRows: Array<{ orderId: number; subtotal: number }> = [];
 
     for (const order of orders) {
       const items = await this.db.all(
@@ -775,24 +795,61 @@ class DineInOrdersService {
         [order.id],
       );
       const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
-      orderSubtotals.set(order.id, subtotal);
-      tableSubtotal += subtotal;
+      orderSubtotalRows.push({ orderId: order.id, subtotal });
     }
 
-    // Update each order with globalDiscount and recalculated total
-    for (const order of orders) {
-      const subtotal = orderSubtotals.get(order.id) ?? 0;
-      const proportionalDiscount = tableSubtotal > 0 ? (subtotal / tableSubtotal) * discountAmount : 0;
-      const newTotal = Math.max(0, subtotal - proportionalDiscount);
+    if (!globalDiscount) {
+      for (const row of orderSubtotalRows) {
+        await this.db.run(
+          'UPDATE dine_in_orders SET globalDiscount = NULL, total = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
+          [row.subtotal, row.orderId],
+        );
+      }
+      console.log('[DINE_IN_ORDERS] setTableGlobalDiscount: cleared discount on', orders.length, 'orders');
+      return { updatedCount: orders.length };
+    }
 
+    const distribution = distributeTableDiscount(orderSubtotalRows, globalDiscount);
+
+    for (const row of orderSubtotalRows) {
+      const entry = distribution.get(row.orderId);
+      if (!entry) continue;
+      const newTotal = Math.max(0, row.subtotal - entry.proportionalAmount);
       await this.db.run(
         'UPDATE dine_in_orders SET globalDiscount = ?, total = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?',
-        [globalDiscountJson, newTotal, order.id],
+        [entry.discountJson, newTotal, row.orderId],
       );
     }
 
     console.log('[DINE_IN_ORDERS] setTableGlobalDiscount: updated', orders.length, 'orders');
     return { updatedCount: orders.length };
+  }
+
+  private async getTableDiscountFromOpenOrders(
+    tableId: number,
+  ): Promise<{ percent: number; amount: number } | null> {
+    const row = await this.db.get(
+      `SELECT globalDiscount FROM dine_in_orders
+       WHERE table_id = ? AND status IN ('pending', 'printed') AND globalDiscount IS NOT NULL
+       LIMIT 1`,
+      [tableId],
+    );
+    if (!row?.globalDiscount) return null;
+
+    const parsed = parseStoredGlobalDiscount(row.globalDiscount);
+    if (!parsed) return null;
+
+    return {
+      percent: parsed.percent,
+      amount: getTableDiscountTotal(parsed),
+    };
+  }
+
+  private async redistributeTableDiscountIfNeeded(tableId: number): Promise<void> {
+    const discount = await this.getTableDiscountFromOpenOrders(tableId);
+    if (discount) {
+      await this.setTableGlobalDiscount(tableId, discount);
+    }
   }
 
   /**

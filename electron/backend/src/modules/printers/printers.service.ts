@@ -132,6 +132,23 @@ class PrintersService {
       const serviceType = item.service_type || 'dine-in';
       const serviceLabel = serviceType === 'pickup' ? ' [سفري]' : '';
       output += `${item.quantity}x ${item.item_name}${serviceLabel}${LF}`;
+      const rawOpts = item.options_json;
+      const options = Array.isArray(rawOpts)
+        ? rawOpts
+        : typeof rawOpts === 'string' && rawOpts
+          ? (() => {
+              try {
+                const parsed = JSON.parse(rawOpts);
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })()
+          : [];
+      for (const opt of options) {
+        const sub = `  ${opt.group_name ? `${opt.group_name}: ` : ''}${opt.option_name ?? ''}`.trim();
+        if (sub) output += `${sub}${LF}`;
+      }
     });
 
     output += '================================' + LF + LF;
@@ -169,6 +186,23 @@ class PrintersService {
         output += `  ${item.quantity}x ${item.item_name}${serviceLabel}`;
         output += ' '.repeat(Math.max(1, 30 - (item.item_name.length + serviceLabel.length)));
         output += `${lineTotal} د.ع${LF}`;
+        const rawOpts = item.options_json;
+        const options = Array.isArray(rawOpts)
+          ? rawOpts
+          : typeof rawOpts === 'string' && rawOpts
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(rawOpts);
+                  return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  return [];
+                }
+              })()
+            : [];
+        for (const opt of options) {
+          const sub = `    ${opt.group_name ? `${opt.group_name}: ` : ''}${opt.option_name ?? ''}`.trim();
+          if (sub) output += `${sub}${LF}`;
+        }
       });
     });
 

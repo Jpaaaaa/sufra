@@ -16,6 +16,8 @@ export function normalizeItemRow(i: any): Item {
     ...i,
     hidden_from_menu: Boolean(i.hidden_from_menu),
     is_out_of_stock: Boolean(i.is_out_of_stock),
+    has_options: Boolean(i.has_options),
+    option_groups: i.option_groups ?? [],
   };
 }
 

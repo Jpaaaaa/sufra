@@ -311,6 +311,25 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
         const itemText = `${quantity}x ${itemName}`;
         const lines = drawText(itemText, PADDING, yPos, FONT_SIZE);
         yPos += lines * LINE_HEIGHT + 3;
+
+        const rawOpts = (item as { options_json?: unknown }).options_json;
+        let options: Array<{ group_name?: string; option_name?: string }> = [];
+        if (Array.isArray(rawOpts)) {
+          options = rawOpts;
+        } else if (typeof rawOpts === 'string' && rawOpts) {
+          try {
+            const parsed = JSON.parse(rawOpts);
+            if (Array.isArray(parsed)) options = parsed;
+          } catch {
+            /* ignore */
+          }
+        }
+        for (const opt of options) {
+          const sub = `  ${opt.group_name ? `${opt.group_name}: ` : ''}${opt.option_name ?? ''}`.trim();
+          if (!sub) continue;
+          const subLines = drawText(sub, PADDING + 8, yPos, FONT_SIZE_SMALL);
+          yPos += subLines * LINE_HEIGHT + 2;
+        }
       });
     } else {
       drawText('No items', PADDING, yPos, FONT_SIZE);

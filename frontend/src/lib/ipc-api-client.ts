@@ -448,6 +448,18 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
         return await sufra.items.findAll(kitchenId);
       }
       if (method === 'POST') {
+        if (
+          idOrAction &&
+          !isNaN(parseInt(idOrAction, 10)) &&
+          rest[0] === 'copy-options-from' &&
+          rest[1] &&
+          !isNaN(parseInt(rest[1], 10))
+        ) {
+          return await sufra.items.copyOptionsFromItem(
+            parseInt(idOrAction, 10),
+            parseInt(rest[1], 10),
+          );
+        }
         return await sufra.items.create(body);
       }
       if (method === 'PATCH' || method === 'PUT') {
@@ -780,6 +792,9 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
         }
         if (idOrAction === 'reset') {
           return await sufra['business-day']?.reset(body);
+        }
+        if (idOrAction === 'ensure') {
+          return await sufra['business-day']?.ensure();
         }
       }
     }

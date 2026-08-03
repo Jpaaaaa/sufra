@@ -9,12 +9,17 @@ const electronDir = path.resolve(__dirname, '..', 'electron');
 
 console.log('[DIST] Running from repo root →', electronDir);
 
-execSync('npm run dist', {
-  cwd: electronDir,
-  stdio: 'inherit',
-  env: {
-    ...process.env,
-    INIT_CWD: electronDir,
-  },
-  shell: true,
-});
+try {
+  execSync('npm run dist', {
+    cwd: electronDir,
+    stdio: 'inherit',
+    env: {
+      ...process.env,
+      INIT_CWD: electronDir,
+    },
+    shell: true,
+  });
+} catch (err) {
+  console.error('[DIST] Failed. Backend dev deps should have been restored by dist-with-restore.js.');
+  process.exit(1);
+}
