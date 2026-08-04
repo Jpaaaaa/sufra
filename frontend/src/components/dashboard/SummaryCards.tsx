@@ -1,12 +1,11 @@
 'use client';
 
-import { useEffect, useState, useCallback, useMemo } from 'react';
+import { useEffect, useState, useCallback, useMemo, memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getServerUrl, fetchJson } from '../../utils';
-import { DollarSign, Square, SquareCheck } from 'lucide-react';
-import Card from '../ui/Card';
+import { DollarSign, ShoppingBag, Armchair, TrendingUp } from 'lucide-react';
 import { useOrderSocket } from '../../hooks/useOrderSocket';
-import { useOrderLocale } from '../../hooks/useOrderLocale';
+import { homeUi } from './home-ui';
 
 interface DailySummary {
   totalSales: number;
@@ -16,9 +15,12 @@ interface DailySummary {
   printerStatus: 'success' | 'error';
 }
 
-export default function SummaryCards() {
+function fmtInt(n: number): string {
+  return Math.round(Number(n) || 0).toLocaleString('en-US');
+}
+
+function SummaryCards() {
   const { t } = useTranslation();
-  const { numberLocale } = useOrderLocale();
   const [summary, setSummary] = useState<DailySummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { subscribeToOrders } = useOrderSocket();
@@ -28,7 +30,13 @@ export default function SummaryCards() {
       setIsLoading(true);
       const serverUrl = getServerUrl();
       const data = await fetchJson<DailySummary>(`${serverUrl}/reports/daily-summary`);
-      setSummary(data);
+      setSummary({
+        totalSales: Number(data?.totalSales) || 0,
+        ordersCount: Number(data?.ordersCount) || 0,
+        occupiedTables: Number(data?.occupiedTables) || 0,
+        emptyTables: Number(data?.emptyTables) || 0,
+        printerStatus: data?.printerStatus === 'error' ? 'error' : 'success',
+      });
     } catch (error) {
       console.error('Failed to load daily summary:', error);
       setSummary({
@@ -47,7 +55,6 @@ export default function SummaryCards() {
     loadSummary();
   }, [loadSummary]);
 
-  // Refetch when orders are created or updated (e.g. completed/cleaned)
   useEffect(() => {
     const unsubscribe = subscribeToOrders(
       (event) => {
@@ -55,12 +62,11 @@ export default function SummaryCards() {
           loadSummary();
         }
       },
-      ['dine-in', 'pickup', 'delivery']
+      ['dine-in', 'pickup', 'delivery'],
     );
     return unsubscribe;
   }, [subscribeToOrders, loadSummary]);
 
-  // Periodic refresh every 60 seconds as fallback
   useEffect(() => {
     const interval = setInterval(loadSummary, 60000);
     return () => clearInterval(interval);
@@ -68,79 +74,99 @@ export default function SummaryCards() {
 
   const cards = useMemo(() => {
     if (!summary) return [];
+    const avg =
+      summary.ordersCount > 0 ? Math.round(summary.totalSales / summary.ordersCount) : 0;
+    const currency = t('orders.currency');
+    const totalTables = summary.occupiedTables + summary.emptyTables;
     return [
       {
+        id: 'sales',
         label: t('home.summaryTotalSales'),
-        value: `${Math.round(summary.totalSales).toLocaleString(numberLocale)} ${t('orders.currency')}`,
+        value: fmtInt(summary.totalSales),
+        unit: currency,
+        hint: null as string | null,
         icon: DollarSign,
-        iconBg: 'bg-cyber-aqua/10',
-        iconColor: 'text-cyber-aqua',
-        borderColor: 'border-cyber-aqua/20',
-        bgGradient: 'bg-gradient-to-br from-cyber-aqua/5 to-cyber-aqua/10',
       },
       {
-        label: t('home.summaryOpenTables'),
-        value: (summary.emptyTables + summary.occupiedTables).toString(),
-        icon: Square,
-        iconBg: 'bg-cyber-aqua/10',
-        iconColor: 'text-cyber-aqua',
-        borderColor: 'border-cyber-aqua/20',
-        bgGradient: 'bg-gradient-to-br from-cyber-aqua/5 to-cyber-aqua/10',
+        id: 'orders',
+        label: t('home.summaryOrders'),
+        value: fmtInt(summary.ordersCount),
+        unit: null as string | null,
+        hint: null as string | null,
+        icon: ShoppingBag,
       },
       {
-        label: t('home.summaryClosedTables'),
-        value: summary.occupiedTables.toString(),
-        icon: SquareCheck,
-        iconBg: 'bg-cyber-aqua/10',
-        iconColor: 'text-cyber-aqua',
-        borderColor: 'border-cyber-aqua/20',
-        bgGradient: 'bg-gradient-to-br from-cyber-aqua/5 to-cyber-aqua/10',
+        id: 'occupied',
+        label: t('home.summaryOccupiedTables'),
+        value: fmtInt(summary.occupiedTables),
+        unit: null as string | null,
+        hint: t('home.summaryOccupiedHint', {
+          occupied: fmtInt(summary.occupiedTables),
+          total: fmtInt(totalTables),
+        }),
+        icon: Armchair,
+      },
+      {
+        id: 'avg',
+        label: t('home.summaryAvgOrder'),
+        value: fmtInt(avg),
+        unit: currency,
+        hint: null as string | null,
+        icon: TrendingUp,
       },
     ];
-  }, [summary, t, numberLocale]);
+  }, [summary, t]);
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-        {[1, 2, 3].map((i) => (
-          <Card key={i} className="rounded-xl shadow-soft border border-black/5 bg-white p-6">
-            <div className="text-center text-obsidian/60">{t('home.loading')}</div>
-          </Card>
+      <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className={`${homeUi.surface} h-[92px] bg-cloud-soft-white/80`} />
         ))}
       </div>
     );
   }
 
-  if (!summary) {
-    return null;
-  }
+  if (!summary) return null;
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
-      {cards.map((card, index) => {
+    <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+      {cards.map((card) => {
         const Icon = card.icon;
         return (
-          <Card
-            key={index}
-            className={`rounded-xl shadow-soft border ${card.borderColor} bg-white p-6 hover:shadow-md`}
+          <article
+            key={card.id}
+            className={`${homeUi.surface} relative overflow-hidden ps-4 pe-4 py-3.5`}
           >
-            <div className={`${card.bgGradient} rounded-lg p-4 mb-4`}>
-              <div className="flex items-center justify-between">
-                <div className={`p-3 rounded-lg ${card.iconBg} ${card.iconColor}`}>
-                  <Icon className="w-6 h-6" />
-                </div>
+            <div className="absolute inset-y-3 start-0 w-[3px] rounded-full bg-cyber-aqua" aria-hidden />
+            <div className="flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <p className="text-[11px] font-semibold uppercase tracking-wide text-obsidian/45">
+                  {card.label}
+                </p>
+                <p className="mt-1.5 flex flex-wrap items-baseline gap-1.5">
+                  <span className="text-[28px] font-bold leading-none tracking-tight text-obsidian tabular-nums">
+                    {card.value}
+                  </span>
+                  {card.unit ? (
+                    <span className="text-[12px] font-semibold text-obsidian/45">{card.unit}</span>
+                  ) : null}
+                </p>
+                {card.hint ? (
+                  <p className="mt-1.5 text-[11px] font-medium tabular-nums text-obsidian/40">{card.hint}</p>
+                ) : (
+                  <div className="mt-1.5 h-[15px]" aria-hidden />
+                )}
+              </div>
+              <div className={homeUi.iconWell}>
+                <Icon className="h-4 w-4" aria-hidden />
               </div>
             </div>
-            <h3 className="text-[14px] leading-relaxed font-medium text-obsidian/70 mb-2">
-              {card.label}
-            </h3>
-            <p className="text-[28px] leading-tight font-bold text-obsidian">
-              {card.value}
-            </p>
-          </Card>
+          </article>
         );
       })}
     </div>
   );
 }
 
+export default memo(SummaryCards);

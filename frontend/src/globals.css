@@ -548,3 +548,13 @@ html.tablet-viewport [data-order-modal] textarea {
 /* @media (min-width: 768px) and (max-width: 1024px) {
   html { zoom: 0.6; }
 } */
+/* Home dashboard ad slider — transitions disabled in Tailwind config */
+.home-ad-slide {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.45s ease-out;
+}
+.home-ad-slide.is-active {
+  opacity: 1;
+  pointer-events: auto;
+}

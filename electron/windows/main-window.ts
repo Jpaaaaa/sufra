@@ -1,6 +1,6 @@
 import path from 'path';
 import fs from 'fs';
-import { app, BrowserWindow, dialog } from 'electron';
+import { app, BrowserWindow, dialog, shell } from 'electron';
 import { getMainWindow, setMainWindow, getBackendApp, getIsQuitting, setIsQuitting } from '../state';
 import { getStaticFrontendPath } from '../init/paths';
 import { loadDev } from '../loaders/devLoader';
@@ -83,8 +83,15 @@ export async function createWindow(): Promise<void> {
       mainWindow.once('show', () => applyWindowsTaskbarIcon(mainWindow, appIcon));
     }
 
-    mainWindow.webContents.setWindowOpenHandler(() => {
-      console.log('[ELECTRON] Blocked new window/tab request');
+    mainWindow.webContents.setWindowOpenHandler(({ url }) => {
+      try {
+        const parsedUrl = new URL(url);
+        if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+          void shell.openExternal(url);
+        }
+      } catch {
+        // ignore invalid URLs
+      }
       return { action: 'deny' };
     });
 
@@ -94,6 +101,11 @@ export async function createWindow(): Promise<void> {
       const isDev = !app.isPackaged;
       if (isDev && (parsedUrl.hostname === 'localhost' || parsedUrl.hostname === '127.0.0.1')) {
         if (parsedUrl.port === '3000' || parsedUrl.port === '') return;
+      }
+      if (parsedUrl.protocol === 'http:' || parsedUrl.protocol === 'https:') {
+        event.preventDefault();
+        void shell.openExternal(navigationUrl);
+        return;
       }
       console.log('[ELECTRON] Blocked navigation to external URL:', navigationUrl);
       event.preventDefault();

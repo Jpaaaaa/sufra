@@ -3,16 +3,19 @@ import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import { ProtectedRoute } from '../../components/auth/ProtectedRoute';
-import HeaderStatus from '../../components/dashboard/HeaderStatus';
-import SystemStatusCard from '../../components/dashboard/SystemStatusCard';
+import WelcomeSection from '../../components/dashboard/WelcomeSection';
 import SummaryCards from '../../components/dashboard/SummaryCards';
+import HomeAdvertisementSlider from '../../components/dashboard/HomeAdvertisementSlider';
 import OpenTablesNow from '../../components/dashboard/OpenTablesNow';
 import RecentOrders from '../../components/dashboard/RecentOrders';
 import QuickActionBar from '../../components/dashboard/QuickActionBar';
+import QuickInsights from '../../components/dashboard/QuickInsights';
+import SystemStatusAccordion from '../../components/dashboard/SystemStatusAccordion';
 import InstallPWABox from '../../components/dashboard/InstallPWABox';
 import NotificationPanel from '../../components/dashboard/NotificationPanel';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
+import { homeUi } from '../../components/dashboard/home-ui';
 
 export default function HomePage() {
   return (
@@ -27,14 +30,12 @@ function HomeDashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
 
-  // Redirect non-admin users to orders page (only admin can access home screen)
   useEffect(() => {
     if (user && user.role !== 'admin') {
       navigate('/orders');
     }
   }, [user, navigate]);
 
-  // Don't render dashboard for non-admin users
   if (!user || user.role !== 'admin') {
     return null;
   }
@@ -43,51 +44,28 @@ function HomeDashboard() {
     <div className="flex flex-1 flex-col bg-cloud-soft-white">
       <Header title={t('nav.home')} actions={<NotificationPanel />} />
 
-      <main className="flex-1 p-6">
-        <div className="mx-auto max-w-7xl space-y-8">
-          {/* Header Area */}
-          <section>
-            <HeaderStatus />
-          </section>
+      <main className="flex-1 py-4 md:py-5">
+        <div className={`${homeUi.page} px-4 md:px-5 lg:px-6`}>
+          <WelcomeSection />
+        </div>
 
-          {/* Quick Action Bar */}
-          <section>
-            <QuickActionBar />
-          </section>
+        {/* Full-bleed ad band — directly after welcome */}
+        <div className="mt-4 w-full">
+          <HomeAdvertisementSlider />
+        </div>
 
-          {/* Summary Cards */}
-          <section>
-            <SummaryCards />
-          </section>
+        <div className={`${homeUi.page} mt-4 px-4 md:px-5 lg:px-6`}>
+          <SummaryCards />
+          <QuickActionBar />
 
-          {/* Two Column Layout */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-            {/* Left Column */}
-            <div className="space-y-8">
-              {/* System Status Card */}
-              <section>
-                <SystemStatusCard />
-              </section>
-
-              {/* Open Tables Now */}
-              <section>
-                <OpenTablesNow />
-              </section>
-            </div>
-
-            {/* Right Column */}
-            <div className="space-y-8">
-              {/* Recent Orders */}
-              <section>
-                <RecentOrders />
-              </section>
-            </div>
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
+            <OpenTablesNow />
+            <RecentOrders />
           </div>
 
-          {/* PWA Install Card (Tablet Only) */}
-          <section>
-            <InstallPWABox />
-          </section>
+          <QuickInsights />
+          <SystemStatusAccordion />
+          <InstallPWABox />
         </div>
       </main>
 

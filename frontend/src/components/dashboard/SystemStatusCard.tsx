@@ -24,62 +24,60 @@ interface HealthElectronMeta {
   appPath: string;
 }
 
-export default function SystemStatusCard() {
-  const { i18n } = useTranslation();
+interface SystemStatusCardProps {
+  /** When true, omit outer card chrome (used inside accordion). */
+  embedded?: boolean;
+}
+
+export default function SystemStatusCard({ embedded = false }: SystemStatusCardProps) {
+  const { t, i18n } = useTranslation();
   const { user } = useAuth();
-  const [deviceType, setDeviceType] = useState<string>('حاسوب');
-  const [, setServerMode] = useState<string>('Server');
+  const [deviceType, setDeviceType] = useState<string>('—');
   const [serverIP, setServerIP] = useState<string>('—');
   const [printerStatus, setPrinterStatus] = useState<{ connected: boolean; name: string }>({
     connected: false,
-    name: 'غير متوفر',
+    name: '—',
   });
   const [apiRuntimeLine, setApiRuntimeLine] = useState<string>('—');
+
   useEffect(() => {
-    // Only run on client side
     if (typeof window === 'undefined') return;
 
-    // Detect device type
     const detectDevice = () => {
-      // Check if running in Electron
       const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
       if (isElectron) {
-        setDeviceType('حاسوب');
+        setDeviceType(t('home.systemDeviceDesktop'));
         return;
       }
 
-      // Check if PWA is installed (standalone mode)
       try {
-        const isStandalone = window.matchMedia('(display-mode: standalone)').matches || 
-                            (window.navigator as any).standalone === true;
+        const isStandalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          (window.navigator as Navigator & { standalone?: boolean }).standalone === true;
         if (isStandalone) {
-          setDeviceType('تطبيق PWA');
+          setDeviceType(t('home.systemDevicePwa'));
           return;
         }
-      } catch (e) {
-        // Ignore matchMedia errors
+      } catch {
+        // ignore
       }
 
-      // Check if tablet (pointer: coarse)
       try {
         if (window.matchMedia('(pointer: coarse)').matches) {
-          setDeviceType('جهاز لوحي');
+          setDeviceType(t('home.systemDeviceTablet'));
           return;
         }
-      } catch (e) {
-        // Ignore matchMedia errors
+      } catch {
+        // ignore
       }
 
-      // Default to desktop
-      setDeviceType('حاسوب');
+      setDeviceType(t('home.systemDeviceDesktop'));
     };
 
     detectDevice();
 
-    // Get server config
     try {
       const config = getServerConfig();
-      setServerMode(config.mode === 'host' ? 'Server' : 'Client');
       const ip = extractIPFromHost(config.serverUrl);
       setServerIP(ip || config.serverUrl.replace(/^https?:\/\//, '').split(':')[0] || '—');
     } catch (error) {
@@ -87,7 +85,6 @@ export default function SystemStatusCard() {
       setServerIP('—');
     }
 
-    // Load printer status
     const loadPrinterStatus = async () => {
       try {
         const serverUrl = getServerUrl();
@@ -98,14 +95,15 @@ export default function SystemStatusCard() {
             connected: true,
             name: usbPrinter.name,
           });
-        } else if (printers.length > 0) {
+        } else {
           setPrinterStatus({
             connected: false,
-            name: printers[0].name || 'غير متوفر',
+            name: t('home.systemPrinterUnavailable'),
           });
         }
       } catch (error) {
         console.error('Failed to load printer status:', error);
+        setPrinterStatus({ connected: false, name: t('home.systemPrinterUnavailable') });
       }
     };
 
@@ -120,47 +118,47 @@ export default function SystemStatusCard() {
           setApiRuntimeLine('—');
           return;
         }
-        const mode = e.packaged ? 'نسخة مثبتة' : 'تطوير محلي';
+        const mode = e.packaged ? t('home.systemApiPackaged') : t('home.systemApiDev');
         let line = `${mode} · v${e.version}`;
         if (!e.uploadReady && !e.multerResolvable) {
-          line += ' · ⚠ رفع الصور غير جاهز';
+          line += ` · ${t('home.systemUploadWarn')}`;
         }
         setApiRuntimeLine(line);
         if (import.meta.env.DEV && e.appPath) {
           console.info('[Sufra] API appPath:', e.appPath);
         }
       } catch {
-        setApiRuntimeLine('تعذر الاتصال بالخادم');
+        setApiRuntimeLine(t('home.systemApiUnreachable'));
       }
     };
     loadServerHealth();
 
     return () => {};
-  }, []);
+  }, [t]);
 
   const statusItems = [
     {
-      label: 'الجهاز',
+      label: t('home.systemLabelDevice'),
       value: deviceType,
       icon: MonitorSmartphone,
     },
     {
-      label: 'الخادم',
+      label: t('home.systemLabelServer'),
       value: `${serverIP}`,
       icon: Server,
     },
     {
-      label: `وضع API (منفذ ${LAN_API_PORT})`,
+      label: t('home.systemLabelApi', { port: LAN_API_PORT }),
       value: apiRuntimeLine,
       icon: Globe,
     },
     {
-      label: 'الطابعة الحرارية',
-      value: printerStatus.connected ? printerStatus.name : 'غير متصل',
+      label: t('home.systemLabelPrinter'),
+      value: printerStatus.connected ? printerStatus.name : t('home.systemPrinterDisconnected'),
       icon: Printer,
     },
     {
-      label: 'المستخدم',
+      label: t('home.systemLabelUser'),
       value: user
         ? `${getEmployeeDisplayName(user.username)} (${roleLabelAr(user.role)})`
         : '—',
@@ -168,37 +166,42 @@ export default function SystemStatusCard() {
     },
   ];
 
-  return (
+  const body = (
     <div data-i18n-lang={i18n.language}>
-    <Card className="rounded-xl border border-black/5 bg-white shadow-soft p-6 mb-6">
-      <h2 className="text-[20px] leading-tight font-medium text-obsidian mb-6">
-        حالة النظام
-      </h2>
+      {!embedded ? (
+        <h2 className="mb-5 text-[18px] font-semibold tracking-tight text-obsidian">
+          {t('home.systemStatusTitle')}
+        </h2>
+      ) : null}
       <div className="space-y-0">
         {statusItems.map((item, index) => {
           const Icon = item.icon;
           return (
-            <div key={index}>
-              <div className="flex items-center gap-4 py-3.5 px-2">
-                <div className="flex-shrink-0 w-10 h-10 rounded-lg bg-cyber-aqua/10 flex items-center justify-center">
-                  <Icon className="w-5 h-5 text-cyber-aqua flex-shrink-0" />
+            <div key={item.label}>
+              <div className="flex items-center gap-4 px-2 py-3.5">
+                <div className="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg bg-cyber-aqua/10">
+                  <Icon className="h-5 w-5 flex-shrink-0 text-cyber-aqua" />
                 </div>
-                <span className="text-[14px] leading-relaxed font-medium text-obsidian/70 min-w-[120px]">
+                <span className="min-w-[120px] text-[14px] font-medium leading-relaxed text-obsidian/65">
                   {item.label}:
                 </span>
-                <span className="text-[14px] leading-relaxed font-medium text-obsidian flex-1">
+                <span className="flex-1 text-[14px] font-medium leading-relaxed text-obsidian">
                   {item.value}
                 </span>
               </div>
-              {index < statusItems.length - 1 && (
-                <div className="h-px bg-black/5 mx-2" />
-              )}
+              {index < statusItems.length - 1 ? <div className="mx-2 h-px bg-black/5" /> : null}
             </div>
           );
         })}
       </div>
-    </Card>
     </div>
   );
-}
 
+  if (embedded) {
+    return body;
+  }
+
+  return (
+    <Card className="mb-6 rounded-2xl border border-black/5 bg-white p-6 shadow-soft">{body}</Card>
+  );
+}

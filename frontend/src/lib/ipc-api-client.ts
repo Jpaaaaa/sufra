@@ -51,6 +51,11 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
       return await sufra.shifts.getCurrent();
     }
 
+    // Home ads — API/CMS not shipped yet; return empty list without "not mapped" noise
+    if (method === 'GET' && (normalizedEndpoint === 'ads/active' || normalizedEndpoint === 'ads')) {
+      return [];
+    }
+
     // GET /orders/delivery/platforms — explicit (avoid || null when preload method missing)
     if (method === 'GET' && normalizedEndpoint === 'orders/delivery/platforms') {
       const fn = sufra.orders?.findAllDeliveryPlatforms;

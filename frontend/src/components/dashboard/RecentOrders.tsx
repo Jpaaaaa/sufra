@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useRef, useCallback, memo } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { getServerUrl, fetchJson, Hall } from '../../utils';
 import { Clock } from 'lucide-react';
-import Card from '../ui/Card';
 import { useOrderSocket } from '../../hooks/useOrderSocket';
-import { useOrderLocale } from '../../hooks/useOrderLocale';
+import { homeUi } from './home-ui';
 
 interface RecentOrder {
   id: string;
@@ -73,19 +73,23 @@ function statusLabel(status: RecentOrder['status'], t: TFunction): string {
 
 function statusClass(status: RecentOrder['status']): string {
   const configs: Record<RecentOrder['status'], string> = {
-    pending: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    printed: 'bg-cyber-aqua/10 text-cyber-aqua border-cyber-aqua/20',
-    completed: 'bg-green-100 text-green-700 border-green-200',
-    cancelled: 'bg-red-100 text-red-700 border-red-200',
+    pending: homeUi.statusPending,
+    printed: homeUi.statusPrinted,
+    completed: homeUi.statusCompleted,
+    cancelled: homeUi.statusCancelled,
   };
   return configs[status];
 }
 
+function fmtMoney(n: number): string {
+  return Math.round(n || 0).toLocaleString('en-US');
+}
+
 const STORAGE_KEY = 'sufra_cleared_order_ids';
 
-export default function RecentOrders() {
+function RecentOrders() {
   const { t } = useTranslation();
-  const { numberLocale } = useOrderLocale();
+  const navigate = useNavigate();
   const [orders, setOrders] = useState<RecentOrder[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [clearedOrderIds, setClearedOrderIds] = useState<Set<string>>(new Set());
@@ -119,7 +123,6 @@ export default function RecentOrders() {
     try {
       setIsLoading(true);
       const serverUrl = getServerUrl();
-
       const allOrders: Order[] = [];
       try {
         const halls = await fetchJson<Hall[]>(`${serverUrl}/halls`);
@@ -135,25 +138,21 @@ export default function RecentOrders() {
         console.error('Failed to load halls:', error);
       }
 
-      allOrders.sort((a, b) => {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      });
+      allOrders.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
 
       const recentOrders: RecentOrder[] = allOrders
         .filter((order) => !clearedOrderIdsRef.current.has(order.id.toString()))
-        .slice(0, 10)
+        .slice(0, 8)
         .map((order) => {
           const tableLabel =
-            order.table_name || t('orders.tableDefaultName', { number: order.table_number ?? order.table_id });
+            order.table_name ||
+            t('orders.tableDefaultName', { number: order.table_number ?? order.table_id });
           const parts = [tableLabel];
           if (order.hall_name) parts.push(order.hall_name);
-          if (order.floor_name) parts.push(order.floor_name);
-          const tableNumber = parts.join(' · ');
-
           return {
             id: order.id.toString(),
             orderId: `#${order.id}`,
-            tableNumber,
+            tableNumber: parts.join(' · '),
             total: order.total || 0,
             status: mapOrderStatus(order.status),
             time: formatTimeAgo(order.created_at, t),
@@ -185,80 +184,97 @@ export default function RecentOrders() {
       },
       ['dine-in', 'pickup', 'delivery'],
     );
-
     return unsubscribe;
   }, [subscribeToOrders, loadRecentOrders]);
 
   return (
-    <Card className="rounded-xl shadow-soft border border-black/5 bg-white p-6 mb-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-[20px] leading-tight font-medium text-obsidian">{t('home.recentOrdersTitle')}</h2>
-      </div>
+    <section className={`${homeUi.surface} flex h-full flex-col overflow-hidden`}>
+      <header className="flex items-center justify-between border-b border-black/5 px-4 py-3">
+        <h2 className={homeUi.sectionTitle}>{t('home.recentOrdersTitle')}</h2>
+        <span className={`${homeUi.chip} ${homeUi.chipMuted} tabular-nums`}>{orders.length}</span>
+      </header>
 
-      {isLoading ? (
-        <div className="text-center text-obsidian/60 py-8">{t('home.loading')}</div>
-      ) : orders.length === 0 ? (
-        <div className="text-center text-obsidian/60 py-8">{t('home.noRecentOrders')}</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full">
+      <div className="flex-1 overflow-x-auto">
+        {isLoading ? (
+          <div className={homeUi.emptyState}>
+            <p className={homeUi.emptyTitle}>{t('home.loading')}</p>
+          </div>
+        ) : orders.length === 0 ? (
+          <div className={homeUi.emptyState}>
+            <p className={homeUi.emptyTitle}>{t('home.noRecentOrders')}</p>
+          </div>
+        ) : (
+          <table className="w-full min-w-[520px]">
             <thead>
-              <tr className="border-b border-black/5">
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-obsidian/70">{t('home.colOrderId')}</th>
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-obsidian/70">{t('home.colTable')}</th>
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-obsidian/70">{t('home.colTotal')}</th>
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-obsidian/70">{t('home.colStatus')}</th>
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-obsidian/70">{t('home.colTime')}</th>
-                <th className="text-right py-3 px-4 text-[13px] font-medium text-obsidian/70">{t('home.colNote')}</th>
+              <tr className="border-b border-black/5 bg-cloud-soft-white/60">
+                {[
+                  t('home.colOrderId'),
+                  t('home.colTable'),
+                  t('home.colTotal'),
+                  t('home.colStatus'),
+                  t('home.colTime'),
+                ].map((label) => (
+                  <th
+                    key={label}
+                    className="px-3 py-2.5 text-start text-[11px] font-semibold uppercase tracking-wide text-obsidian/45"
+                  >
+                    {label}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
-              {orders.map((order, index) => (
+              {orders.map((order) => (
                 <tr
                   key={order.id}
-                  className={`border-b border-black/5 hover:bg-cloud-soft-white ${
-                    index === orders.length - 1 ? 'border-b-0' : ''
-                  }`}
+                  role="link"
+                  tabIndex={0}
+                  onClick={() => navigate('/orders')}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      navigate('/orders');
+                    }
+                  }}
+                  className={`cursor-pointer border-b border-black/5 last:border-b-0 ${homeUi.rowHover}`}
                 >
-                  <td className="py-3.5 px-4">
-                    <span className="text-[14px] font-medium text-obsidian">{order.orderId}</span>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="text-[14px] text-obsidian/80">{order.tableNumber}</span>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <span className="text-[14px] font-medium text-obsidian">
-                      {order.total.toLocaleString(numberLocale)} {t('orders.currency')}
+                  <td className="px-3 py-2.5">
+                    <span className="text-[13px] font-semibold tabular-nums text-obsidian">
+                      {order.orderId}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4">
+                  <td className="px-3 py-2.5">
+                    <span className="block max-w-[140px] truncate text-[13px] text-obsidian/70">
+                      {order.tableNumber}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <span className="text-[13px] font-semibold tabular-nums text-obsidian">
+                      {fmtMoney(order.total)}{' '}
+                      <span className="font-medium text-obsidian/45">{t('orders.currency')}</span>
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5">
                     <span
-                      className={`inline-flex items-center px-3 py-1 rounded-lg text-[12px] font-medium border ${statusClass(order.status)}`}
+                      className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusClass(order.status)}`}
                     >
                       {statusLabel(order.status, t)}
                     </span>
                   </td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2">
-                      <Clock className="w-4 h-4 text-obsidian/40" />
-                      <span className="text-[13px] text-obsidian/70">{order.time}</span>
-                    </div>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    {order.note ? (
-                      <span className="text-[13px] text-obsidian/70 max-w-xs truncate block" title={order.note}>
-                        {order.note}
-                      </span>
-                    ) : (
-                      <span className="text-[13px] text-obsidian/40">—</span>
-                    )}
+                  <td className="px-3 py-2.5">
+                    <span className="inline-flex items-center gap-1 text-[12px] text-obsidian/55">
+                      <Clock className="h-3 w-3" />
+                      {order.time}
+                    </span>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
-        </div>
-      )}
-    </Card>
+        )}
+      </div>
+    </section>
   );
 }
+
+export default memo(RecentOrders);

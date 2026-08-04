@@ -1,18 +1,19 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, memo } from 'react';
 import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from 'react-router-dom';
 import { getServerUrl, fetchJson } from '../../utils';
-import { Clock, User } from 'lucide-react';
-import Card from '../ui/Card';
+import { Clock, User, ChevronLeft } from 'lucide-react';
 import { useOrderSocket } from '../../hooks/useOrderSocket';
+import { homeUi } from './home-ui';
 
 interface OpenTable {
   id: string;
   tableNumber: string;
   waiterName: string;
-  status: string;
+  statusKey: string;
   waitingTime: string;
 }
 
@@ -23,7 +24,6 @@ interface Order {
   created_at: string;
   table_name?: string;
   hall_name?: string;
-  note?: string;
 }
 
 function formatWaitingTime(createdAt: string, t: TFunction): string {
@@ -49,8 +49,19 @@ function getStatusLabel(status: string, t: TFunction): string {
   return statusMap[status] || status;
 }
 
-export default function OpenTablesNow() {
+function statusChipClass(status: string): string {
+  const map: Record<string, string> = {
+    pending: homeUi.statusPending,
+    printed: homeUi.statusPrinted,
+    completed: homeUi.statusCompleted,
+    cancelled: homeUi.statusCancelled,
+  };
+  return map[status] || homeUi.chipMuted;
+}
+
+function OpenTablesNow() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [tables, setTables] = useState<OpenTable[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const { subscribeToOrders } = useOrderSocket();
@@ -59,9 +70,7 @@ export default function OpenTablesNow() {
     try {
       setIsLoading(true);
       const serverUrl = getServerUrl();
-
       const dineInOrders = await fetchJson<Order[]>(`${serverUrl}/orders/dine-in/active`);
-
       const openTables: OpenTable[] = [];
       const processedTables = new Set<number>();
 
@@ -78,7 +87,7 @@ export default function OpenTablesNow() {
           id: order.table_id.toString(),
           tableNumber: tableName,
           waiterName: '—',
-          status: getStatusLabel(order.status, t),
+          statusKey: order.status,
           waitingTime: formatWaitingTime(order.created_at, t),
         });
       }
@@ -86,9 +95,9 @@ export default function OpenTablesNow() {
       openTables.sort((a, b) => {
         const aOrder = dineInOrders.find((o) => o.table_id.toString() === a.id);
         const bOrder = dineInOrders.find((o) => o.table_id.toString() === b.id);
-        const aTime = aOrder?.created_at || '';
-        const bTime = bOrder?.created_at || '';
-        return new Date(aTime).getTime() - new Date(bTime).getTime();
+        return (
+          new Date(aOrder?.created_at || 0).getTime() - new Date(bOrder?.created_at || 0).getTime()
+        );
       });
 
       setTables(openTables.slice(0, 5));
@@ -115,50 +124,67 @@ export default function OpenTablesNow() {
       },
       ['dine-in'],
     );
-
     return unsubscribe;
   }, [subscribeToOrders, loadOpenTables]);
 
   return (
-    <Card className="rounded-xl shadow-soft border border-black/5 bg-white p-6 mb-6">
-      <h2 className="text-[20px] leading-tight font-medium text-obsidian mb-6">{t('home.openTablesTitle')}</h2>
+    <section className={`${homeUi.surface} flex h-full flex-col overflow-hidden`}>
+      <header className="flex items-center justify-between border-b border-black/5 px-4 py-3">
+        <h2 className={homeUi.sectionTitle}>{t('home.openTablesTitle')}</h2>
+        <span className={`${homeUi.chip} ${homeUi.chipMuted} tabular-nums`}>
+          {tables.length}
+        </span>
+      </header>
 
-      {isLoading ? (
-        <div className="text-center text-obsidian/60 py-8">{t('home.loading')}</div>
-      ) : tables.length === 0 ? (
-        <div className="text-center text-obsidian/60 py-8">{t('home.noOpenTables')}</div>
-      ) : (
-        <div className="space-y-0">
-          <div className="grid grid-cols-4 gap-4 pb-3 mb-3 border-b border-black/5">
-            <div className="text-[13px] font-medium text-obsidian/70">{t('home.colTable')}</div>
-            <div className="text-[13px] font-medium text-obsidian/70">{t('home.colWaiter')}</div>
-            <div className="text-[13px] font-medium text-obsidian/70">{t('home.colStatus')}</div>
-            <div className="text-[13px] font-medium text-obsidian/70">{t('home.colWaitingTime')}</div>
+      <div className="flex-1 px-2 py-1">
+        {isLoading ? (
+          <div className={homeUi.emptyState}>
+            <p className={homeUi.emptyTitle}>{t('home.loading')}</p>
           </div>
-
-          {tables.slice(0, 5).map((table, index) => (
-            <div key={table.id}>
-              <div className="grid grid-cols-4 gap-4 py-3.5">
-                <div className="flex items-center">
-                  <span className="text-[14px] font-medium text-obsidian">{table.tableNumber}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <User className="w-4 h-4 text-obsidian/40" />
-                  <span className="text-[14px] text-obsidian/80">{table.waiterName}</span>
-                </div>
-                <div className="flex items-center">
-                  <span className="text-[13px] text-obsidian/70">{table.status}</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-yellow-500" />
-                  <span className="text-[14px] font-medium text-obsidian">{table.waitingTime}</span>
-                </div>
-              </div>
-              {index < Math.min(tables.length, 5) - 1 && <div className="h-px bg-black/5" />}
-            </div>
-          ))}
-        </div>
-      )}
-    </Card>
+        ) : tables.length === 0 ? (
+          <div className={homeUi.emptyState}>
+            <p className={homeUi.emptyTitle}>{t('home.noOpenTables')}</p>
+          </div>
+        ) : (
+          <ul className="divide-y divide-black/5">
+            {tables.map((table) => (
+              <li key={table.id}>
+                <button
+                  type="button"
+                  onClick={() => navigate('/orders')}
+                  className={`flex w-full items-center gap-3 rounded-lg px-3 py-3 text-start ${homeUi.rowHover}`}
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="truncate text-[14px] font-semibold text-obsidian">
+                        {table.tableNumber}
+                      </span>
+                      <span
+                        className={`inline-flex rounded-md border px-2 py-0.5 text-[11px] font-semibold ${statusChipClass(table.statusKey)}`}
+                      >
+                        {getStatusLabel(table.statusKey, t)}
+                      </span>
+                    </div>
+                    <div className="mt-1 flex flex-wrap items-center gap-3 text-[12px] text-obsidian/50">
+                      <span className="inline-flex items-center gap-1">
+                        <User className="h-3 w-3" />
+                        {table.waiterName}
+                      </span>
+                      <span className="inline-flex items-center gap-1 font-medium text-obsidian/65">
+                        <Clock className="h-3 w-3 text-amber-500" />
+                        {table.waitingTime}
+                      </span>
+                    </div>
+                  </div>
+                  <ChevronLeft className="h-4 w-4 flex-shrink-0 text-obsidian/25 rtl:rotate-180" />
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+    </section>
   );
 }
+
+export default memo(OpenTablesNow);

@@ -82,10 +82,28 @@ class ShiftsService {
       return null;
     }
 
-    await this.db.run(
-      `INSERT INTO shifts (started_by, start_time, status) 
-       VALUES (0, datetime('now', 'localtime'), 'open')`,
-    );
+    // Auto-open today's shift. started_by must reference a real user (FK → users.id).
+    // Never use 0 — that violates FOREIGN KEY and crashes getCurrent / home welcome.
+    const starter =
+      (await this.db.get(
+        `SELECT id FROM users WHERE role = 'admin' ORDER BY id ASC LIMIT 1`,
+      )) ||
+      (await this.db.get(`SELECT id FROM users ORDER BY id ASC LIMIT 1`));
+    if (!starter?.id) {
+      return null;
+    }
+
+    try {
+      await this.db.run(
+        `INSERT INTO shifts (started_by, start_time, status) 
+         VALUES (?, datetime('now', 'localtime'), 'open')`,
+        [starter.id],
+      );
+    } catch (err) {
+      console.error('[shifts] Failed to auto-open shift:', err);
+      return null;
+    }
+
     const created = await this.db.get(
       `SELECT id, started_by, ended_by, start_time, end_time, status, 
               total_sales, total_orders, total_items_sold, payment_breakdown, created_at

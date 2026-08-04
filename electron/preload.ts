@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('sufra', {
   support: {
     openAnyDesk: () => invoke('support:anydeskOpen'),
     openAnyDeskDownloadPage: () => invoke('support:anydeskDownloadPage'),
+    openExternalUrl: (url: string) => invoke('support:openExternalUrl', url),
   },
   backup: {
     getSettings: () => invoke('backup:getSettings'),
@@ -384,6 +385,7 @@ declare global {
           { ok: true; action: 'launched' | 'openedDownloadPage' } | { ok: false; error: string }
         >;
         openAnyDeskDownloadPage: () => Promise<{ ok: true } | { ok: false; error: string }>;
+        openExternalUrl: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
       };
       backup?: {
         getSettings: () => Promise<{
