@@ -31,7 +31,9 @@ function killPort(port) {
 }
 
 console.log('[DIST] Stopping processes that may lock native modules...');
-tryRun('taskkill /IM "sufra pos.exe" /F');
+tryRun('taskkill /IM "sufra-pos.exe" /F /T');
+tryRun('taskkill /IM "sufra pos.exe" /F /T');
+tryRun('taskkill /IM "Sufra Lite POS.exe" /F /T');
 killPort(3000);
 killPort(3333);
 // Brief pause so Windows releases file handles

@@ -46,7 +46,9 @@ try {
       const { execSync } = require('child_process');
       if (process.platform === 'win32') {
         try {
+          execSync('taskkill /F /IM "sufra-pos.exe" /T 2>nul', { stdio: 'ignore' });
           execSync('taskkill /F /IM "sufra pos.exe" /T 2>nul', { stdio: 'ignore' });
+          execSync('taskkill /F /IM "Sufra Lite POS.exe" /T 2>nul', { stdio: 'ignore' });
           execSync('taskkill /F /FI "WINDOWTITLE eq Sufra*" 2>nul', { stdio: 'ignore' });
         } catch (e) {
           // Ignore errors - processes might not be running

@@ -12,7 +12,7 @@
     "buildResources": "build"
   },
   "asar": true,
-  "compression": "store",
+  "compression": "normal",
   "files": [
     "dist/**/*",
     "!dist/backend/**",
@@ -61,6 +61,7 @@
     "target": [
       "nsis"
     ],
+    "executableName": "sufra-pos",
     "icon": "build/icon.ico",
     "sign": null,
     "signAndEditExecutable": false,
@@ -71,12 +72,20 @@
     "oneClick": false,
     "perMachine": true,
     "allowToChangeInstallationDirectory": false,
+    "allowElevation": true,
+    "runAfterFinish": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
+    "shortcutName": "sufra pos",
+    "include": "build/installer.nsh",
     "installerSidebar": "build/installerSidebar.bmp",
     "installerHeader": "build/installerHeader.bmp",
     "installerIcon": "build/icon.ico",
-    "uninstallerIcon": "build/icon.ico"
+    "uninstallerIcon": "build/icon.ico",
+    "uninstallDisplayName": "sufra pos",
+    "artifactName": "sufra pos Setup ${version}.${ext}",
+    "warningsAsErrors": false
   },
+  "afterPack": "./scripts/after-pack-win.js",
   "npmRebuild": false
 }

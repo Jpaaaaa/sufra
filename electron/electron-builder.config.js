@@ -2,6 +2,8 @@
  * Alternate electron-builder config (mirrors electron-builder.json).
  * Live backend: ncc bundle + minimal native runtime node_modules.
  */
+const path = require('path');
+
 module.exports = {
   appId: 'com.sufra.lite.pos',
   productName: 'sufra pos',
@@ -14,7 +16,7 @@ module.exports = {
   },
 
   asar: true,
-  compression: 'store',
+  compression: 'normal',
 
   files: ['dist/**/*', '!dist/backend/**', 'package.json', 'build/**/*'],
 
@@ -55,8 +57,10 @@ module.exports = {
 
   win: {
     target: ['nsis'],
+    executableName: 'sufra-pos',
     icon: 'build/icon.ico',
     sign: null,
+    signAndEditExecutable: false,
     forceCodeSigning: false,
     signingHashAlgorithms: [],
   },
@@ -67,17 +71,22 @@ module.exports = {
     oneClick: false,
     perMachine: true,
     allowToChangeInstallationDirectory: false,
+    allowElevation: true,
+    runAfterFinish: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
+    shortcutName: 'sufra pos',
+    include: 'build/installer.nsh',
     installerSidebar: 'build/installerSidebar.bmp',
     installerHeader: 'build/installerHeader.bmp',
     installerIcon: 'build/icon.ico',
     uninstallerIcon: 'build/icon.ico',
+    uninstallDisplayName: 'sufra pos',
+    artifactName: 'sufra pos Setup ${version}.${ext}',
+    warningsAsErrors: false,
   },
 
-  afterPack: async () => {
-    console.log('[BUILD] Skipping code signing as requested');
-  },
+  afterPack: require('./scripts/after-pack-win.js').default,
 
   afterSign: async () => {
     console.log('[BUILD] Skipping code signing as requested');
