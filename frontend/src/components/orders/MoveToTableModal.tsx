@@ -1,21 +1,11 @@
 import { useState, useEffect, useMemo } from 'react';
-import { getServerUrl, fetchJson, TableEntity } from '../../utils';
+import { TableEntity } from '../../utils';
 import { FLOOR_COLORS } from '../../pages/orders/constants';
 import { ConfirmMoveDialog } from './ConfirmMoveDialog';
-
-interface Hall {
-  id: number;
-  name: string;
-  number: number;
-  floor_id?: number | null;
-  floor?: { id: number; name: string; number: number } | null;
-}
-
-interface Floor {
-  id: number;
-  name: string;
-  number: number;
-}
+import { useFloorsStore } from '../../../stores/floorsStore';
+import { useHallsStore } from '../../../stores/hallsStore';
+import { useTablesStore } from '../../../stores/tablesStore';
+import type { Hall } from '../../utils';
 
 interface HallWithTables extends Hall {
   tables: TableEntity[];
@@ -34,8 +24,9 @@ export function MoveToTableModal({
   onSelectTable,
   onClose,
 }: MoveToTableModalProps) {
-  const [floors, setFloors] = useState<Floor[]>([]);
-  const [hallsWithTables, setHallsWithTables] = useState<HallWithTables[]>([]);
+  const floors = useFloorsStore((state) => state.floors);
+  const halls = useHallsStore((state) => state.halls);
+  const tablesByHallId = useTablesStore((state) => state.tablesByHallId);
   const [loading, setLoading] = useState(true);
   const [selectedFloorId, setSelectedFloorId] = useState<number | 'no-floor' | null>(null);
   const [selectedHallId, setSelectedHallId] = useState<number | null>(null);
@@ -45,57 +36,30 @@ export function MoveToTableModal({
     const load = async () => {
       setLoading(true);
       try {
-        const serverUrl = getServerUrl();
-        const isElectron = typeof window !== 'undefined' && !!window.sufra;
-
-        const [rawHalls, rawFloors] = await Promise.all([
-          fetchJson<any[]>(`${serverUrl}/halls`),
-          fetchJson<any[]>(`${serverUrl}/floors`).catch(() => []),
+        const [loadedHalls] = await Promise.all([
+          useHallsStore.getState().loadHalls(),
+          useFloorsStore.getState().loadFloors(),
         ]);
 
-        const floorsData: Floor[] = (rawFloors || []).map((f: any) => ({
-          id: f.id,
-          name: f.name,
-          number: f.number ?? f.floor_number ?? 0,
-        }));
-        setFloors(floorsData);
-
-        const hallsData: Hall[] = (rawHalls || []).map((h: any) => {
-          const floorId = h.floor_id ?? null;
-          const floor = floorId != null ? floorsData.find((f) => f.id === floorId) ?? null : null;
-          return {
-            id: h.id,
-            name: h.name,
-            number: h.number ?? h.hall_number ?? 0,
-            floor_id: floorId,
-            floor: floor ? { id: floor.id, name: floor.name, number: floor.number } : null,
-          };
-        });
-        const withTables = await Promise.all(
-          hallsData.map(async (hall) => {
-            let tables: TableEntity[] = [];
-            try {
-              if (isElectron && window.sufra?.tables?.findByHall) {
-                tables = await window.sufra.tables.findByHall(hall.id);
-              } else {
-                tables = await fetchJson<TableEntity[]>(`${serverUrl}/halls/${hall.id}/tables`);
-              }
-            } catch {
-              tables = [];
-            }
-            return { ...hall, tables: Array.isArray(tables) ? tables : [] };
-          })
+        await Promise.all(
+          loadedHalls.map((hall) =>
+            useTablesStore.getState().loadTablesForHall(hall.id, true),
+          ),
         );
-        setHallsWithTables(withTables);
-        const firstHallWithTables = withTables.find(
-          (h) => h.tables.some((t) => t.id !== currentTableId)
+
+        const withTables = loadedHalls.map((hall) => ({
+          ...hall,
+          tables: useTablesStore.getState().getTablesForHall(hall.id),
+        }));
+
+        const firstHallWithTables = withTables.find((h) =>
+          h.tables.some((t) => t.id !== currentTableId),
         );
         if (firstHallWithTables) {
           setSelectedHallId(firstHallWithTables.id);
         }
       } catch {
-        setFloors([]);
-        setHallsWithTables([]);
+        /* store handles empty state */
       } finally {
         setLoading(false);
       }
@@ -103,8 +67,17 @@ export function MoveToTableModal({
     void load();
   }, [currentTableId]);
 
+  const hallsWithTables: HallWithTables[] = useMemo(
+    () =>
+      halls.map((hall) => ({
+        ...hall,
+        tables: tablesByHallId[hall.id] ?? [],
+      })),
+    [halls, tablesByHallId],
+  );
+
   const { byFloor, noFloor } = useMemo(() => {
-    const byFloor: { floor: Floor; halls: HallWithTables[] }[] = [];
+    const byFloor: { floor: { id: number; name: string; number: number }; halls: HallWithTables[] }[] = [];
     const noFloor: HallWithTables[] = [];
 
     const sortedFloors = [...floors].sort((a, b) => a.number - b.number);
@@ -129,7 +102,7 @@ export function MoveToTableModal({
       return { byFloor, noFloor };
     }
     if (selectedFloorId === 'no-floor') {
-      return { byFloor: [] as { floor: Floor; halls: HallWithTables[] }[], noFloor };
+      return { byFloor: [] as { floor: { id: number; name: string; number: number }; halls: HallWithTables[] }[], noFloor };
     }
     const floor = floors.find((f) => f.id === selectedFloorId);
     const hallsOnFloor = hallsWithTables

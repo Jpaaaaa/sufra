@@ -1,6 +1,6 @@
 {
   "appId": "com.sufra.lite.pos",
-  "productName": "Sufra Lite POS",
+  "productName": "sufra pos",
   "publish": {
     "provider": "generic",
     "url": "https://bazarone.amaantechnology.com/updates/sufra_lite/",

@@ -4,7 +4,7 @@
  */
 module.exports = {
   appId: 'com.sufra.lite.pos',
-  productName: 'Sufra Lite POS',
+  productName: 'sufra pos',
   icon: 'build/icon.ico',
   forceCodeSigning: false,
 

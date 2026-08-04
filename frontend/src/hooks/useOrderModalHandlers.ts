@@ -7,8 +7,10 @@ import type { TableEntity } from '../utils';
 import { parseDiscountFromOrder, getOrdersWithDiscount } from './useOrderModalDiscountUtils';
 import { createClearTableHandler } from './useOrderModalClearTable';
 import { mapCartItemToOrderPayload, orderItemToCartLine } from './cart-item-utils';
+import { withOrderCreator } from '../utils/order-payload';
 
 interface UserRole {
+  id?: number;
   role?: string;
   require_captain_approval?: boolean;
 }
@@ -107,12 +109,15 @@ export function createOrderModalHandlers(
       return;
     }
     try {
-      const payload: any = {
-        table_id: table.id,
-        hall_id: table.hall_id,
-        items: selectedItems.map(mapCartItemToOrderPayload),
-        note: note?.trim() || null,
-      };
+      const payload = withOrderCreator(
+        {
+          table_id: table.id,
+          hall_id: table.hall_id,
+          items: selectedItems.map(mapCartItemToOrderPayload),
+          note: note?.trim() || null,
+        },
+        user,
+      );
 
       const serverUrl = getServerUrl();
       await fetchJson(`${serverUrl}/orders/dine-in`, {

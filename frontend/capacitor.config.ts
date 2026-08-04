@@ -2,7 +2,7 @@ import type { CapacitorConfig } from '@capacitor/cli';
 
 const config: CapacitorConfig = {
   appId: 'com.sufra.lite',
-  appName: 'Sufra Lite',
+  appName: 'sufra pos',
   webDir: 'dist'
 };
 

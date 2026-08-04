@@ -133,9 +133,10 @@ export default function SettingsRecipePrintPage() {
     <div className="flex flex-1 flex-col bg-cloud-soft-white">
       <Header title="طباعة الوصفات" />
       <main className="flex-1 p-6">
-        <section className="mx-auto max-w-2xl">
+        <section className="mx-auto max-w-7xl">
           <SettingsTabs />
-          <div className="mt-6 rounded-soft-xl border border-black/5 bg-white p-6 shadow-soft">
+          <div className="mx-auto mt-6 max-w-2xl">
+            <div className="rounded-soft-xl border border-black/5 bg-white p-6 shadow-soft">
             <p className="mb-6 text-[14px] leading-relaxed text-graphite">
               تظهر هذه الحقول في أعلى وأسفل ورقة الوصفة. زر «طباعة» يرسل إلى{' '}
               <span className="font-medium text-obsidian">طابعة إيصال العميل</span> (نفس إعداد الطابعات → إيصال
@@ -208,6 +209,7 @@ export default function SettingsRecipePrintPage() {
                 </div>
               </div>
             )}
+            </div>
           </div>
         </section>
       </main>

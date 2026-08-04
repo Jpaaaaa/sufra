@@ -2,6 +2,7 @@ import { fetchJson, getServerUrl } from '../utils';
 import { showToast } from '../components/ui/Toast';
 import { showPasswordDialog } from '../components/ui/PasswordDialog';
 import { getOrderReceiptTotals } from '../utils/order-totals';
+import { APP_BRAND_NAME } from '../lib/brand';
 import type { ExistingOrder } from './useOrderModalTypes';
 import type { TableEntity } from '../utils';
 import type { Kitchen } from '../utils';
@@ -106,7 +107,7 @@ export function createOrderModalPrintHandlers(
         hall: hallName,
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         note: order.note || null,
       };
 
@@ -213,7 +214,7 @@ export function createOrderModalPrintHandlers(
           total: tableTotal,
         },
         timestamp: new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
       };
 
       if (window.sufra?.print?.receipt) {

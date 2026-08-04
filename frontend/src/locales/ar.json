@@ -179,10 +179,10 @@
     "systemHeading": "إعدادات النظام",
     "tabPrinters": "الطابعات",
     "tabRecipePrint": "طباعة الوصفات",
-    "tabServer": "إعدادات الخادم",
+    "tabServer": "الخادم",
     "tabShift": "شفتات عمل",
     "tabUsers": "المستخدمين",
-    "tabLicenseUpdates": "الترخيص والتحديثات",
+    "tabLicenseUpdates": "الترخيص",
     "tabBackup": "النسخ الاحتياطي",
     "licenseDesktopOnly": "حالة الترخيص متاحة في تطبيق سطح المكتب فقط.",
     "licenseCardTitle": "الترخيص",
@@ -275,7 +275,7 @@
     "backupError_INVALID_TOKEN": "جلسة غير صالحة — سجّل الدخول مجدداً",
     "backupError_BACKUP_NOT_FOUND": "النسخة الاحتياطية غير موجودة",
     "backupError_INVALID_BACKUP": "ملف نسخ احتياطي غير صالح",
-    "updatesErrManifest404": "لا يوجد ملف تحديثات منشور على الخادم (latest.yml). انشر إصدار سفر لايت من منصة الترخيص داخل مجلد updates/sufra_lite.",
+    "updatesErrManifest404": "لا يوجد ملف تحديثات منشور على الخادم (latest.yml). انشر إصدار sufra pos من منصة الترخيص داخل مجلد updates/sufra_lite.",
     "updatesErrNetwork": "تعذر الوصول إلى خادم التحديثات. تحقق من الشبكة وعنوان المنصة.",
     "updatesTechnicalDetails": "تفاصيل تقنية",
     "printersThermalTitle": "إعدادات الطابعات الحرارية",
@@ -352,7 +352,7 @@
     "toastScanFailed": "فشل البحث: {{detail}}"
   },
   "layout": {
-    "logoAlt": "شعار صفرة",
+    "logoAlt": "شعار sufra pos",
     "employeeLabel": "اسم الموظف",
     "logout": "تسجيل الخروج",
     "adminDisplayName": "مدير النظام",
@@ -380,9 +380,10 @@
     "sidebarLabel": "القائمة الجانبية",
     "navLabel": "التنقل الرئيسي",
     "viewControls": "العرض وإعادة التحميل",
-    "zoomOut": "تصفير",
+    "zoomOut": "تصغير",
     "zoomIn": "تكبير",
-    "reload": "إعادة تحميل"
+    "reload": "إعادة تحميل",
+    "footerVersion": "الإصدار {{version}} · يعمل بدون اتصال"
   },
   "home": {
     "loading": "جاري التحميل...",
@@ -427,7 +428,7 @@
     "openStatusPreparing": "جاري التحضير",
     "openStatusCompleted": "مكتمل",
     "openStatusCancelled": "ملغي",
-    "pwaTitle": "تثبيت تطبيق سفرة",
+    "pwaTitle": "تثبيت sufra pos",
     "pwaSubtitle": "ثبّت التطبيق على جهازك للوصول السريع",
     "pwaInstall": "تثبيت التطبيق"
   },
@@ -977,6 +978,8 @@
     "totalRow": "الإجمالي",
     "expensesSectionTitle": "إدارة المصروفات",
     "addExpense": "+ إضافة مصروف",
+    "addExpenseTitle": "إضافة مصروف",
+    "editExpenseTitle": "تعديل مصروف",
     "expensesShowCount": "عرض {{filtered}} من أصل {{total}} مصروف",
     "expensesFilteredTotal": " — مجمل المبلغ المصفّى: {{amount}}",
     "noDataShort": "لا توجد بيانات",
@@ -1052,6 +1055,21 @@
     },
     "tabRevenue": "الإيرادات",
     "tabExpenses": "المصروفات",
-    "tabProfit": "الربح والخسارة"
+    "tabProfit": "الربح والخسارة",
+    "tabGeneral": "عام",
+    "generalTableTitle": "الملخص المالي اليومي",
+    "colDetails": "التفاصيل",
+    "colExpenses": "المصروفات",
+    "colRowTotal": "الإجمالي",
+    "generalEmpty": "لا توجد بيانات مالية لهذه الفترة",
+    "generalEmptyHint": "زامن الإيرادات من الطلبات أو أضف مصروفات لعرض الإجماليات اليومية.",
+    "detailsFromOrders": "من الطلبات",
+    "savePdf": "حفظ PDF",
+    "exportingPdf": "جاري تجهيز PDF…",
+    "pdfPeriod": "الفترة",
+    "toastPdfNoData": "لا توجد بيانات للتصدير في هذه الفترة.",
+    "toastPdfOpened": "تم فتح نافذة الطباعة — اختر حفظ كـ PDF.",
+    "toastPdfPopupBlocked": "تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة وحاول مجددًا.",
+    "toastPdfFailed": "تعذر تصدير PDF."
   }
 }

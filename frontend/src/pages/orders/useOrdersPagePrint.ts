@@ -2,6 +2,7 @@ import { getServerUrl, fetchJson, type Kitchen } from '../../utils';
 import { showToast } from '../../components/ui/Toast';
 import { showPasswordDialog } from '../../components/ui/PasswordDialog';
 import { getOrderReceiptTotals } from '../../utils/order-totals';
+import { APP_BRAND_NAME } from '../../lib/brand';
 import type { ExistingOrder } from '../../hooks/useOrderModal';
 
 type OrderType = 'pickup' | 'delivery';
@@ -44,7 +45,7 @@ export function createOrdersPagePrintHandlers(
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         note: order.note || null,
         ...(orderType === 'delivery' && {
           customer_name: order.customer_name || null,
@@ -164,7 +165,7 @@ export function createOrdersPagePrintHandlers(
         items: receiptItems,
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         service_type: orderType,
         ...(orderType === 'delivery' && {
           customer_name: order.customer_name || null,
@@ -222,7 +223,7 @@ export function createOrdersPagePrintHandlers(
         items: receiptItems,
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         service_type: 'dine-in',
       };
 

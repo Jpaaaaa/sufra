@@ -62,12 +62,26 @@ export interface CashDrawerData {
   variance: number;
 }
 
+export interface ShiftBreakdownRow {
+  shiftId: number | null;
+  shiftName: string;
+  startTime: string | null;
+  endTime: string | null;
+  totalSales: number;
+  orderCount: number;
+  averageOrder: number;
+}
+
 export interface ReportData {
   summary: ReportSummary;
   items: ItemPerformance[];
   employees: EmployeeSummary[];
   orders: DailyAggregate[];
   drawer?: CashDrawerData;
+  shiftBreakdown?: ShiftBreakdownRow[];
+  shiftBreakdownByDay?: Record<string, ShiftBreakdownRow[]>;
+  shiftBreakdownByMonth?: Record<string, Record<string, ShiftBreakdownRow[]>>;
+  shiftBreakdownTotals?: ShiftBreakdownRow[];
 }
 
 export class ExportPdfDto {

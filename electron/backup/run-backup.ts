@@ -70,7 +70,7 @@ async function resolveStoreName(): Promise<string> {
   } catch {
     // ignore
   }
-  return 'Sufra';
+  return 'sufra pos';
 }
 
 export async function runBackup(): Promise<BackupRunResult> {
@@ -141,7 +141,7 @@ export function listBackups(): BackupListItem[] {
     const folder = path.join(root, name);
     if (!fs.statSync(folder).isDirectory()) continue;
     let createdAt = name.replace(/^backup-/, '').replace('_', 'T') + ':00.000Z';
-    let storeName = 'Sufra';
+    let storeName = 'sufra pos';
     const manifestPath = path.join(folder, 'manifest.json');
     if (fs.existsSync(manifestPath)) {
       try {

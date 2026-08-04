@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { fetchJson, getServerUrl, Kitchen } from '../utils';
+import { fetchJson, getServerUrl } from '../utils';
 import {
   normalizeCategoryRow,
   normalizeItemRow,
@@ -13,10 +13,12 @@ import { showToast } from '../components/ui/Toast';
 import { showPasswordDialog } from '../components/ui/PasswordDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffers } from './useOffers';
+import { APP_BRAND_NAME } from '../lib/brand';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
 import { isHappyHourActiveNow } from '../utils/offer-pricing';
 import { isWeekdayIncluded } from '../utils/weekdays';
 import { ExistingOrder, CartItem, Category } from './useOrderModal';
+import { useKitchensStore } from '../../stores/kitchensStore';
 import {
   type AddItemExtras,
   buildCartItem,
@@ -26,6 +28,7 @@ import {
   mapCartItemToOrderPayload,
   orderItemToCartLine,
 } from './cart-item-utils';
+import { withOrderCreator } from '../utils/order-payload';
 
 export function usePickupOrderModal() {
   const { user } = useAuth();
@@ -33,7 +36,7 @@ export function usePickupOrderModal() {
   const [items, setItems] = useState<Item[]>([]);
   const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const kitchens = useKitchensStore((state) => state.kitchens);
   const [loadingItems, setLoadingItems] = useState(false);
   const [selectedItems, setSelectedItems] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -58,16 +61,15 @@ export function usePickupOrderModal() {
       setLoadingOrders(true);
       try {
         const serverUrl = getServerUrl();
-        const [itemsData, categoriesData, kitchensData, shelvesData] = await Promise.all([
+        const [itemsData, categoriesData, shelvesData] = await Promise.all([
           fetchJson<any[]>(`${serverUrl}/items`),
           fetchJson<any[]>(`${serverUrl}/categories`),
-          fetchJson<any[]>(`${serverUrl}/kitchens`),
           fetchJson<ShelfItem[]>(`${serverUrl}/shelves`),
+          useKitchensStore.getState().loadKitchens(),
         ]);
         setItems(itemsData.map(normalizeItemRow));
         setCategories(categoriesData.map(normalizeCategoryRow));
         setShelfItems(shelvesData || []);
-        setKitchens(kitchensData);
         // Don't load existing orders - each modal should start fresh
         setExistingOrders([]);
       } catch (e) {
@@ -428,7 +430,7 @@ export function usePickupOrderModal() {
           total: order.total || subtotal,
         },
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         note: order.note || null,
       };
       
@@ -562,9 +564,12 @@ export function usePickupOrderModal() {
     if (selectedItems.length === 0) return;
 
     try {
-      const payload: any = {
-        items: selectedItems.map(mapCartItemToOrderPayload),
-      };
+      const payload = withOrderCreator(
+        {
+          items: selectedItems.map(mapCartItemToOrderPayload),
+        },
+        user,
+      );
       
       if (appliedDiscount) {
         payload.globalDiscount = {
@@ -618,7 +623,7 @@ export function usePickupOrderModal() {
       console.error('Failed to save pickup order:', e);
       showToast('حدث خطأ أثناء حفظ الطلب: ' + (e.message || 'خطأ غير معروف'), 'error');
     }
-  }, [selectedItems, note, appliedDiscount, customerName, customerPhone, mode, editingOrder, handleCancelEdit, handlePrintOrder]);
+  }, [selectedItems, note, appliedDiscount, customerName, customerPhone, mode, editingOrder, handleCancelEdit, handlePrintOrder, user?.id]);
 
   const reset = useCallback(() => {
     // Only reset if in CREATE mode

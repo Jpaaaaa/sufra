@@ -179,7 +179,7 @@
     "systemHeading": "System settings",
     "tabPrinters": "Printers",
     "tabRecipePrint": "Recipe printing",
-    "tabServer": "Server settings",
+    "tabServer": "Server",
     "tabShift": "Work shifts",
     "tabUsers": "Users",
     "tabLicenseUpdates": "License & updates",
@@ -244,7 +244,7 @@
     "updatesProgressSpeed": "{{mb}} MB/s",
     "licenseUpdatesPageTitle": "License & updates",
     "licenseUpdatesPageLede": "Device activation, plan status, and update checks for this installation.",
-    "licenseUpdatesDesktopHint": "License and update controls are available in the Sufra desktop app only.",
+    "licenseUpdatesDesktopHint": "License and update controls are available in the sufra pos desktop app only.",
     "backupPageTitle": "Backup",
     "backupPageLede": "Daily snapshots of the database, images, and print branding — license and update files are never touched.",
     "backupCardTitle": "Local backup",
@@ -275,7 +275,7 @@
     "backupError_INVALID_TOKEN": "Invalid session — please sign in again",
     "backupError_BACKUP_NOT_FOUND": "Backup not found",
     "backupError_INVALID_BACKUP": "Invalid backup package",
-    "updatesErrManifest404": "The update server has no published manifest yet (missing latest.yml). Publish a Sufra Lite build on the license platform under updates/sufra_lite.",
+    "updatesErrManifest404": "The update server has no published manifest yet (missing latest.yml). Publish a sufra pos build on the license platform under updates/sufra_lite.",
     "updatesErrNetwork": "Could not reach the update server. Check your connection and the platform URL.",
     "updatesTechnicalDetails": "Technical details",
     "printersThermalTitle": "Thermal printer settings",
@@ -352,7 +352,7 @@
     "toastScanFailed": "Search failed: {{detail}}"
   },
   "layout": {
-    "logoAlt": "Sufra logo",
+    "logoAlt": "sufra pos logo",
     "employeeLabel": "Employee",
     "logout": "Log out",
     "adminDisplayName": "System administrator",
@@ -382,7 +382,8 @@
     "viewControls": "Display and reload",
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
-    "reload": "Reload"
+    "reload": "Reload",
+    "footerVersion": "Version {{version}} · Offline"
   },
   "home": {
     "loading": "Loading...",
@@ -427,7 +428,7 @@
     "openStatusPreparing": "Preparing",
     "openStatusCompleted": "Completed",
     "openStatusCancelled": "Cancelled",
-    "pwaTitle": "Install Sufra",
+    "pwaTitle": "Install sufra pos",
     "pwaSubtitle": "Install the app on your device for quick access",
     "pwaInstall": "Install app"
   },
@@ -977,6 +978,8 @@
     "totalRow": "Total",
     "expensesSectionTitle": "Expenses",
     "addExpense": "+ Add expense",
+    "addExpenseTitle": "Add expense",
+    "editExpenseTitle": "Edit expense",
     "expensesShowCount": "Showing {{filtered}} of {{total}} expenses",
     "expensesFilteredTotal": " — Filtered total: {{amount}}",
     "noDataShort": "No data",
@@ -1052,6 +1055,21 @@
     },
     "tabRevenue": "Revenue",
     "tabExpenses": "Expenses",
-    "tabProfit": "Profit & loss"
+    "tabProfit": "Profit & loss",
+    "tabGeneral": "General",
+    "generalTableTitle": "Daily finance summary",
+    "colDetails": "Details",
+    "colExpenses": "Expenses",
+    "colRowTotal": "Total",
+    "generalEmpty": "No finance rows for this period",
+    "generalEmptyHint": "Sync revenue from orders or add expenses to see daily totals.",
+    "detailsFromOrders": "From orders",
+    "savePdf": "Save as PDF",
+    "exportingPdf": "Preparing PDF…",
+    "pdfPeriod": "Period",
+    "toastPdfNoData": "Nothing to export for this period.",
+    "toastPdfOpened": "Print dialog opened — choose Save as PDF.",
+    "toastPdfPopupBlocked": "Could not open print window. Allow pop-ups and try again.",
+    "toastPdfFailed": "Could not export PDF."
   }
 }

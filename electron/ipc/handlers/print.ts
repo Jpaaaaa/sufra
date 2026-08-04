@@ -17,6 +17,45 @@ import {
 } from '../../recipe-print-branding-store';
 import { buildRecipePreviewSample } from '../../print/recipe-preview-sample';
 
+const LOCKED_FILE_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
+
+function writePdfBufferToDownloads(
+  downloadsPath: string,
+  baseFileName: string,
+  buffer: Buffer,
+): { filePath: string; fileName: string } {
+  const ext = path.extname(baseFileName);
+  const base = path.basename(baseFileName, ext);
+  const candidates = [
+    baseFileName,
+    `${base}-${Date.now()}${ext}`,
+    ...Array.from({ length: 9 }, (_, i) => `${base} (${i + 2})${ext}`),
+  ];
+
+  let lastError: NodeJS.ErrnoException | null = null;
+
+  for (const fileName of candidates) {
+    const filePath = path.join(downloadsPath, fileName);
+    try {
+      fs.writeFileSync(filePath, buffer);
+      return { filePath, fileName };
+    } catch (err) {
+      const error = err as NodeJS.ErrnoException;
+      if (LOCKED_FILE_ERROR_CODES.has(error.code ?? '')) {
+        lastError = error;
+        continue;
+      }
+      throw error;
+    }
+  }
+
+  throw new Error(
+    lastError?.code === 'EBUSY'
+      ? 'الملف مفتوح في برنامج آخر. أغلق ملف PDF السابق ثم حاول مرة أخرى.'
+      : lastError?.message || 'تعذّر حفظ ملف PDF',
+  );
+}
+
 export function registerPrintHandlers() {
   ipcMain.handle('backend:health', async () => {
     try {
@@ -190,9 +229,8 @@ export function registerPrintHandlers() {
       });
       if (!pdfBuffer || pdfBuffer.length === 0) throw new Error('PDF generation returned empty buffer');
       const downloadsPath = app.getPath('downloads');
-      const fileName = `sufra-pos-${exportData.type}-${exportData.date}.pdf`;
-      const filePath = path.join(downloadsPath, fileName);
-      fs.writeFileSync(filePath, pdfBuffer);
+      const baseFileName = `sufra-pos-${exportData.type}-${exportData.date}.pdf`;
+      const { filePath, fileName } = writePdfBufferToDownloads(downloadsPath, baseFileName, pdfBuffer);
       return { success: true, filePath, fileName };
     } catch (error: any) {
       return { success: false, error: error.message || 'Unknown error during PDF export' };

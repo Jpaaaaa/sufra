@@ -24,7 +24,7 @@ import {
 } from '../../../init/backend-loader';
 import type { FastifyRouteContext } from '../../types';
 import { sendRouteError } from '../../errors';
-import { emitOrder, parseId, type DineInStatus } from './helpers';
+import { emitOrder, parseId, withOrderCreatorFromRequest, type DineInStatus } from './helpers';
 
 type StatusBody = { status?: DineInStatus };
 type MoveTableBody = { source_table_id?: number; target_table_id?: number };
@@ -122,7 +122,9 @@ export function registerDineInOrderRoutes(ctx: FastifyRouteContext): void {
 
   app.post('/orders/dine-in', async (request, reply) => {
     try {
-      const order = await dineInOrdersCreate(request.body);
+      const order = await dineInOrdersCreate(
+        withOrderCreatorFromRequest(request.body as Record<string, unknown>, request.headers.authorization),
+      );
       emitOrder(ctx, 'created', 'dine-in', order);
       return order;
     } catch (error) {
@@ -132,7 +134,9 @@ export function registerDineInOrderRoutes(ctx: FastifyRouteContext): void {
 
   app.post('/api/orders/dine-in', async (request, reply) => {
     try {
-      const order = await dineInOrdersCreate(request.body);
+      const order = await dineInOrdersCreate(
+        withOrderCreatorFromRequest(request.body as Record<string, unknown>, request.headers.authorization),
+      );
       emitOrder(ctx, 'created', 'dine-in', order);
       return order;
     } catch (error) {

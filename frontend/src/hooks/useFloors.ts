@@ -2,15 +2,10 @@ import { useState, useEffect } from 'react';
 import { getServerUrl, fetchJson } from '../utils';
 import { showConfirm } from '../components/ui/ConfirmDialog';
 import { showToast } from '../components/ui/Toast';
+import { useFloorsStore } from '../../stores/floorsStore';
+import type { Floor } from '../types/floor';
 
-export interface Floor {
-  id: number;
-  name: string;
-  number: number;
-  floor_number?: number;
-  created_at?: string;
-  updated_at?: string;
-}
+export type { Floor };
 
 interface FloorFormState {
   id?: number;
@@ -19,7 +14,8 @@ interface FloorFormState {
 }
 
 export function useFloors() {
-  const [floors, setFloors] = useState<Floor[]>([]);
+  const floors = useFloorsStore((state) => state.floors);
+  const loadFloorsFromStore = useFloorsStore((state) => state.loadFloors);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formState, setFormState] = useState<FloorFormState>({
@@ -32,23 +28,12 @@ export function useFloors() {
     setLoading(true);
     setError(null);
     try {
-      const serverUrl = getServerUrl();
-      const raw = await fetchJson<any[]>(`${serverUrl}/floors`);
-      
-      const floorsData: Floor[] = raw.map((f) => ({
-        id: f.id,
-        name: f.name,
-        number: f.number ?? f.floor_number,
-        floor_number: f.floor_number,
-        created_at: f.created_at,
-        updated_at: f.updated_at,
-      }));
-
-      setFloors(floorsData);
+      const floorsData = await loadFloorsFromStore();
       return floorsData;
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'تعذر تحميل الطوابق');
+      const message = e instanceof Error ? e.message : 'تعذر تحميل الطوابق';
+      setError(message);
       return [];
     } finally {
       setLoading(false);
@@ -114,9 +99,10 @@ export function useFloors() {
 
       resetForm();
       await loadFloors();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء حفظ الطابق.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء حفظ الطابق.';
+      setError(message);
       showToast('حدث خطأ أثناء حفظ الطابق', 'error');
     } finally {
       setLoading(false);
@@ -151,9 +137,10 @@ export function useFloors() {
       });
       await loadFloors();
       showToast(`تم حذف الطابق "${floor.name}" بنجاح`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء حذف الطابق.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء حذف الطابق.';
+      setError(message);
       showToast('حدث خطأ أثناء حذف الطابق', 'error');
     } finally {
       setLoading(false);
@@ -175,4 +162,3 @@ export function useFloors() {
     handleDelete,
   };
 }
-

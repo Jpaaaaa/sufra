@@ -20,9 +20,7 @@ export default function HallsPage() {
 
   const floorsHook = useFloors();
   const hallsHook = useHalls();
-  const tablesHook = useTables({
-    onTablesMutated: () => void hallsHook.loadHalls(),
-  });
+  const tablesHook = useTables();
   const kitchensHook = useKitchens();
 
   const handleViewTables = (hall: Hall) => {
@@ -75,7 +73,7 @@ export default function HallsPage() {
               {activeTab === 'halls' && (
                 <HallsManagement
                 halls={hallsHook.halls}
-                floors={hallsHook.floors}
+                floors={floorsHook.floors}
                 loading={hallsHook.loading}
                 error={hallsHook.error}
                 formState={hallsHook.formState}
@@ -109,7 +107,7 @@ export default function HallsPage() {
               {activeTab === 'kitchens' && (
                 <KitchensManagement
                 kitchens={kitchensHook.kitchens}
-                floors={kitchensHook.floors}
+                floors={floorsHook.floors}
                 loading={kitchensHook.loading}
                 error={kitchensHook.error}
                 formState={kitchensHook.formState}

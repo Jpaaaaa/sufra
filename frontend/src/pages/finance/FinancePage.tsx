@@ -1,20 +1,28 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useTranslation } from 'react-i18next';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import FinanceTabs, { FinanceTabKey } from '../../components/tabs/FinanceTabs';
 import FinanceSummaryCard from '../../components/finance/FinanceSummaryCard';
 import TabTransition from '../../components/ui/TabTransition';
+import { showToast } from '../../components/ui/Toast';
+import { useOrderLocale } from '../../hooks/useOrderLocale';
+import { buildFinanceDailyRows } from '../../lib/finance/daily-rows';
+import { buildFinanceGeneralPdfHtml, printFinanceHtml } from '../../lib/finance/export-general-pdf';
+import { APP_BRAND_NAME } from '../../lib/brand';
 import { useFinancePageData } from './useFinancePageData';
 import { useFinancePageHandlers } from './useFinancePageHandlers';
 import FinancePageFiltersSection from './FinancePageFiltersSection';
+import FinancePageGeneralSection from './FinancePageGeneralSection';
 import FinancePageRevenueSection from './FinancePageRevenueSection';
 import FinancePageExpensesSection from './FinancePageExpensesSection';
-import FinancePageProfitSection from './FinancePageProfitSection';
+import FinancePageExpenseForm from './FinancePageExpenseForm';
 
 export default function FinancePage() {
   const { t } = useTranslation();
-  const [activeTab, setActiveTab] = useState<FinanceTabKey>('revenue');
+  const { numberLocale } = useOrderLocale();
+  const [activeTab, setActiveTab] = useState<FinanceTabKey>('general');
+  const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   const data = useFinancePageData();
   const {
@@ -22,7 +30,6 @@ export default function FinancePage() {
     setFilters,
     revenues,
     expenses,
-    profit,
     isLoading,
     hasAutoSynced,
     setHasAutoSynced,
@@ -56,6 +63,46 @@ export default function FinancePage() {
       void autoSyncIfNeeded(hasAutoSynced);
     }
   }, []);
+
+  const handleExportPdf = useCallback(() => {
+    const rows = buildFinanceDailyRows(revenues, expenses, t);
+    if (rows.length === 0) {
+      showToast(t('finance.toastPdfNoData'), 'warning');
+      return;
+    }
+
+    setIsExportingPdf(true);
+    try {
+      const html = buildFinanceGeneralPdfHtml({
+        brandName: APP_BRAND_NAME,
+        title: t('finance.generalTableTitle'),
+        from: filters.from || '',
+        to: filters.to || '',
+        rows,
+        labels: {
+          date: t('finance.colDate'),
+          details: t('finance.colDetails'),
+          revenue: t('finance.colRevenue'),
+          expenses: t('finance.colExpenses'),
+          rowTotal: t('finance.colRowTotal'),
+          total: t('finance.totalRow'),
+          period: t('finance.pdfPeriod'),
+        },
+        numberLocale,
+      });
+      printFinanceHtml(html);
+      showToast(t('finance.toastPdfOpened'), 'success');
+    } catch (error: any) {
+      console.error('Failed to export finance PDF:', error);
+      if (error?.message === 'POPUP_BLOCKED') {
+        showToast(t('finance.toastPdfPopupBlocked'), 'error');
+      } else {
+        showToast(t('finance.toastPdfFailed'), 'error');
+      }
+    } finally {
+      setIsExportingPdf(false);
+    }
+  }, [revenues, expenses, t, filters.from, filters.to, numberLocale]);
 
   return (
     <div className="flex flex-1 flex-col bg-cloud-soft-white">
@@ -93,34 +140,29 @@ export default function FinancePage() {
               </div>
 
               <TabTransition activeTab={activeTab}>
-                {activeTab === 'revenue' && (
-                  <FinancePageRevenueSection revenues={revenues} chartData={chartData} />
+                {activeTab === 'general' && (
+                  <FinancePageGeneralSection
+                    revenues={revenues}
+                    expenses={expenses}
+                    onOpenExpenseForm={openExpenseForm}
+                    onExportPdf={handleExportPdf}
+                    isExportingPdf={isExportingPdf}
+                  />
                 )}
 
                 {activeTab === 'expenses' && (
                   <FinancePageExpensesSection
                     expenses={expenses}
                     users={users}
-                    isExpenseFormOpen={isExpenseFormOpen}
-                    expenseFormState={expenseFormState}
-                    setExpenseFormState={setExpenseFormState}
-                    isSubmittingExpense={isSubmittingExpense}
-                    onExpenseSubmit={handleExpenseSubmit}
                     onEditExpense={handleEditExpense}
                     onDeleteExpense={handleDeleteExpense}
                     onOpenExpenseForm={openExpenseForm}
-                    onCloseExpenseForm={closeExpenseForm}
                   />
                 )}
 
-                {activeTab === 'profit' && profit && (
-                  <FinancePageProfitSection
-                    profit={profit}
-                    revenues={revenues}
-                    chartData={chartData}
-                  />
+                {activeTab === 'revenue' && (
+                  <FinancePageRevenueSection revenues={revenues} chartData={chartData} />
                 )}
-
               </TabTransition>
             </>
           )}
@@ -128,6 +170,17 @@ export default function FinancePage() {
       </main>
 
       <Footer />
+
+      {isExpenseFormOpen && (
+        <FinancePageExpenseForm
+          formState={expenseFormState}
+          setFormState={setExpenseFormState}
+          users={users}
+          isSubmitting={isSubmittingExpense}
+          onSubmit={handleExpenseSubmit}
+          onCancel={closeExpenseForm}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
-import { fetchJson, getServerUrl, Kitchen } from '../utils';
+import { useState, useEffect, useMemo } from 'react';
+import { fetchJson, getServerUrl } from '../utils';
+import { useKitchensStore } from '../../stores/kitchensStore';
 import { normalizeCategoryRow, normalizeItemRow } from '../utils/menu-filters';
 import { Category } from './useCategories';
 import { showConfirm } from '../components/ui/ConfirmDialog';
@@ -43,7 +44,11 @@ export type { ItemFormState };
 export function useItems() {
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const allKitchens = useKitchensStore((state) => state.kitchens);
+  const kitchens = useMemo(
+    () => allKitchens.filter((k) => k.is_active),
+    [allKitchens],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formState, setFormState] = useState<ItemFormState>({
@@ -89,16 +94,8 @@ export function useItems() {
 
   const loadKitchens = async () => {
     try {
-      const serverUrl = getServerUrl();
-      const raw = await fetchJson<any[]>(`${serverUrl}/kitchens`);
-      const mapped: Kitchen[] = raw.map((k) => ({
-        id: k.id,
-        name: k.name,
-        description: k.description,
-        is_active: Boolean(k.is_active),
-      }));
-      setKitchens(mapped.filter((k) => k.is_active));
-    } catch (e: any) {
+      await useKitchensStore.getState().loadKitchens();
+    } catch (e: unknown) {
       console.error('Failed to load kitchens:', e);
     }
   };

@@ -17,7 +17,7 @@ import {
 } from '../../../init/backend-loader';
 import type { FastifyRouteContext } from '../../types';
 import { sendRouteError } from '../../errors';
-import { emitOrder, parseId, type DeliveryStatus } from './helpers';
+import { emitOrder, parseId, withOrderCreatorFromRequest, type DeliveryStatus } from './helpers';
 
 type StatusBody = { status?: DeliveryStatus };
 
@@ -87,7 +87,9 @@ function registerDeliveryOrderRoutes(ctx: FastifyRouteContext, prefix: string): 
 
   app.post(prefix, async (request, reply) => {
     try {
-      const order = await deliveryOrdersCreate(request.body);
+      const order = await deliveryOrdersCreate(
+        withOrderCreatorFromRequest(request.body as Record<string, unknown>, request.headers.authorization),
+      );
       emitOrder(ctx, 'created', 'delivery', order);
       return order;
     } catch (error) {

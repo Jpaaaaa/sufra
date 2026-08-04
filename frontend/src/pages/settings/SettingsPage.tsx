@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import SettingsTabs from '../../components/tabs/SettingsTabs';
-import { fetchJson, getServerUrl, Kitchen } from '../../utils';
+import { fetchJson, getServerUrl } from '../../utils';
 import { showToast } from '../../components/ui/Toast';
 import { useAuth } from '../../contexts/AuthContext';
+import { useKitchensStore } from '../../../stores/kitchensStore';
 import { SearchIcon } from '../../components/icons';
 import { useGlobalNumericField } from '../../contexts/GlobalNumericKeypadContext';
 
@@ -48,7 +49,11 @@ export default function SettingsPage() {
   const { t } = useTranslation();
   const { user } = useAuth();
   const navigate = useNavigate();
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const allKitchens = useKitchensStore((state) => state.kitchens);
+  const kitchens = useMemo(
+    () => allKitchens.filter((k) => k.is_active),
+    [allKitchens],
+  );
   const [_printerSettings, setPrinterSettings] = useState<PrinterSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState<{ [key: string]: boolean }>({});
@@ -102,10 +107,10 @@ export default function SettingsPage() {
       }
       setPrinterSettings(settings);
 
-      // Load kitchens
-      const kitchensData = await fetchJson<Kitchen[]>(`${serverUrl}/kitchens`);
-      const activeKitchens = kitchensData.filter(k => k.is_active);
-      setKitchens(activeKitchens);
+      await useKitchensStore.getState().loadKitchens();
+      const activeKitchens = useKitchensStore
+        .getState()
+        .kitchens.filter((k) => k.is_active);
 
       // Initialize form state from settings
       const customerSetting = settings.find(s => s.printer_type === 'customer' && s.kitchen_id === null);

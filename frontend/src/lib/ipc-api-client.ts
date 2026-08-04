@@ -11,6 +11,21 @@ function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.sufra;
 }
 
+/** IPC has no Authorization header — attach logged-in user for staff performance reports. */
+function enrichOrderCreateBody(body: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!body) return body;
+  if (body.userId != null || body.user_id != null) return body;
+  try {
+    const stored = typeof window !== 'undefined' ? localStorage.getItem('sufra_auth_user') : null;
+    if (!stored) return body;
+    const user = JSON.parse(stored) as { id?: number };
+    if (user?.id != null) return { ...body, userId: user.id };
+  } catch {
+    /* ignore */
+  }
+  return body;
+}
+
 /**
  * Map HTTP endpoint to IPC call
  */
@@ -196,11 +211,11 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
           if (rest[0] === 'move-orders' && Array.isArray(body?.order_ids) && body?.target_table_id) {
             return await sufra.orders.moveOrders?.(body.order_ids, body.target_table_id) || null;
           }
-          return await sufra.orders.createDineIn?.(body) || await sufra.orders.create(body);
+          return await sufra.orders.createDineIn?.(enrichOrderCreateBody(body)) || await sufra.orders.create(body);
         }
         // POST /orders/pickup
         if (idOrAction === 'pickup') {
-          return await sufra.orders.createPickup?.(body) || null;
+          return await sufra.orders.createPickup?.(enrichOrderCreateBody(body)) || null;
         }
         // POST /orders/delivery
         if (idOrAction === 'delivery') {
@@ -213,7 +228,7 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
             }
             return await fn(body);
           }
-          return await sufra.orders.createDelivery?.(body) || null;
+          return await sufra.orders.createDelivery?.(enrichOrderCreateBody(body)) || null;
         }
         // Fallback to legacy orders:create (will throw error about read-only)
         return await sufra.orders.create(body);

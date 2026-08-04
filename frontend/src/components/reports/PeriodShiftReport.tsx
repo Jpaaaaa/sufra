@@ -30,6 +30,58 @@ function subtitleKey(period: ReportPeriod): string {
   return 'reports.dayShiftSummarySubtitle';
 }
 
+function getWeekEndStr(weekStartStr: string): string {
+  const d = new Date(`${weekStartStr}T12:00:00`);
+  d.setDate(d.getDate() + 7);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function aggregateShiftRows(rows: ShiftBreakdownRow[]): ShiftBreakdownRow[] {
+  const byShift = new Map<string, ShiftBreakdownRow>();
+  for (const row of rows) {
+    const key = String(row.shiftId ?? row.shiftName ?? 'unknown');
+    const existing = byShift.get(key);
+    if (existing) {
+      existing.orderCount = (Number(existing.orderCount) || 0) + (Number(row.orderCount) || 0);
+      existing.totalSales = (Number(existing.totalSales) || 0) + (Number(row.totalSales) || 0);
+    } else {
+      byShift.set(key, {
+        shiftId: row.shiftId ?? null,
+        shiftName: row.shiftName ?? '-',
+        startTime: row.startTime ?? null,
+        endTime: row.endTime ?? null,
+        orderCount: Number(row.orderCount) || 0,
+        totalSales: Number(row.totalSales) || 0,
+        averageOrder: 0,
+      });
+    }
+  }
+  return Array.from(byShift.values()).map((row) => ({
+    ...row,
+    averageOrder: row.orderCount > 0 ? Math.round(row.totalSales / row.orderCount) : 0,
+  }));
+}
+
+function getShiftsForPeriodRow(
+  period: ReportPeriod,
+  day: DailyAggregate,
+  shiftBreakdownByDay?: Record<string, ShiftBreakdownRow[]>,
+): ShiftBreakdownRow[] {
+  if (!shiftBreakdownByDay || !day.date) return [];
+  if (period === 'monthly') {
+    const weekEnd = getWeekEndStr(day.date);
+    const rows: ShiftBreakdownRow[] = [];
+    for (const [dateKey, dayRows] of Object.entries(shiftBreakdownByDay)) {
+      if (dateKey >= day.date && dateKey < weekEnd) {
+        rows.push(...dayRows);
+      }
+    }
+    return aggregateShiftRows(rows);
+  }
+  return shiftBreakdownByDay[day.date] ?? [];
+}
+
 export default function PeriodShiftReport({
   period,
   data,
@@ -97,10 +149,11 @@ export default function PeriodShiftReport({
             <tbody>
               {validData.map((day) => {
                 const dateKey = day.date;
-                const shifts = shiftBreakdownByDay?.[dateKey] ?? [];
+                const shifts = getShiftsForPeriodRow(period, day, shiftBreakdownByDay);
                 const open = isExpanded(dateKey);
                 const hasShifts = shifts.length > 0;
-                const label = period === 'weekly' && day.day ? day.day : formatReportDate(day.date);
+                const label =
+                  (period === 'weekly' || period === 'monthly') && day.day ? day.day : formatReportDate(day.date);
 
                 return (
                   <Fragment key={dateKey}>

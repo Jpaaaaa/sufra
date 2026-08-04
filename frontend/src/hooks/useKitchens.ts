@@ -2,7 +2,8 @@ import { useState, useEffect } from 'react';
 import { getServerUrl, Kitchen, fetchJson } from '../utils';
 import { showConfirm } from '../components/ui/ConfirmDialog';
 import { showToast } from '../components/ui/Toast';
-import { Floor } from './useFloors';
+import { useFloorsStore } from '../../stores/floorsStore';
+import { useKitchensStore } from '../../stores/kitchensStore';
 
 interface KitchenFormState {
   id?: number;
@@ -12,8 +13,9 @@ interface KitchenFormState {
 }
 
 export function useKitchens() {
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
-  const [floors, setFloors] = useState<Floor[]>([]);
+  const floors = useFloorsStore((state) => state.floors);
+  const kitchens = useKitchensStore((state) => state.kitchens);
+  const loadKitchensFromStore = useKitchensStore((state) => state.loadKitchens);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formState, setFormState] = useState<KitchenFormState>({
@@ -23,66 +25,15 @@ export function useKitchens() {
   });
   const [isFormOpen, setIsFormOpen] = useState(false);
 
-  const loadFloors = async () => {
-    try {
-      // Use IPC if available, otherwise fallback to HTTP
-      if (window.sufra?.floors?.findAll) {
-        const floorsData = await window.sufra.floors.findAll();
-        setFloors(floorsData);
-      } else {
-        const serverUrl = getServerUrl();
-        const floorsData = await fetchJson<Floor[]>(`${serverUrl}/floors`);
-        setFloors(floorsData);
-      }
-    } catch (e) {
-      console.error('Failed to load floors:', e);
-      setFloors([]);
-    }
-  };
-
   const loadKitchens = async () => {
     setLoading(true);
     setError(null);
     try {
-      // Use IPC if available, otherwise fallback to HTTP
-      let raw: any[];
-      if (window.sufra?.kitchens?.findAll) {
-        raw = await window.sufra.kitchens.findAll();
-      } else {
-        const serverUrl = getServerUrl();
-        raw = await fetchJson<any[]>(`${serverUrl}/kitchens`);
-      }
-      
-      // Load floors to map floor_id to floor info
-      let floorsMap: Map<number, Floor> = new Map();
-      try {
-        if (window.sufra?.floors?.findAll) {
-          const floorsData = await window.sufra.floors.findAll();
-          floorsMap = new Map(floorsData.map(f => [f.id, f]));
-        } else {
-          const serverUrl = getServerUrl();
-          const floorsData = await fetchJson<Floor[]>(`${serverUrl}/floors`);
-          floorsMap = new Map(floorsData.map(f => [f.id, f]));
-        }
-      } catch {
-        // If floors fail to load, continue without floor info
-      }
-      
-      const mapped: Kitchen[] = raw.map((k) => {
-        const floor = k.floor_id ? floorsMap.get(k.floor_id) : null;
-        return {
-          id: k.id,
-          name: k.name,
-          description: k.description,
-          floor_id: k.floor_id ?? null,
-          floor: floor || null,
-          is_active: Boolean(k.is_active),
-        };
-      });
-      setKitchens(mapped);
-    } catch (e: any) {
+      await loadKitchensFromStore();
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'تعذر تحميل المطابخ');
+      const message = e instanceof Error ? e.message : 'تعذر تحميل المطابخ';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -90,7 +41,6 @@ export function useKitchens() {
 
   useEffect(() => {
     void loadKitchens();
-    void loadFloors();
   }, []);
 
   const resetForm = () => {
@@ -116,7 +66,6 @@ export function useKitchens() {
         is_active: 1,
       };
 
-      // Use IPC if available, otherwise fallback to HTTP
       if (window.sufra?.kitchens) {
         if (formState.id) {
           await window.sufra.kitchens.update(formState.id, payload);
@@ -142,9 +91,10 @@ export function useKitchens() {
 
       resetForm();
       await loadKitchens();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء حفظ المطبخ.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء حفظ المطبخ.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -173,7 +123,6 @@ export function useKitchens() {
     setLoading(true);
     setError(null);
     try {
-      // Use IPC if available, otherwise fallback to HTTP
       if (window.sufra?.kitchens?.remove) {
         await window.sufra.kitchens.remove(kitchen.id);
       } else {
@@ -184,9 +133,10 @@ export function useKitchens() {
       }
       await loadKitchens();
       showToast(`تم حذف المطبخ "${kitchen.name}" بنجاح`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء حذف المطبخ.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء حذف المطبخ.';
+      setError(message);
       showToast('حدث خطأ أثناء حذف المطبخ', 'error');
     } finally {
       setLoading(false);
@@ -197,7 +147,6 @@ export function useKitchens() {
     setLoading(true);
     setError(null);
     try {
-      // Use IPC if available, otherwise fallback to HTTP
       if (window.sufra?.kitchens?.update) {
         await window.sufra.kitchens.update(kitchen.id, { is_active: kitchen.is_active ? 0 : 1 });
       } else {
@@ -209,9 +158,10 @@ export function useKitchens() {
         });
       }
       await loadKitchens();
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء تحديث حالة المطبخ.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء تحديث حالة المطبخ.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -233,4 +183,3 @@ export function useKitchens() {
     toggleActive,
   };
 }
-

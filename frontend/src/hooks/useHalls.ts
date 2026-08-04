@@ -2,7 +2,10 @@ import { useState, useEffect } from 'react';
 import { getServerUrl, Hall, fetchJson } from '../utils';
 import { showConfirm } from '../components/ui/ConfirmDialog';
 import { showToast } from '../components/ui/Toast';
-import { Floor } from './useFloors';
+import { useFloorsStore } from '../../stores/floorsStore';
+import { useHallsStore } from '../../stores/hallsStore';
+import { useTablesStore } from '../../stores/tablesStore';
+import { dispatchHallsChanged, dispatchRefreshTables } from '../lib/structure-events';
 
 interface HallFormState {
   id?: number;
@@ -12,8 +15,9 @@ interface HallFormState {
 }
 
 export function useHalls() {
-  const [floors, setFloors] = useState<Floor[]>([]);
-  const [halls, setHalls] = useState<Hall[]>([]);
+  const floors = useFloorsStore((state) => state.floors);
+  const halls = useHallsStore((state) => state.halls);
+  const loadHallsFromStore = useHallsStore((state) => state.loadHalls);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formState, setFormState] = useState<HallFormState>({
@@ -27,79 +31,28 @@ export function useHalls() {
     setLoading(true);
     setError(null);
     try {
-      const serverUrl = getServerUrl();
-      const raw = await fetchJson<any[]>(`${serverUrl}/halls`);
-      
-      const baseHalls: Hall[] = raw.map((h) => ({
-        id: h.id,
-        name: h.name,
-        number: h.number ?? h.hall_number,
-        floor_id: h.floor_id ?? null,
-        tablesCount:
-          h.tablesCount ??
-          h.tables_count ??
-          h.table_count ??
-          h.tables ??
-          undefined,
-      }));
-
-      // Load floors to map floor_id to floor info
-      let floorsMap: Map<number, Floor> = new Map();
-      try {
-        const serverUrl = getServerUrl();
-        const floorsData = await fetchJson<Floor[]>(`${serverUrl}/floors`);
-        floorsMap = new Map(floorsData.map(f => [f.id, f]));
-      } catch {
-        // If floors fail to load, continue without floor info
-      }
-
-      const hallsWithCounts = await Promise.all(
-        baseHalls.map(async (hall) => {
-          // Add floor information if available
-          const floor = hall.floor_id ? floorsMap.get(hall.floor_id) : null;
-          
-          if (hall.tablesCount !== undefined) {
-            return { ...hall, floor: floor || null };
-          }
-          try {
-            const serverUrl = getServerUrl();
-            const tables = await fetchJson<any[]>(
-              `${serverUrl}/halls/${hall.id}/tables`,
-            );
-            // Ensure tables is an array (handle null/undefined responses)
-            const tablesArray = Array.isArray(tables) ? tables : [];
-            return { ...hall, tablesCount: tablesArray.length, floor: floor || null };
-          } catch {
-            return { ...hall, tablesCount: undefined, floor: floor || null };
-          }
-        }),
-      );
-
-      setHalls(hallsWithCounts);
+      const hallsWithCounts = await loadHallsFromStore({
+        withTablesCount: true,
+      });
       return hallsWithCounts;
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'تعذر تحميل الصالات');
+      const message = e instanceof Error ? e.message : 'تعذر تحميل الصالات';
+      setError(message);
       return [];
     } finally {
       setLoading(false);
     }
   };
 
-  const loadFloors = async () => {
-    try {
-      const serverUrl = getServerUrl();
-      const floorsData = await fetchJson<Floor[]>(`${serverUrl}/floors`);
-      setFloors(floorsData);
-    } catch (e) {
-      console.error('Failed to load floors:', e);
-      setFloors([]);
-    }
-  };
-
   useEffect(() => {
     void loadHalls();
-    void loadFloors();
+  }, []);
+
+  useEffect(() => {
+    const onHallsChanged = () => void loadHalls();
+    window.addEventListener('structure:halls-changed', onHallsChanged);
+    return () => window.removeEventListener('structure:halls-changed', onHallsChanged);
   }, []);
 
   const resetForm = () => {
@@ -156,9 +109,11 @@ export function useHalls() {
 
       resetForm();
       await loadHalls();
-    } catch (e: any) {
+      dispatchHallsChanged();
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء حفظ الصالة.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء حفظ الصالة.';
+      setError(message);
     } finally {
       setLoading(false);
     }
@@ -191,11 +146,15 @@ export function useHalls() {
       await fetchJson(`${serverUrl}/halls/${hall.id}`, {
         method: 'DELETE',
       });
+      useTablesStore.getState().invalidateHall(hall.id);
       await loadHalls();
+      dispatchHallsChanged();
+      dispatchRefreshTables();
       showToast(`تم حذف الصالة "${hall.name}" بنجاح`, 'success');
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error(e);
-      setError(e.message || 'حدث خطأ أثناء حذف الصالة.');
+      const message = e instanceof Error ? e.message : 'حدث خطأ أثناء حذف الصالة.';
+      setError(message);
       showToast('حدث خطأ أثناء حذف الصالة', 'error');
     } finally {
       setLoading(false);
@@ -218,4 +177,3 @@ export function useHalls() {
     floors,
   };
 }
-

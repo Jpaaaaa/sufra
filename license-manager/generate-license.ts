@@ -51,7 +51,7 @@ async function main() {
   }
 
   const data: LicenseData = {
-    product: 'Sufra POS',
+    product: 'sufra pos',
     license_type: licenseType,
     assigned_serial: usbSerial.toUpperCase(),
     issued_at: issuedAt,

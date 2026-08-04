@@ -179,7 +179,7 @@
     "systemHeading": "ڕێکخستنی سیستەم",
     "tabPrinters": "چاپکەرەکان",
     "tabRecipePrint": "چاپی ڕێسەپتی چێشت",
-    "tabServer": "ڕێکخستنی سێرڤەر",
+    "tabServer": "سێرڤەر",
     "tabShift": "شەفتەکانی کار",
     "tabUsers": "بەکارهێنەرەکان",
     "tabLicenseUpdates": "مۆڵەت و نوێکردنەوەکان",
@@ -275,7 +275,7 @@
     "backupError_INVALID_TOKEN": "دانیشتن نادروستە",
     "backupError_BACKUP_NOT_FOUND": "پاشەکەوت نەدۆزرایەوە",
     "backupError_INVALID_BACKUP": "پاشەکەوتی نادروست",
-    "updatesErrManifest404": "سێرڤەر هێشتا latest.ymlی بڵاوکراوەی نییە. لەسەر پلاتفۆرمی مۆڵەت بڵاوکردنەوەی سەفرا لاێت دابنێ لە updates/sufra_lite.",
+    "updatesErrManifest404": "سێرڤەر هێشتا latest.ymlی بڵاوکراوەی نییە. لەسەر پلاتفۆرمی مۆڵەت بڵاوکردنەوەی sufra pos دابنێ لە updates/sufra_lite.",
     "updatesErrNetwork": "گەیشتن بە سێرڤەری نوێکردنەوە سەرکەوتوو نەبوو. پەیوەندی و ناونیشانی پلاتفۆرم بپشکنە.",
     "updatesTechnicalDetails": "وردەکاری تەکنیکی",
     "printersThermalTitle": "ڕێکخستنی چاپکەرە گەرمییەکان",
@@ -352,7 +352,7 @@
     "toastScanFailed": "گەڕان سەرکەوتوو نەبوو: {{detail}}"
   },
   "layout": {
-    "logoAlt": "نیشانەی سەفرە",
+    "logoAlt": "نیشانەی sufra pos",
     "employeeLabel": "ناوی کرمەند",
     "logout": "دەرچوون",
     "adminDisplayName": "بەڕێوەبەری سیستەم",
@@ -382,7 +382,8 @@
     "viewControls": "پیشاندان و بارکردنەوە",
     "zoomOut": "بچووککردنەوە",
     "zoomIn": "گەورەکردن",
-    "reload": "بارکردنەوە"
+    "reload": "بارکردنەوە",
+    "footerVersion": "وەشان {{version}} · بێ پەیوەندی"
   },
   "home": {
     "loading": "بارکردن...",
@@ -427,7 +428,7 @@
     "openStatusPreparing": "ئامادەکردن",
     "openStatusCompleted": "تەواو",
     "openStatusCancelled": "هەڵوەشاوە",
-    "pwaTitle": "دامەزراندنی ئەپی سەفرە",
+    "pwaTitle": "دامەزراندنی sufra pos",
     "pwaSubtitle": "ئەپەکە لەسەر ئامێرەکەت دامەزرێنە بۆ گەیشتن بە خێرایی",
     "pwaInstall": "دامەزراندنی ئەپ"
   },
@@ -977,6 +978,8 @@
     "totalRow": "کۆ",
     "expensesSectionTitle": "بەڕێوەبردنی خەرجی",
     "addExpense": "+ زیادکردنی خەرجی",
+    "addExpenseTitle": "زیادکردنی خەرجی",
+    "editExpenseTitle": "دەستکاری خەرجی",
     "expensesShowCount": "نیوان {{filtered}} لە {{total}} خەرجی",
     "expensesFilteredTotal": " — کۆی مامەڵەکراو: {{amount}}",
     "noDataShort": "هیچ زانیاریەک نییە",
@@ -1052,6 +1055,21 @@
     },
     "tabRevenue": "داهات",
     "tabExpenses": "خەرجی",
-    "tabProfit": "قازانج و زەرەر"
+    "tabProfit": "قازانج و زەرەر",
+    "tabGeneral": "گشتی",
+    "generalTableTitle": "پوختەی دارایی ڕۆژانە",
+    "colDetails": "وردەکاری",
+    "colExpenses": "خەرجییەکان",
+    "colRowTotal": "کۆی گشتی",
+    "generalEmpty": "هیچ داتایەکی دارایی بۆ ئەم ماوەیە نییە",
+    "generalEmptyHint": "داهات لە داواکارییەکان هاوکات بکە یان خەرجی زیاد بکە بۆ بینینی کۆی ڕۆژانە.",
+    "detailsFromOrders": "لە داواکارییەکان",
+    "savePdf": "پاشەکەوتکردن وەک PDF",
+    "exportingPdf": "ئامادەکردنی PDF…",
+    "pdfPeriod": "ماوە",
+    "toastPdfNoData": "هیچ شتێک بۆ هەناردەکردن لەم ماوەیەدا نییە.",
+    "toastPdfOpened": "پەنجەرەی چاپ کردن کرایەوە — پاشەکەوتکردن وەک PDF هەڵبژێرە.",
+    "toastPdfPopupBlocked": "نەتوانرا پەنجەرەی چاپ کردن بکرێتەوە. ڕێگە بە پەنجەرە دەرچووەکان بدە و دووبارە هەوڵ بدە.",
+    "toastPdfFailed": "نەتوانرا PDF هەناردە بکرێت."
   }
 }

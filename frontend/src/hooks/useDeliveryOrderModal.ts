@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { fetchJson, getServerUrl, Kitchen } from '../utils';
+import { fetchJson, getServerUrl } from '../utils';
 import {
   normalizeCategoryRow,
   normalizeItemRow,
@@ -13,10 +13,12 @@ import { showToast } from '../components/ui/Toast';
 import { showPasswordDialog } from '../components/ui/PasswordDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffers } from './useOffers';
+import { APP_BRAND_NAME } from '../lib/brand';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
 import { isHappyHourActiveNow } from '../utils/offer-pricing';
 import { isWeekdayIncluded } from '../utils/weekdays';
 import { ExistingOrder, CartItem, Category } from './useOrderModal';
+import { useKitchensStore } from '../../stores/kitchensStore';
 import {
   type AddItemExtras,
   buildCartItem,
@@ -26,6 +28,7 @@ import {
   mapCartItemToOrderPayload,
   orderItemToCartLine,
 } from './cart-item-utils';
+import { withOrderCreator } from '../utils/order-payload';
 
 export interface DeliveryPlatformRow {
   id: number;
@@ -40,7 +43,7 @@ export function useDeliveryOrderModal() {
   const [items, setItems] = useState<Item[]>([]);
   const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const kitchens = useKitchensStore((state) => state.kitchens);
   const [loadingItems, setLoadingItems] = useState(false);
   const [selectedItems, setSelectedItems] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -67,18 +70,17 @@ export function useDeliveryOrderModal() {
       setLoadingOrders(true);
       try {
         const serverUrl = getServerUrl();
-        const [itemsData, categoriesData, kitchensData, shelvesData, platformsData] = await Promise.all([
+        const [itemsData, categoriesData, shelvesData, platformsData] = await Promise.all([
           fetchJson<any[]>(`${serverUrl}/items`),
           fetchJson<any[]>(`${serverUrl}/categories`),
-          fetchJson<any[]>(`${serverUrl}/kitchens`),
           fetchJson<ShelfItem[]>(`${serverUrl}/shelves`),
           fetchJson<DeliveryPlatformRow[]>(`${serverUrl}/orders/delivery/platforms`).catch(() => []),
+          useKitchensStore.getState().loadKitchens(),
         ]);
         setDeliveryPlatforms(Array.isArray(platformsData) ? platformsData : []);
         setItems(itemsData.map(normalizeItemRow));
         setCategories(categoriesData.map(normalizeCategoryRow));
         setShelfItems(shelvesData || []);
-        setKitchens(kitchensData);
         // Don't load existing orders - each modal should start fresh
         setExistingOrders([]);
       } catch (e) {
@@ -470,7 +472,7 @@ export function useDeliveryOrderModal() {
           total: order.total || subtotal,
         },
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         note: order.note || null,
         // Include customer info for delivery orders
         customer_name: order.customer_name || null,
@@ -613,15 +615,18 @@ export function useDeliveryOrderModal() {
     }
 
     try {
-      const payload: any = {
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim(),
-        customer_address: customerAddress.trim(),
-        items: selectedItems.map((si) => ({
-          ...mapCartItemToOrderPayload(si),
-          service_type: 'delivery',
-        })),
-      };
+      const payload = withOrderCreator(
+        {
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim(),
+          customer_address: customerAddress.trim(),
+          items: selectedItems.map((si) => ({
+            ...mapCartItemToOrderPayload(si),
+            service_type: 'delivery',
+          })),
+        },
+        user,
+      );
       
       if (appliedDiscount) {
         payload.globalDiscount = {
@@ -678,7 +683,7 @@ export function useDeliveryOrderModal() {
       console.error('Failed to save delivery order:', e);
       showToast('حدث خطأ أثناء حفظ الطلب: ' + (e.message || 'خطأ غير معروف'), 'error');
     }
-  }, [selectedItems, note, customerName, customerPhone, customerAddress, appliedDiscount, selectedDeliveryPlatformId, mode, editingOrder, handleCancelEdit, handlePrintOrder]);
+  }, [selectedItems, note, customerName, customerPhone, customerAddress, appliedDiscount, selectedDeliveryPlatformId, mode, editingOrder, handleCancelEdit, handlePrintOrder, user?.id]);
 
   const reset = useCallback(() => {
     // Only reset if in CREATE mode

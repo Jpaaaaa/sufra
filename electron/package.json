@@ -2,7 +2,7 @@
   "name": "sufra-lite-electron",
   "version": "0.1.17",
   "private": true,
-  "description": "Sufra Lite POS System",
+  "description": "sufra pos",
   "author": "Aman Technology",
   "main": "dist/main.js",
   "scripts": {
