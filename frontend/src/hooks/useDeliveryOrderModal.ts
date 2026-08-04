@@ -624,21 +624,20 @@ export function useDeliveryOrderModal() {
             ...mapCartItemToOrderPayload(si),
             service_type: 'delivery',
           })),
+          delivery_platform_id:
+            selectedDeliveryPlatformId != null ? selectedDeliveryPlatformId : null,
+          note: note && note.trim() ? note.trim() : null,
+          ...(appliedDiscount
+            ? {
+                globalDiscount: {
+                  percent: appliedDiscount.percent,
+                  amount: appliedDiscount.amount,
+                },
+              }
+            : {}),
         },
         user,
       );
-      
-      if (appliedDiscount) {
-        payload.globalDiscount = {
-          percent: appliedDiscount.percent,
-          amount: appliedDiscount.amount,
-        };
-      }
-
-      payload.delivery_platform_id =
-        selectedDeliveryPlatformId != null ? selectedDeliveryPlatformId : null;
-      
-      payload.note = note && note.trim() ? note.trim() : null;
 
       const serverUrl = getServerUrl();
       

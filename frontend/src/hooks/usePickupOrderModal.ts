@@ -567,22 +567,20 @@ export function usePickupOrderModal() {
       const payload = withOrderCreator(
         {
           items: selectedItems.map(mapCartItemToOrderPayload),
+          note: note && note.trim() ? note.trim() : null,
+          ...(customerName.trim() ? { customer_name: customerName.trim() } : {}),
+          ...(customerPhone.trim() ? { customer_phone: customerPhone.trim() } : {}),
+          ...(appliedDiscount
+            ? {
+                globalDiscount: {
+                  percent: appliedDiscount.percent,
+                  amount: appliedDiscount.amount,
+                },
+              }
+            : {}),
         },
         user,
       );
-      
-      if (appliedDiscount) {
-        payload.globalDiscount = {
-          percent: appliedDiscount.percent,
-          amount: appliedDiscount.amount,
-        };
-      }
-      
-      payload.note = note && note.trim() ? note.trim() : null;
-
-      // Optional customer name and phone for pickup
-      if (customerName.trim()) payload.customer_name = customerName.trim();
-      if (customerPhone.trim()) payload.customer_phone = customerPhone.trim();
 
       const serverUrl = getServerUrl();
       
