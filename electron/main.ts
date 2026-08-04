@@ -667,6 +667,13 @@ app.on('before-quit', async (event) => {
   try {
     await shutdownFastifyLanServer();
 
+    try {
+      const { shutdownWindowsSpooler } = await import('./print/printer');
+      shutdownWindowsSpooler();
+    } catch (e) {
+      console.warn('[LIFECYCLE] Spooler worker shutdown skipped:', e);
+    }
+
     if (getBackendApp()) {
       await shutdownBackend();
       setBackendApp(null);

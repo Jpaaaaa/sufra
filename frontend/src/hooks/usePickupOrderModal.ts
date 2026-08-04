@@ -432,6 +432,7 @@ export function usePickupOrderModal() {
         timestamp: order.created_at || new Date().toISOString(),
         restaurantName: APP_BRAND_NAME,
         note: order.note || null,
+        printTime: new Date().toISOString(),
       };
       
       // Group items by kitchen and print each
@@ -444,12 +445,10 @@ export function usePickupOrderModal() {
         kitchenGroups.get(kitchenId)!.push(item);
       });
 
-      const results: any[] = [];
-      
+      const kitchenJobs: Array<{ kitchenId: number; items: any[]; kitchenPrintData: any }> = [];
+
       for (const [kitchenId, items] of kitchenGroups) {
         if (kitchenId === null) continue;
-        
-        // Map items to match OrderPrintData structure exactly
         const mappedItems = items.map((item: any) => ({
           id: item.id,
           item_name: item.item_name || item.name || 'صنف',
@@ -459,93 +458,67 @@ export function usePickupOrderModal() {
           service_type: item.service_type || 'pickup',
           options_json: item.options_json ?? null,
         }));
-        
-        const kitchenPrintData = {
-          ...basePrintData,
-          items: mappedItems,
-          kitchenName: kitchens.find(k => k.id === kitchenId)?.name || `المطبخ ${kitchenId}`,
-          service_type: 'pickup',
-        };
-        
-        // Print via IPC - pass kitchenId, Electron will get IP/port from settings
-        if (window.sufra?.print?.order) {
-          try {
-            console.log('[PICKUP PRINT] Calling window.sufra.print.order:', { kitchenId, itemsCount: mappedItems.length, orderId: basePrintData.orderId });
-            const result = await window.sufra.print.order(kitchenPrintData, kitchenId);
-            console.log('[PICKUP PRINT] IPC returned result:', result);
-            
-            // Verify result structure
-            if (!result || typeof result !== 'object') {
-              throw new Error('Invalid print result: IPC returned non-object');
-            }
-            
-            const printSuccess = result.success === true;
-            console.log('[PICKUP PRINT] Print success status:', printSuccess, 'Error:', result.error);
-            
-            results.push({
-              kitchen_id: kitchenId,
-              success: printSuccess,
-            });
-            
-            const kitchen = kitchens.find(k => k.id === kitchenId);
-            const kitchenName = kitchen?.name || 'المطبخ العام';
-            const itemsText = items.map((i: any) => `${i.quantity}× ${i.item_name}`).join('، ');
-            
-            // Only show success toast if print actually succeeded
-            if (printSuccess) {
-              if (!silent) {
-                showToast(`✓ تم الطباعة إلى ${kitchenName}: ${itemsText}`, 'success', 4000);
-              }
-            } else {
-              const errorMsg = result.error ? `: ${result.error}` : '';
-              console.error('[PICKUP PRINT] Print failed - result:', result);
-              if (!silent) {
-                showToast(`✕ فشل الطباعة إلى ${kitchenName}${errorMsg}`, 'error');
-              }
-            }
-          } catch (printError: any) {
-            console.error('[PICKUP PRINT] Print exception caught:', printError);
-            console.error('[PICKUP PRINT] Error stack:', printError?.stack);
-            results.push({
-              kitchen_id: kitchenId,
-              success: false,
-            });
-            const kitchen = kitchens.find(k => k.id === kitchenId);
-            const kitchenName = kitchen?.name || 'المطبخ العام';
-            if (!silent) {
-              showToast(`✕ فشل الطباعة إلى ${kitchenName}: ${printError?.message || 'خطأ غير معروف'}`, 'error');
-            }
-          }
-        } else {
-          console.error('[PICKUP PRINT] window.sufra.print.order is not available');
-          results.push({
-            kitchen_id: kitchenId,
-            success: false,
-          });
-          if (!silent) {
-            const kitchen = kitchens.find(k => k.id === kitchenId);
-            const kitchenName = kitchen?.name || 'المطبخ العام';
-            showToast(`✕ فشل الطباعة إلى ${kitchenName}: واجهة الطباعة غير متوفرة`, 'error');
-          }
-        }
+        kitchenJobs.push({
+          kitchenId,
+          items,
+          kitchenPrintData: {
+            ...basePrintData,
+            items: mappedItems,
+            kitchenName: kitchens.find(k => k.id === kitchenId)?.name || `المطبخ ${kitchenId}`,
+            service_type: 'pickup',
+          },
+        });
       }
 
-      if (results.length === 0) {
+      if (kitchenJobs.length === 0) {
         if (!silent) {
           showToast('لا توجد طابعات مُعدّة للمطابخ. راجع الإعدادات', 'warning');
         }
-      } else if (silent) {
-        // Show single summary toast for auto-print
-        const successCount = results.filter(r => r.success).length;
-        const totalCount = results.length;
-        if (successCount === totalCount) {
-          showToast(`✓ تم طباعة الطلب إلى ${totalCount} مطبخ`, 'success', 3000);
-        } else {
-          showToast(`⚠ تم الطباعة إلى ${successCount}/${totalCount} مطبخ`, 'warning', 3000);
-        }
+      } else {
+        // Background parallel print — do not block status update / UI
+        void Promise.all(
+          kitchenJobs.map(async ({ kitchenId, items, kitchenPrintData }) => {
+            const kitchen = kitchens.find(k => k.id === kitchenId);
+            const kitchenName = kitchen?.name || 'المطبخ العام';
+            const itemsText = items.map((i: any) => `${i.quantity}× ${i.item_name}`).join('، ');
+            try {
+              if (!window.sufra?.print?.order) {
+                if (!silent) {
+                  showToast(`✕ فشل الطباعة إلى ${kitchenName}: واجهة الطباعة غير متوفرة`, 'error');
+                }
+                return { kitchen_id: kitchenId, success: false };
+              }
+              const result = await window.sufra.print.order(kitchenPrintData, kitchenId);
+              const printSuccess = result?.success === true;
+              if (!silent) {
+                if (printSuccess) {
+                  showToast(`✓ تم الطباعة إلى ${kitchenName}: ${itemsText}`, 'success', 4000);
+                } else {
+                  showToast(`✕ فشل الطباعة إلى ${kitchenName}${result?.error ? `: ${result.error}` : ''}`, 'error');
+                }
+              }
+              return { kitchen_id: kitchenId, success: printSuccess };
+            } catch (printError: any) {
+              if (!silent) {
+                showToast(`✕ فشل الطباعة إلى ${kitchenName}: ${printError?.message || 'خطأ غير معروف'}`, 'error');
+              }
+              return { kitchen_id: kitchenId, success: false };
+            }
+          }),
+        ).then((results) => {
+          if (silent) {
+            const successCount = results.filter(r => r.success).length;
+            const totalCount = results.length;
+            if (successCount === totalCount) {
+              showToast(`✓ تم طباعة الطلب إلى ${totalCount} مطبخ`, 'success', 3000);
+            } else {
+              showToast(`⚠ تم الطباعة إلى ${successCount}/${totalCount} مطبخ`, 'warning', 3000);
+            }
+          }
+        });
       }
 
-      // Update order status
+      // Update order status without waiting for printers
       if (order?.status === 'pending') {
         const serverUrl = getServerUrl();
         await fetchJson(`${serverUrl}/orders/pickup/${orderId}/status`, {

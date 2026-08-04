@@ -1,85 +1,31 @@
-import { ReceiptPrintData } from './receipt-utils';
-import * as fs from 'fs';
-import * as path from 'path';
+import type { ReceiptPrintData } from './receipt-utils';
+import {
+  PRINT_TOKENS,
+  canvasWidthFor,
+  receiptColumnLayout,
+  type PaperWidthMm,
+} from './tokens';
+import { registerArabicFontIfAvailable, printFont } from './canvas/fonts';
+import {
+  formatCurrencyIqd,
+  formatDateAr,
+  formatTimeAr,
+  serviceTypeLabel,
+  wrapText,
+} from './canvas/text';
+import {
+  ReceiptPainter,
+  createPrintCanvas,
+  generateMinimalFallbackPng,
+} from './canvas/primitives';
 
 /**
- * Register Arabic font if available
- */
-async function registerArabicFontIfAvailable(): Promise<void> {
-  try {
-    // @ts-ignore - canvas is a native module, loaded dynamically
-    const { registerFont } = await import('canvas');
-    // Try to find Arabic font in common locations
-    const fontPaths = [
-      path.join(__dirname, '../../fonts/arial.ttf'),
-      path.join(__dirname, '../../fonts/Arial.ttf'),
-      'C:/Windows/Fonts/arial.ttf',
-      'C:/Windows/Fonts/tahoma.ttf',
-    ];
-
-    for (const fontPath of fontPaths) {
-      if (fs.existsSync(fontPath)) {
-        try {
-          registerFont(fontPath, { family: 'Arabic' });
-          console.log(`[RECEIPT] Registered Arabic font: ${fontPath}`);
-          return;
-        } catch (e) {
-          console.warn(`[RECEIPT] Failed to register font ${fontPath}:`, e);
-        }
-      }
-    }
-    console.log('[RECEIPT] No Arabic font found, using system default');
-  } catch (e) {
-    console.warn('[RECEIPT] Error registering Arabic font:', e);
-  }
-}
-
-/**
- * Wrap text to fit within maxWidth
- */
-function wrapText(ctx: any, text: string, maxWidth: number): string[] {
-  const words = text.split(' ');
-  const lines: string[] = [];
-  let currentLine = '';
-
-  for (const word of words) {
-    const testLine = currentLine ? `${currentLine} ${word}` : word;
-    const metrics = ctx.measureText(testLine);
-    
-    if (metrics.width > maxWidth && currentLine) {
-      lines.push(currentLine);
-      currentLine = word;
-    } else {
-      currentLine = testLine;
-    }
-  }
-  
-  if (currentLine) {
-    lines.push(currentLine);
-  }
-  
-  return lines.length > 0 ? lines : [text];
-}
-
-/**
- * Format currency in Iraqi Dinars (no decimal places)
- */
-function formatCurrency(amount: number): string {
-  return `${Math.round(amount)} د.ع`;
-}
-
-/**
- * Render customer receipt to PNG using node-canvas
- * Professional table-like layout similar to Excel
- * @param data - Receipt data
- * @returns PNG buffer (3-20 KB)
+ * Render customer receipt to PNG for thermal printers.
  */
 export async function renderReceiptToPng(data: ReceiptPrintData | null | undefined): Promise<Buffer> {
   console.log('[RECEIPT] Starting PNG generation...');
-  
-  // Defensive check - always generate a valid PNG even if data is empty
+
   if (!data) {
-    console.warn('[RECEIPT] No data provided, generating test receipt');
     data = {
       orderId: 999,
       table: 0,
@@ -90,457 +36,321 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
       restaurantName: 'SUFRA POS - TEST',
     };
   }
+  if (!data.items || !Array.isArray(data.items)) data.items = [];
 
   try {
-    // Lazy-load canvas to avoid startup crashes in dev mode
-    // @ts-ignore - canvas is a native module, loaded dynamically
-    const { createCanvas } = await import('canvas');
-    // Register Arabic font
     await registerArabicFontIfAvailable();
 
-    // Thermal printer dimensions: 80mm = 576px at 150 DPI
-    const CANVAS_WIDTH = 576;
-    const PADDING = 15;
-    const LINE_HEIGHT = 42;
-    const FONT_SIZE = 28;
-    const FONT_SIZE_LARGE = 38;
-    const FONT_SIZE_SMALL = 22;
-    const FONT_SIZE_TINY = 20;
-    const SECTION_SPACING = 18; // Extra spacing between major sections
+    const paper: PaperWidthMm = data.paperWidth === 58 ? 58 : 80;
+    const width = canvasWidthFor(paper);
+    const T = PRINT_TOKENS;
+    const r = T.receipt;
+    const items = data.items;
+    const serviceType = data.service_type || items[0]?.service_type || 'dine-in';
+    const layout = receiptColumnLayout(paper);
+    const compact = layout.mode === 'compact';
 
-    // Table column positions (from right to left for RTL)
-    const COL_ITEM_NAME = CANVAS_WIDTH - PADDING; // Rightmost
-    const COL_QUANTITY = 420;
-    const COL_UNIT_PRICE = 320;
-    const COL_TOTAL = 180;
-    const COL_LEFT_EDGE = PADDING;
+    // Pass 1 — measure
+    const { ctx: tempCtx } = await createPrintCanvas(width, 100);
+    const measure = new ReceiptPainter(tempCtx, paper);
+    let y = measure.pad;
 
-    // Calculate height dynamically with proper measurement
-    let yPos = PADDING;
-    const items = data.items || [];
-    
-    // Create temporary canvas for text measurement
-    const tempCanvas = createCanvas(CANVAS_WIDTH, 100);
-    const tempCtx = tempCanvas.getContext('2d');
-    
-    // Helper to measure text height
-    const measureTextHeight = (text: string, fontSize: number, maxWidth: number): number => {
-      tempCtx.font = `${fontSize}px Arial, "Arabic", sans-serif`;
-      const words = text.split(' ');
-      const lines: string[] = [];
-      let currentLine = '';
-      
-      for (const word of words) {
-        const testLine = currentLine ? `${currentLine} ${word}` : word;
-        const metrics = tempCtx.measureText(testLine);
-        
-        if (metrics.width > maxWidth && currentLine) {
-          lines.push(currentLine);
-          currentLine = word;
-        } else {
-          currentLine = testLine;
-        }
+    y += 70; // logo
+    y += T.font.xl + 8;
+    if (data.address) y += T.font.sm * 2 + 4;
+    if (data.phone) y += T.font.sm + 4;
+    if (data.taxNumber) y += T.font.sm + 4;
+    if (serviceType === 'pickup' || serviceType === 'delivery') y += T.font.lg + 8;
+    y += T.sectionGap;
+
+    const infoFields = buildReceiptInfoFields(data, serviceType);
+    const visible = infoFields.filter((f) => f.value != null && String(f.value).trim() !== '');
+    y += Math.ceil(Math.max(1, visible.length) / 2) * 56 + T.sectionGap;
+
+    if (serviceType === 'delivery') {
+      if (data.customer_name) y += r.lineHeight;
+      if (data.customer_phone) y += r.lineHeight;
+      if (data.customer_address) {
+        tempCtx.font = printFont(T.font.sm, false);
+        y += wrapText(tempCtx, String(data.customer_address), measure.contentW).length * r.lineHeightSm;
       }
-      
-      if (currentLine) {
-        lines.push(currentLine);
-      }
-      
-      return Math.max(1, lines.length) * LINE_HEIGHT;
-    };
-    
-    // Calculate actual height needed
-    let estimatedHeight = PADDING * 2; // Top and bottom padding
-    
-    // Get service type for height calculations
-    const serviceType = data.service_type || data.items[0]?.service_type || 'dine-in';
-    
-    // Header section
-    if (data.restaurantName) {
-      estimatedHeight += measureTextHeight(data.restaurantName, FONT_SIZE_LARGE, CANVAS_WIDTH - PADDING * 2) + SECTION_SPACING;
+      y += T.gap;
     }
-    
-    // Service type label
+
+    y += T.font.sm + 20; // table header
+
+    for (const item of items) {
+      const nameW = layout.cols.item.w;
+      tempCtx.font = printFont(T.font.md, true);
+      const nameLines = wrapText(tempCtx, item.item_name || 'صنف', nameW);
+      y += Math.max(r.lineHeight, nameLines.length * r.lineHeight) + 10;
+    }
+
+    y += T.sectionGap;
+    y += (r.lineHeight + 4) * 5; // summary rows
+    y += T.font.xl + 20; // grand total
+    y += (r.lineHeight + 4) * 4; // payment
+    y += T.sectionGap + T.font.md + 40; // footer
+    y += T.bottomBuffer;
+
+    const height = Math.max(500, y);
+
+    // Pass 2 — draw
+    const { canvas, ctx } = await createPrintCanvas(width, height);
+    const p = new ReceiptPainter(ctx, paper);
+
+    // —— Header ——
+    const logoH = await p.drawLogo(data.logoUrl, paper === 58 ? 48 : 64);
+    if (logoH) p.advance(logoH + 6);
+    else p.advance(4);
+
+    let lines = p.text(
+      data.restaurantName || 'سفرة',
+      p.centerX,
+      p.y,
+      T.font.xl,
+      'center',
+      true,
+      p.contentW,
+      T.font.xl + 4,
+    );
+    p.advance(lines * (T.font.xl + 4) + 4);
+
+    if (data.address) {
+      lines = p.text(data.address, p.centerX, p.y, T.font.sm, 'center', false, p.contentW, T.font.sm + 4);
+      p.advance(lines * (T.font.sm + 4) + 2);
+    }
+    if (data.phone) {
+      lines = p.text(`هاتف: ${data.phone}`, p.centerX, p.y, T.font.sm, 'center', false, p.contentW, T.font.sm + 4);
+      p.advance(lines * (T.font.sm + 4) + 2);
+    }
+    if (data.taxNumber) {
+      lines = p.text(`الرقم الضريبي: ${data.taxNumber}`, p.centerX, p.y, T.font.xs, 'center', false, p.contentW, T.font.xs + 4);
+      p.advance(lines * (T.font.xs + 4) + 2);
+    }
+
     if (serviceType === 'pickup' || serviceType === 'delivery') {
-      estimatedHeight += LINE_HEIGHT + SECTION_SPACING;
+      p.advance(4);
+      const badge = p.outlineBadge(serviceTypeLabel(serviceType, true), p.centerX, p.y, T.font.md, 'center');
+      p.advance(badge.height + 6);
     }
-    
-    // Date and time
-    if (data.timestamp) {
-      estimatedHeight += LINE_HEIGHT + 8;
-    }
-    
-    // Delivery customer info (can be multiple lines)
+
+    p.hLine(T.line.thick);
+    p.advance(T.sectionGap);
+
+    // —— Info grid ——
+    const gridH = p.infoGrid(infoFields, p.y, 2, T.font.sm);
+    if (gridH) p.advance(gridH + T.gap);
+
     if (serviceType === 'delivery') {
       if (data.customer_name) {
-        estimatedHeight += LINE_HEIGHT;
+        p.text(`العميل: ${data.customer_name}`, p.right, p.y, T.font.sm, 'right', true);
+        p.advance(r.lineHeightSm);
       }
       if (data.customer_phone) {
-        estimatedHeight += LINE_HEIGHT;
+        p.text(`الهاتف: ${data.customer_phone}`, p.right, p.y, T.font.sm, 'right', false);
+        p.advance(r.lineHeightSm);
       }
       if (data.customer_address) {
-        estimatedHeight += measureTextHeight(`العنوان: ${data.customer_address}`, FONT_SIZE_SMALL, CANVAS_WIDTH - PADDING * 2);
+        lines = p.text(`العنوان: ${data.customer_address}`, p.right, p.y, T.font.sm, 'right', false);
+        p.advance(lines * r.lineHeightSm + 4);
       }
-      estimatedHeight += SECTION_SPACING;
     }
-    
-    // Table/Hall info or Order ID
-    if ((serviceType === 'dine-in' && (data.table || data.hall)) || data.orderId) {
-      estimatedHeight += LINE_HEIGHT + SECTION_SPACING;
+
+    p.advance(T.gap);
+    p.hLine(T.line.thick);
+    p.advance(10);
+
+    // —— Items table (with borders + column dividers) ——
+    const cols = layout.cols;
+    const tableX = layout.tableLeft;
+    const tableW = layout.tableRight - layout.tableLeft;
+    const headerPadY = 8;
+    const headerH = T.font.sm + headerPadY * 2;
+    const cellPadY = 8;
+    const nameInnerW = cols.item.w - 12;
+
+    type RowMeasure = { height: number; nameLines: number };
+    const rowMeasures: RowMeasure[] = items.map((item) => {
+      ctx.font = printFont(T.font.md, true);
+      const nameLines = wrapText(ctx, item.item_name || 'صنف', nameInnerW).length;
+      return {
+        nameLines,
+        height: Math.max(r.lineHeight, nameLines * r.lineHeight) + cellPadY * 2,
+      };
+    });
+
+    const bodyH =
+      items.length === 0
+        ? r.lineHeight + cellPadY * 2
+        : rowMeasures.reduce((s, m) => s + m.height, 0);
+    const tableH = headerH + bodyH;
+    const tableTop = p.y;
+
+    // Header text
+    const headerTextY = tableTop + headerPadY;
+    p.text('الصنف', cols.item.x, headerTextY, T.font.sm, 'right', true, cols.item.w - 12);
+    p.text('الكمية', cols.qty.x, headerTextY, T.font.sm, 'center', true, cols.qty.w - 4);
+    if (!compact) {
+      const unit = layout.cols.unit!;
+      const disc = layout.cols.disc!;
+      p.text('السعر', unit.x, headerTextY, T.font.sm, 'center', true, unit.w - 4);
+      p.text('خصم', disc.x, headerTextY, T.font.sm, 'center', true, disc.w - 4);
     }
-    
-    // Separator line
-    estimatedHeight += SECTION_SPACING;
-    
-    // Table header
-    estimatedHeight += LINE_HEIGHT + 6 + SECTION_SPACING;
-    
-    // Items (account for text wrapping)
-    if (items.length > 0) {
-      items.forEach((item, index) => {
-        const itemName = item.item_name || 'Item';
-        const itemNameHeight = measureTextHeight(itemName, FONT_SIZE, CANVAS_WIDTH - PADDING * 2);
-        const rowHeight = Math.max(LINE_HEIGHT, itemNameHeight + 12);
-        estimatedHeight += rowHeight;
-        
-        // Row separator
-        if (index < items.length - 1) {
-          estimatedHeight += 8;
-        }
-      });
+    p.text('المجموع', cols.total.x, headerTextY, T.font.sm, 'left', true, cols.total.w - 12);
+
+    // Body rows
+    const rowYs: number[] = [];
+    let rowY = tableTop + headerH;
+
+    if (items.length === 0) {
+      p.text('لا توجد أصناف', p.centerX, rowY + cellPadY, T.font.md, 'center', false);
     } else {
-      estimatedHeight += LINE_HEIGHT;
-    }
-    
-    // Table bottom border
-    estimatedHeight += SECTION_SPACING;
-    
-    // Totals section
-    if (data.totals) {
-      if (data.totals.subtotal !== undefined) {
-        estimatedHeight += LINE_HEIGHT + 6;
-      }
-      if (data.totals.globalDiscount) {
-        estimatedHeight += LINE_HEIGHT + 6;
-      }
-      // Total line
-      estimatedHeight += SECTION_SPACING + LINE_HEIGHT + SECTION_SPACING;
-    }
-    
-    // Payment method
-    if (data.paymentMethod) {
-      estimatedHeight += LINE_HEIGHT + SECTION_SPACING;
-    }
-    
-    // Footer separator
-    estimatedHeight += SECTION_SPACING;
-    
-    // Thank you message
-    estimatedHeight += LINE_HEIGHT + SECTION_SPACING;
-    
-    // Add extra buffer at bottom to prevent cutting (important for thermal printers)
-    estimatedHeight += 150;
-    
-    // Ensure minimum height
-    estimatedHeight = Math.max(500, estimatedHeight);
-
-    console.log(`[RECEIPT] Creating canvas: ${CANVAS_WIDTH}x${estimatedHeight}`);
-
-    // Create canvas with properly calculated height
-    const canvas = createCanvas(CANVAS_WIDTH, estimatedHeight);
-    const ctx = canvas.getContext('2d');
-
-    // White background
-    ctx.fillStyle = '#FFFFFF';
-    ctx.fillRect(0, 0, CANVAS_WIDTH, estimatedHeight);
-
-    // Set default font
-    ctx.fillStyle = '#000000';
-    ctx.textBaseline = 'top';
-
-    // Helper to draw text with RTL support for Arabic
-    const drawText = (text: string, x: number, y: number, fontSize: number = FONT_SIZE, align: 'left' | 'center' | 'right' = 'left', bold: boolean = false) => {
-      ctx.font = `${bold ? 'bold ' : ''}${fontSize}px Arial, "Arabic", sans-serif`;
-      
-      // Check if text contains Arabic characters (RTL)
-      const hasArabic = /[\u0600-\u06FF]/.test(text);
-      
-      // For Arabic text, use right alignment; for numbers/English, use specified alignment
-      if (hasArabic && align !== 'center') {
-        ctx.textAlign = 'right';
-        ctx.direction = 'rtl';
-        const lines = wrapText(ctx, text, CANVAS_WIDTH - PADDING * 2);
-        lines.forEach((line, idx) => {
-          ctx.fillText(line, x, y + idx * LINE_HEIGHT);
-        });
-        return lines.length;
-      } else {
-        ctx.textAlign = align;
-        ctx.direction = 'ltr';
-        const lines = wrapText(ctx, text, CANVAS_WIDTH - PADDING * 2);
-        lines.forEach((line, idx) => {
-          ctx.fillText(line, x, y + idx * LINE_HEIGHT);
-        });
-        return lines.length;
-      }
-    };
-
-    // Draw horizontal line
-    const drawLine = (y: number, width: number = 1) => {
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = width;
-      ctx.beginPath();
-      ctx.moveTo(PADDING, y);
-      ctx.lineTo(CANVAS_WIDTH - PADDING, y);
-      ctx.stroke();
-    };
-
-    // Draw vertical line
-    const drawVerticalLine = (x: number, yStart: number, yEnd: number) => {
-      ctx.strokeStyle = '#000000';
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(x, yStart);
-      ctx.lineTo(x, yEnd);
-      ctx.stroke();
-    };
-
-    // ============================================
-    // HEADER SECTION
-    // ============================================
-    
-    // Restaurant name (centered, large, bold)
-    if (data.restaurantName) {
-      const lines = drawText(data.restaurantName, CANVAS_WIDTH / 2, yPos, FONT_SIZE_LARGE, 'center', true);
-      yPos += lines * LINE_HEIGHT + SECTION_SPACING;
-    }
-
-    // Order type label (for pickup/delivery only)
-    // serviceType already defined above in height calculation section
-    if (serviceType === 'pickup') {
-      const lines = drawText('طلب سفري', CANVAS_WIDTH / 2, yPos, FONT_SIZE_LARGE, 'center', true);
-      yPos += lines * LINE_HEIGHT + SECTION_SPACING;
-    } else if (serviceType === 'delivery') {
-      const lines = drawText('طلب توصيل', CANVAS_WIDTH / 2, yPos, FONT_SIZE_LARGE, 'center', true);
-      yPos += lines * LINE_HEIGHT + SECTION_SPACING;
-    }
-
-    // Date and time side by side
-    if (data.timestamp) {
-      const date = new Date(data.timestamp);
-      const dateStr = date.toLocaleDateString('ar-IQ', { 
-        year: 'numeric', 
-        month: '2-digit', 
-        day: '2-digit'
-      });
-      const timeStr = date.toLocaleTimeString('ar-IQ', {
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-      
-      // Date on right, time on left
-      drawText(`التاريخ: ${dateStr}`, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', false);
-      drawText(`${timeStr} :الوقت`, COL_LEFT_EDGE, yPos, FONT_SIZE_SMALL, 'left', false);
-      yPos += LINE_HEIGHT + 8;
-    }
-
-    // For delivery orders, show customer info
-    if (serviceType === 'delivery') {
-      if (data.customer_name) {
-        drawText(`العميل: ${data.customer_name}`, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', true);
-        yPos += LINE_HEIGHT;
-      }
-      if (data.customer_phone) {
-        drawText(`الهاتف: ${data.customer_phone}`, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', false);
-        yPos += LINE_HEIGHT;
-      }
-      if (data.customer_address) {
-        const addressLines = drawText(`العنوان: ${data.customer_address}`, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', false);
-        yPos += addressLines * LINE_HEIGHT;
-      }
-      yPos += SECTION_SPACING;
-    }
-
-    // Table and Hall info (only for dine-in)
-    if (serviceType === 'dine-in' && (data.table || data.hall)) {
-      let infoText = '';
-      if (data.hall) infoText += `القاعة: ${data.hall}`;
-      if (data.table) infoText += infoText ? ` | الطاولة: ${data.table}` : `الطاولة: ${data.table}`;
-      if (data.orderId) infoText += infoText ? ` | الطلب: #${data.orderId}` : `الطلب: #${data.orderId}`;
-      drawText(infoText, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', false);
-      yPos += LINE_HEIGHT + SECTION_SPACING;
-    } else if (data.orderId) {
-      // For pickup/delivery, just show order ID
-      drawText(`الطلب: #${data.orderId}`, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', false);
-      yPos += LINE_HEIGHT + SECTION_SPACING;
-    }
-
-    drawLine(yPos, 2);
-    yPos += SECTION_SPACING;
-
-    // ============================================
-    // TABLE HEADER
-    // ============================================
-    
-    const tableHeaderY = yPos;
-    
-    // Draw table header background (optional - can be left white)
-    // Draw header text
-    drawText('اسم الصنف', COL_ITEM_NAME, yPos, FONT_SIZE_SMALL, 'right', true);
-    drawText('الكمية', COL_QUANTITY, yPos, FONT_SIZE_SMALL, 'center', true);
-    drawText('سعر الوحدة', COL_UNIT_PRICE, yPos, FONT_SIZE_SMALL, 'center', true);
-    drawText('المجموع', COL_TOTAL, yPos, FONT_SIZE_SMALL, 'left', true);
-    
-    yPos += LINE_HEIGHT + 6;
-    
-    // Draw header separator line
-    drawLine(yPos, 2);
-    yPos += SECTION_SPACING;
-
-    // ============================================
-    // ITEMS TABLE
-    // ============================================
-    
-    const tableStartY = yPos;
-    
-    if (items.length > 0) {
       items.forEach((item, index) => {
-        const itemName = item.item_name || 'Item';
-        const quantity = item.quantity || 1;
+        const name = item.item_name || 'صنف';
+        const qty = item.quantity || 1;
         const unitPrice = item.price || 0;
-        const lineTotal = quantity * unitPrice;
-        const itemServiceType = item.service_type || serviceType;
-        const serviceLabel = itemServiceType === 'pickup' ? 'سفري' : itemServiceType === 'delivery' ? 'توصيل' : 'طاولة';
-        
-        // Item name (bold, right-aligned)
-        const itemNameLines = drawText(itemName, COL_ITEM_NAME, yPos, FONT_SIZE, 'right', true);
-        const itemNameHeight = itemNameLines * LINE_HEIGHT;
-        
-        // Service type label (under item name, smaller font, not bold) - only if not all items are same type
-        if (itemServiceType !== serviceType) {
-          drawText(serviceLabel, COL_ITEM_NAME, yPos + itemNameHeight - 8, FONT_SIZE_SMALL, 'right', false);
+        const disc = item.discount || 0;
+        const lineTotal = qty * unitPrice - disc;
+        const textY = rowY + cellPadY;
+        const m = rowMeasures[index];
+
+        p.text(name, cols.item.x, textY, T.font.md, 'right', true, nameInnerW, r.lineHeight);
+        p.text(String(qty), cols.qty.x, textY, T.font.md, 'center', false, cols.qty.w - 4);
+        if (!compact) {
+          const unit = layout.cols.unit!;
+          const discCol = layout.cols.disc!;
+          p.text(formatCurrencyIqd(unitPrice), unit.x, textY, T.font.sm, 'center', false, unit.w - 4);
+          p.text(disc ? formatCurrencyIqd(disc) : '—', discCol.x, textY, T.font.sm, 'center', false, discCol.w - 4);
         }
-        
-        // Quantity (center-aligned) - aligned with item name
-        drawText(String(quantity), COL_QUANTITY, yPos, FONT_SIZE, 'center', false);
-        
-        // Unit price (center-aligned) - aligned with item name
-        drawText(formatCurrency(unitPrice), COL_UNIT_PRICE, yPos, FONT_SIZE, 'center', false);
-        
-        // Total price (left-aligned) - aligned with item name
-        drawText(formatCurrency(lineTotal), COL_TOTAL, yPos, FONT_SIZE, 'left', false);
-        
-        // Calculate row height based on item name (if it wraps)
-        const rowHeight = Math.max(LINE_HEIGHT, itemNameHeight + 12);
-        yPos += rowHeight;
-        
-        // Draw row separator (lighter line)
-        if (index < items.length - 1) {
-          drawLine(yPos, 1);
-          yPos += 8;
-        }
+        p.text(formatCurrencyIqd(lineTotal), cols.total.x, textY, T.font.md, 'left', true, cols.total.w - 12);
+
+        rowY += m.height;
+        if (index < items.length - 1) rowYs.push(rowY);
       });
-    } else {
-      drawText('لا توجد أصناف', CANVAS_WIDTH / 2, yPos, FONT_SIZE, 'center', false);
-      yPos += LINE_HEIGHT;
     }
 
-    // Draw table bottom border
-    drawLine(yPos, 2);
-    yPos += SECTION_SPACING;
+    p.tableFrame(tableX, tableTop, tableW, tableH, headerH, layout.dividers, rowYs);
+    p.y = tableTop + tableH;
+    p.advance(T.sectionGap);
 
-    // ============================================
-    // TOTALS SECTION
-    // ============================================
-    
-    if (data.totals) {
-      // Subtotal
-      if (data.totals.subtotal !== undefined) {
-        drawText('المجموع الفرعي:', CANVAS_WIDTH - PADDING, yPos, FONT_SIZE, 'right', false);
-        drawText(formatCurrency(data.totals.subtotal), COL_TOTAL, yPos, FONT_SIZE, 'left', false);
-        yPos += LINE_HEIGHT + 6;
+    // —— Summary ——
+    const totals = data.totals || { total: 0 };
+    const summaryX = p.right;
+    const amountX = p.left;
+    const labelW = p.contentW * 0.55;
+    const amountW = p.contentW * 0.4;
+
+    const drawSummaryRow = (label: string, amount: string, bold = false, size: number = T.font.md) => {
+      p.text(label, summaryX, p.y, size, 'right', bold, labelW);
+      p.text(amount, amountX, p.y, size, 'left', bold, amountW);
+      p.advance(size + 8);
+    };
+
+    if (totals.subtotal != null) {
+      drawSummaryRow('المجموع الفرعي', formatCurrencyIqd(totals.subtotal));
+    }
+    if (totals.globalDiscount && totals.globalDiscount.amount) {
+      drawSummaryRow(
+        `الخصم (${totals.globalDiscount.percent}%)`,
+        `−${formatCurrencyIqd(totals.globalDiscount.amount)}`,
+      );
+    }
+    if (totals.tax != null && totals.tax > 0) {
+      drawSummaryRow('الضريبة', formatCurrencyIqd(totals.tax));
+    }
+    if (totals.serviceCharge != null && totals.serviceCharge > 0) {
+      drawSummaryRow('خدمة', formatCurrencyIqd(totals.serviceCharge));
+    }
+
+    p.advance(4);
+    p.doubleHLine(p.y);
+    p.advance(12);
+
+    // Grand total emphasized
+    const gtBoxPad = 10;
+    const gtLabel = 'الإجمالي';
+    const gtValue = formatCurrencyIqd(totals.total);
+    ctx.font = printFont(T.font.xl, true);
+    const gtH = T.font.xl + gtBoxPad * 2;
+    p.box(p.pad, p.y, p.contentW, gtH, T.line.heavy);
+    p.text(gtLabel, p.right - gtBoxPad, p.y + gtBoxPad, T.font.xl, 'right', true, labelW);
+    p.text(gtValue, p.left + gtBoxPad, p.y + gtBoxPad, T.font.xl, 'left', true, amountW);
+    p.advance(gtH + T.sectionGap);
+
+    // —— Payment ——
+    if (data.paymentMethod || data.paidAmount != null || data.change != null || data.remaining != null) {
+      p.hLine(T.line.hair);
+      p.advance(8);
+      if (data.paymentMethod) {
+        drawSummaryRow('طريقة الدفع', data.paymentMethod, false, T.font.sm);
       }
-
-      // Discount
-      if (data.totals.globalDiscount) {
-        const discountText = `خصم (${data.totals.globalDiscount.percent}%):`;
-        drawText(discountText, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE, 'right', false);
-        drawText(`-${formatCurrency(data.totals.globalDiscount.amount)}`, COL_TOTAL, yPos, FONT_SIZE, 'left', false);
-        yPos += LINE_HEIGHT + 6;
+      if (data.paidAmount != null) {
+        drawSummaryRow('المبلغ المدفوع', formatCurrencyIqd(data.paidAmount), false, T.font.sm);
       }
-
-      // Total (bold, larger)
-      drawLine(yPos, 2);
-      yPos += SECTION_SPACING;
-      drawText('المجموع:', CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_LARGE, 'right', true);
-      drawText(formatCurrency(data.totals.total), COL_TOTAL, yPos, FONT_SIZE_LARGE, 'left', true);
-      yPos += LINE_HEIGHT + SECTION_SPACING;
+      if (data.remaining != null && data.remaining > 0) {
+        drawSummaryRow('المتبقي', formatCurrencyIqd(data.remaining), false, T.font.sm);
+      }
+      if (data.change != null && data.change > 0) {
+        drawSummaryRow('الباقي', formatCurrencyIqd(data.change), false, T.font.sm);
+      }
     }
 
-    // Payment method
-    if (data.paymentMethod) {
-      drawText(`طريقة الدفع: ${data.paymentMethod}`, CANVAS_WIDTH - PADDING, yPos, FONT_SIZE_SMALL, 'right', false);
-      yPos += LINE_HEIGHT + SECTION_SPACING;
+    p.advance(T.gap);
+    p.hLine(T.line.thick);
+    p.advance(T.sectionGap);
+
+    // —— Footer ——
+    const thanks = data.thankYouMessage || 'شكراً لزيارتكم';
+    lines = p.text(thanks, p.centerX, p.y, T.font.md, 'center', true, p.contentW);
+    p.advance(lines * (T.font.md + 4) + 6);
+
+    if (data.website) {
+      lines = p.text(data.website, p.centerX, p.y, T.font.sm, 'center', false, p.contentW);
+      p.advance(lines * (T.font.sm + 4) + 2);
+    }
+    if (data.phone) {
+      lines = p.text(data.phone, p.centerX, p.y, T.font.sm, 'center', false, p.contentW);
+      p.advance(lines * (T.font.sm + 4) + 2);
     }
 
-    drawLine(yPos, 2);
-    yPos += SECTION_SPACING;
+    p.track(p.y);
 
-    // ============================================
-    // FOOTER
-    // ============================================
-    
-    // Thank you message (centered, distinct)
-    drawText('شكراً لكم', CANVAS_WIDTH / 2, yPos, FONT_SIZE, 'center', true);
-    yPos += LINE_HEIGHT + SECTION_SPACING;
+    const pngBuffer = (canvas as any).toBuffer('image/png');
+    console.log(
+      `[RECEIPT] ✓ PNG generated successfully: ${pngBuffer.length} bytes (${(pngBuffer.length / 1024).toFixed(2)} KB)`,
+    );
 
-    // Generate PNG buffer
-    console.log('[RECEIPT] Converting canvas to PNG...');
-    const pngBuffer = canvas.toBuffer('image/png');
-    
-    console.log(`[RECEIPT] ✓ PNG generated successfully: ${pngBuffer.length} bytes (${(pngBuffer.length / 1024).toFixed(2)} KB)`);
-    
-    // Validate PNG size (should be 3-20 KB)
     if (pngBuffer.length < 1000) {
-      console.error(`[RECEIPT] ✕ PNG too small: ${pngBuffer.length} bytes - likely corrupted`);
       throw new Error(`PNG generation failed: output too small (${pngBuffer.length} bytes)`);
     }
-    
-    if (pngBuffer.length > 50000) {
-      console.warn(`[RECEIPT] ⚠ PNG very large: ${pngBuffer.length} bytes (${(pngBuffer.length / 1024).toFixed(2)} KB)`);
+    if (pngBuffer.length > 80_000) {
+      console.warn(`[RECEIPT] ⚠ PNG large: ${(pngBuffer.length / 1024).toFixed(2)} KB`);
     }
 
     return pngBuffer;
   } catch (error: any) {
     console.error('[RECEIPT] ✕ Error generating PNG:', error);
-    console.error('[RECEIPT] Error stack:', error.stack);
-    
-    // Fallback: generate minimal valid PNG
-    console.log('[RECEIPT] Generating fallback test PNG...');
-    return await generateFallbackPng();
+    return await generateMinimalFallbackPng('Receipt generation working');
   }
 }
 
-/**
- * Generate a minimal valid test PNG (fallback)
- */
-async function generateFallbackPng(): Promise<Buffer> {
-  // @ts-ignore - canvas is a native module, loaded dynamically
-  const { createCanvas } = await import('canvas');
-  const canvas = createCanvas(576, 200);
-  const ctx = canvas.getContext('2d');
-  
-  // White background
-  ctx.fillStyle = '#FFFFFF';
-  ctx.fillRect(0, 0, 384, 200);
-  
-  // Black text
-  ctx.fillStyle = '#000000';
-  ctx.font = 'bold 24px Arial';
-  ctx.textAlign = 'center';
-  ctx.fillText('TEST OK', 192, 80);
-  ctx.font = '14px Arial';
-  ctx.fillText('Receipt generation working', 192, 120);
-  
-  return canvas.toBuffer('image/png');
+function buildReceiptInfoFields(data: ReceiptPrintData, serviceType: string) {
+  const fields: Array<{ label: string; value?: string | number | null }> = [];
+  if (data.invoiceNumber != null && data.invoiceNumber !== '') {
+    fields.push({ label: 'الفاتورة', value: data.invoiceNumber });
+  }
+  if (data.orderId != null) fields.push({ label: 'الطلب', value: `#${data.orderId}` });
+  if (data.timestamp) {
+    fields.push({ label: 'التاريخ', value: formatDateAr(data.timestamp) });
+    fields.push({ label: 'الوقت', value: formatTimeAr(data.timestamp) });
+  }
+  if (data.floor) fields.push({ label: 'الطابق', value: data.floor });
+  if (data.hall) fields.push({ label: 'القاعة', value: data.hall });
+  if (serviceType === 'dine-in' && data.table) {
+    fields.push({ label: 'الطاولة', value: data.table });
+  }
+  if (data.waiter) fields.push({ label: 'النادل', value: data.waiter });
+  if (data.cashier) fields.push({ label: 'الكاشير', value: data.cashier });
+  return fields;
 }

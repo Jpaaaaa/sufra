@@ -8,7 +8,7 @@ import type { ExistingOrder } from '../../hooks/useOrderModal';
 type OrderType = 'pickup' | 'delivery';
 
 export function createOrdersPagePrintHandlers(
-  user: { role?: string; require_captain_approval?: boolean } | null,
+  user: { role?: string; username?: string; require_captain_approval?: boolean } | null,
   kitchens: Kitchen[]
 ) {
   const requestPasswordIfNeeded = async (title: string, message: string): Promise<boolean> => {
@@ -45,8 +45,10 @@ export function createOrdersPagePrintHandlers(
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
+        printTime: new Date().toISOString(),
         restaurantName: APP_BRAND_NAME,
         note: order.note || null,
+        cashier: user?.username,
         ...(orderType === 'delivery' && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
@@ -160,6 +162,7 @@ export function createOrdersPagePrintHandlers(
       }));
       const receiptData = {
         orderId: order.id,
+        invoiceNumber: order.id,
         table: 0,
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
         items: receiptItems,
@@ -167,6 +170,8 @@ export function createOrdersPagePrintHandlers(
         timestamp: order.created_at || new Date().toISOString(),
         restaurantName: APP_BRAND_NAME,
         service_type: orderType,
+        thankYouMessage: 'شكراً لزيارتكم',
+        cashier: user?.username,
         ...(orderType === 'delivery' && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
@@ -218,13 +223,17 @@ export function createOrdersPagePrintHandlers(
       }));
       const receiptData = {
         orderId: order.id,
-        table: (order as any).table_id || 0,
+        invoiceNumber: order.id,
+        table: (order as any).table_number || (order as any).table_id || 0,
         hall: (order as any).hall_name || 'الصالة',
+        floor: (order as any).floor_name || null,
         items: receiptItems,
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
         restaurantName: APP_BRAND_NAME,
-        service_type: 'dine-in',
+        service_type: 'dine-in' as const,
+        thankYouMessage: 'شكراً لزيارتكم',
+        cashier: user?.username,
       };
 
       if (window.sufra?.print?.receipt) {

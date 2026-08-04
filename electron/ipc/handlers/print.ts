@@ -10,12 +10,23 @@ import {
   printersGetAllSettings,
   printersSaveSetting,
 } from '../../init/backend-loader';
-import { getAvailablePrinters, printPngToPrinter, scanForPrinters } from '../../print/printer';
+import {
+  getAvailablePrinters,
+  isPrinterConfigured,
+  printPngUsingSetting,
+  scanForPrinters,
+  warmupWindowsSpooler,
+} from '../../print/printer';
+import {
+  customerTestReceiptData,
+  kitchenTestPrintData,
+} from '../../print/printer-test-samples';
 import {
   readRecipePrintBranding,
   writeRecipePrintBranding,
 } from '../../recipe-print-branding-store';
 import { buildRecipePreviewSample } from '../../print/recipe-preview-sample';
+import { invalidateWindowsPrinterCache } from '../../print/windows-printer-cache';
 
 const LOCKED_FILE_ERROR_CODES = new Set(['EBUSY', 'EPERM', 'EACCES']);
 
@@ -56,7 +67,76 @@ function writePdfBufferToDownloads(
   );
 }
 
+type PrinterTestPayload = {
+  connection_type?: 'network' | 'windows_spooler';
+  printer_ip?: string | null;
+  printer_port?: number;
+  printer_name?: string | null;
+  /** When set without inline destination, use saved settings for this kitchen (null = customer). */
+  kitchen_id?: number | null;
+  kind?: 'customer' | 'kitchen';
+  kitchen_name?: string;
+  use_saved?: boolean;
+};
+
+async function resolveTestDestination(
+  data: PrinterTestPayload,
+): Promise<{ setting: any; error?: string }> {
+  if (data.use_saved || (data.kitchen_id !== undefined && data.printer_ip === undefined && data.printer_name === undefined && !data.connection_type)) {
+    const settings = await printersGetAllSettings();
+    const kitchenId = data.kitchen_id ?? null;
+    const setting = settings.find((s: any) =>
+      kitchenId === null
+        ? s.kitchen_id === null && s.printer_type === 'customer' && s.is_active
+        : s.kitchen_id === kitchenId && s.printer_type === 'kitchen' && s.is_active,
+    );
+    if (!setting || !isPrinterConfigured(setting)) {
+      return {
+        setting: null,
+        error:
+          kitchenId === null
+            ? 'No customer receipt printer configured'
+            : 'No printer configured for this kitchen',
+      };
+    }
+    return { setting };
+  }
+
+  const connection_type =
+    data.connection_type === 'windows_spooler' ? 'windows_spooler' : 'network';
+  const setting = {
+    connection_type,
+    printer_ip: data.printer_ip ?? null,
+    printer_port: data.printer_port ?? 9100,
+    printer_name: data.printer_name ?? null,
+  };
+  if (!isPrinterConfigured(setting)) {
+    return {
+      setting: null,
+      error:
+        connection_type === 'windows_spooler'
+          ? 'Windows printer name is required'
+          : 'Printer IP address is required',
+    };
+  }
+  return { setting };
+}
+
+async function renderSamplePng(
+  kind: 'customer' | 'kitchen',
+  kitchenName?: string,
+): Promise<Buffer> {
+  if (kind === 'customer') {
+    const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
+    return renderReceiptToPng(customerTestReceiptData());
+  }
+  const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
+  return renderOrderToPng(kitchenTestPrintData(kitchenName));
+}
+
 export function registerPrintHandlers() {
+  warmupWindowsSpooler();
+
   ipcMain.handle('backend:health', async () => {
     try {
       return await healthGetHealth();
@@ -66,7 +146,10 @@ export function registerPrintHandlers() {
   });
 
   ipcMain.handle('printers:getSettings', async () => printersGetAllSettings());
-  ipcMain.handle('printers:available', async () => getAvailablePrinters());
+  ipcMain.handle('printers:available', async (_e, forceRefresh?: boolean) => {
+    if (forceRefresh) invalidateWindowsPrinterCache();
+    return getAvailablePrinters(Boolean(forceRefresh));
+  });
   ipcMain.handle('printers:scan', async () => {
     try {
       return await scanForPrinters();
@@ -77,8 +160,10 @@ export function registerPrintHandlers() {
   });
   ipcMain.handle('printers:saveSettings', async (_, data: any) => printersSaveSetting(data));
   ipcMain.handle('recipePrint:getSettings', async () => readRecipePrintBranding());
-  ipcMain.handle('recipePrint:saveSettings', async (_, data: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
-    writeRecipePrintBranding(data ?? {}),
+  ipcMain.handle(
+    'recipePrint:saveSettings',
+    async (_, data: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
+      writeRecipePrintBranding(data ?? {}),
   );
   ipcMain.handle(
     'recipePrint:preview',
@@ -105,13 +190,13 @@ export function registerPrintHandlers() {
         const setting = settings.find(
           (s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active,
         );
-        if (!setting?.printer_ip) {
+        if (!isPrinterConfigured(setting)) {
           return {
             success: false as const,
             error: 'لم يتم ضبط طابعة إيصال العميل — من إعدادات الطابعات',
           };
         }
-        const printResult = await printPngToPrinter(png, setting.printer_ip, setting.printer_port);
+        const printResult = await printPngUsingSetting(png, setting);
         return printResult.success
           ? { success: true as const }
           : {
@@ -125,27 +210,37 @@ export function registerPrintHandlers() {
     },
   );
 
-  ipcMain.handle('printers:test', async (_, data: any) => {
+  ipcMain.handle('printers:preview', async (_, data: PrinterTestPayload = {}) => {
     try {
-      if (!data?.printer_ip?.trim()) {
-        return { success: false, error: 'Printer IP address is required' };
+      const kind: 'customer' | 'kitchen' =
+        data.kind || (data.kitchen_id != null ? 'kitchen' : 'customer');
+      const buf = await renderSamplePng(kind, data.kitchen_name);
+      if (!buf || buf.length < 100) {
+        return { success: false as const, error: 'Failed to generate preview PNG' };
       }
-      const testData = {
-        orderId: 999,
-        table: 1,
-        hall: 'اختبار',
-        items: [{ id: 1, item_name: 'طباعة تجريبية - SUFRA POS', quantity: 1, price: 0 }],
-        totals: { total: 0 },
-        timestamp: new Date().toISOString(),
-        restaurantName: 'سفرة',
-      };
-      const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
-      const png = await renderOrderToPng(testData);
+      return { success: true as const, imageBase64: buf.toString('base64'), kind };
+    } catch (err: any) {
+      console.error('[printers:preview]', err);
+      return { success: false as const, error: err?.message || 'Preview failed' };
+    }
+  });
+
+  ipcMain.handle('printers:test', async (_, data: PrinterTestPayload = {}) => {
+    try {
+      const { setting, error } = await resolveTestDestination(data);
+      if (!setting) {
+        return { success: false, error: error || 'Printer not configured' };
+      }
+      const kind: 'customer' | 'kitchen' =
+        data.kind ||
+        (setting.printer_type === 'customer' || data.kitchen_id === null
+          ? 'customer'
+          : 'kitchen');
+      const png = await renderSamplePng(kind, data.kitchen_name);
       if (!png || png.length < 100) {
         return { success: false, error: 'Failed to generate test PNG' };
       }
-      const port = data.printer_port || 9100;
-      const printResult = await printPngToPrinter(png, data.printer_ip, port);
+      const printResult = await printPngUsingSetting(png, setting);
       return printResult.success
         ? { success: true, message: 'Test print sent successfully' }
         : { success: false, error: printResult.error || 'Failed to send test print to printer' };
@@ -159,31 +254,42 @@ export function registerPrintHandlers() {
       const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
       const png = await renderOrderToPng(orderData);
       const settings = await printersGetAllSettings();
-      const setting = settings.find((s: any) => s.kitchen_id === (kitchenId ?? null) && s.printer_type === 'kitchen' && s.is_active);
-      if (!setting?.printer_ip) {
+      const setting = settings.find(
+        (s: any) =>
+          s.kitchen_id === (kitchenId ?? null) && s.printer_type === 'kitchen' && s.is_active,
+      );
+      if (!isPrinterConfigured(setting)) {
         return { success: false, error: 'No printer configured for this kitchen' };
       }
-      const printResult = await printPngToPrinter(png, setting.printer_ip, setting.printer_port);
-      return printResult.success ? { success: true } : { success: false, error: printResult.error || 'Failed to send print job to printer' };
+      const printResult = await printPngUsingSetting(png, setting);
+      return printResult.success
+        ? { success: true }
+        : { success: false, error: printResult.error || 'Failed to send print job to printer' };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Unknown error' };
     }
   });
+
   ipcMain.handle('print:receipt', async (_event, receiptData: any) => {
     try {
       const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
       const png = await renderReceiptToPng(receiptData);
       const settings = await printersGetAllSettings();
-      const setting = settings.find((s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active);
-      if (!setting?.printer_ip) {
+      const setting = settings.find(
+        (s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active,
+      );
+      if (!isPrinterConfigured(setting)) {
         return { success: false, error: 'No customer receipt printer configured' };
       }
-      const printResult = await printPngToPrinter(png, setting.printer_ip, setting.printer_port);
-      return printResult.success ? { success: true } : { success: false, error: printResult.error || 'Failed to send receipt to printer' };
+      const printResult = await printPngUsingSetting(png, setting);
+      return printResult.success
+        ? { success: true }
+        : { success: false, error: printResult.error || 'Failed to send receipt to printer' };
     } catch (err: any) {
       return { success: false, error: err?.message || 'Unknown error' };
     }
   });
+
   ipcMain.handle('print:getPrinters', async () => {
     try {
       return await getAvailablePrinters();
@@ -192,53 +298,72 @@ export function registerPrintHandlers() {
     }
   });
 
-  ipcMain.handle('export-pdf', async (_event, exportData: {
-    type: 'daily' | 'weekly' | 'monthly' | 'yearly';
-    date: string;
-    data: { summary: any; items: any[]; employees: any[]; orders: any[]; drawer?: any };
-  }) => {
-    let pdfWin: BrowserWindow | null = null;
-    try {
-      const html = generateReportTemplate(exportData);
-      pdfWin = new BrowserWindow({
-        show: false,
-        width: 1200,
-        height: 1600,
-        webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: false },
-      });
-      const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
-      const loadPromise = new Promise<void>((resolve, reject) => {
-        const timeout = setTimeout(() => reject(new Error('Page load timeout after 120 seconds')), 120000);
-        pdfWin!.webContents.once('dom-ready', () => { clearTimeout(timeout); resolve(); });
-        pdfWin!.webContents.once('did-fail-load', (_, __, errorDescription) => { clearTimeout(timeout); reject(new Error(`Page load failed: ${errorDescription}`)); });
-      });
-      pdfWin.loadURL(dataUrl);
-      await loadPromise;
-      await pdfWin.webContents.executeJavaScript(`
+  ipcMain.handle(
+    'export-pdf',
+    async (
+      _event,
+      exportData: {
+        type: 'daily' | 'weekly' | 'monthly' | 'yearly';
+        date: string;
+        data: { summary: any; items: any[]; employees: any[]; orders: any[]; drawer?: any };
+      },
+    ) => {
+      let pdfWin: BrowserWindow | null = null;
+      try {
+        const html = generateReportTemplate(exportData);
+        pdfWin = new BrowserWindow({
+          show: false,
+          width: 1200,
+          height: 1600,
+          webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: false },
+        });
+        const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+        const loadPromise = new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error('Page load timeout after 120 seconds')),
+            120000,
+          );
+          pdfWin!.webContents.once('dom-ready', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          pdfWin!.webContents.once('did-fail-load', (_, __, errorDescription) => {
+            clearTimeout(timeout);
+            reject(new Error(`Page load failed: ${errorDescription}`));
+          });
+        });
+        pdfWin.loadURL(dataUrl);
+        await loadPromise;
+        await pdfWin.webContents.executeJavaScript(`
         new Promise((resolve) => {
           if (document.fonts?.ready) document.fonts.ready.then(resolve).catch(() => setTimeout(resolve, 1000));
           else setTimeout(resolve, 1000);
         })
       `);
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      const pdfBuffer = await pdfWin.webContents.printToPDF({
-        pageSize: 'A4',
-        margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
-        printBackground: true,
-        preferCSSPageSize: false,
-      });
-      if (!pdfBuffer || pdfBuffer.length === 0) throw new Error('PDF generation returned empty buffer');
-      const downloadsPath = app.getPath('downloads');
-      const baseFileName = `sufra-pos-${exportData.type}-${exportData.date}.pdf`;
-      const { filePath, fileName } = writePdfBufferToDownloads(downloadsPath, baseFileName, pdfBuffer);
-      return { success: true, filePath, fileName };
-    } catch (error: any) {
-      return { success: false, error: error.message || 'Unknown error during PDF export' };
-    } finally {
-      if (pdfWin) {
-        try { pdfWin.close(); } catch { /* ignore */ }
-        pdfWin = null;
+        await new Promise((resolve) => setTimeout(resolve, 500));
+        const pdfBuffer = await pdfWin.webContents.printToPDF({
+          pageSize: 'A4',
+          margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+          printBackground: true,
+          preferCSSPageSize: false,
+        });
+        if (!pdfBuffer || pdfBuffer.length === 0) throw new Error('PDF generation returned empty buffer');
+        const downloadsPath = app.getPath('downloads');
+        const baseFileName = `sufra-pos-${exportData.type}-${exportData.date}.pdf`;
+        const { filePath, fileName } = writePdfBufferToDownloads(downloadsPath, baseFileName, pdfBuffer);
+        return { success: true, filePath, fileName };
+      } catch (error: any) {
+        return { success: false, error: error.message || 'Unknown error during PDF export' };
+      } finally {
+        if (pdfWin) {
+          try {
+            pdfWin.close();
+          } catch {
+            /* ignore */
+          }
+          pdfWin = null;
+        }
       }
-    }
-  });
+    },
+  );
 }

@@ -2,6 +2,14 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.20] — 2026-08-05
+
+### Changed
+
+- Professional redesign of kitchen tickets and customer receipts for thermal printers (58mm / 80mm)
+- Kitchen ticket: no logo, no guests count, clearer order badge and items table
+- Shared print tokens/primitives for consistent RTL layout, wrapping, and ESC/POS raster output
+
 ## [0.1.19] — 2026-08-03
 
 ### Added

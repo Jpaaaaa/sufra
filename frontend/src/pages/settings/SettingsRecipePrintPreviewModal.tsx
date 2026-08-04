@@ -5,6 +5,7 @@ type Props = {
   onClose: () => void;
   imageSrc: string | null;
   loading: boolean;
+  title?: string;
   onPrint?: () => void;
   printing?: boolean;
 };
@@ -14,6 +15,7 @@ export default function SettingsRecipePrintPreviewModal({
   onClose,
   imageSrc,
   loading,
+  title = 'معاينة الطباعة',
   onPrint,
   printing = false,
 }: Props) {
@@ -33,7 +35,7 @@ export default function SettingsRecipePrintPreviewModal({
       className="fixed inset-0 z-[100] flex items-center justify-center bg-black/50 p-4"
       role="dialog"
       aria-modal="true"
-      aria-label="معاينة طباعة الوصفة"
+      aria-label={title}
       onClick={onClose}
     >
       <div
@@ -41,7 +43,7 @@ export default function SettingsRecipePrintPreviewModal({
         onClick={(e) => e.stopPropagation()}
       >
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-          <span className="text-[15px] font-medium text-obsidian">معاينة الطباعة</span>
+          <span className="text-[15px] font-medium text-obsidian">{title}</span>
           <div className="flex flex-wrap items-center gap-2">
             {onPrint && !loading && imageSrc ? (
               <button
@@ -69,7 +71,7 @@ export default function SettingsRecipePrintPreviewModal({
         ) : imageSrc ? (
           <img
             src={imageSrc}
-            alt="معاينة وصفة حرارية"
+            alt={title}
             className="mx-auto max-h-[min(70vh,800px)] w-auto max-w-full border border-black/10 bg-white"
           />
         ) : (

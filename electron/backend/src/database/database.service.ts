@@ -1050,6 +1050,8 @@ export class DatabaseService {
         kitchen_id INTEGER,
         printer_ip TEXT,
         printer_port INTEGER DEFAULT 9100,
+        printer_name TEXT,
+        connection_type TEXT NOT NULL DEFAULT 'network',
         printer_type TEXT NOT NULL CHECK(printer_type IN ('kitchen', 'customer')),
         is_active INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1082,25 +1084,32 @@ export class DatabaseService {
       }
     }
 
-    // Migration: Migrate printer_name to printer_ip if printer_name exists but printer_ip is null
-    // This allows existing installations to migrate their data
-    try {
-      const migrateCheck = this.getSync(
-        "SELECT COUNT(*) as cnt FROM pragma_table_info('printer_settings') WHERE name='printer_name'",
-      );
-      if (migrateCheck && migrateCheck.cnt > 0) {
-        // Check if there are rows with printer_name but no printer_ip
-        const rowsToMigrate = this.allSync(
-          "SELECT id, printer_name FROM printer_settings WHERE printer_ip IS NULL AND printer_name IS NOT NULL AND printer_name != ''",
+    // Migration: connection_type (network | windows_spooler)
+    const connectionTypeCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('printer_settings') WHERE name='connection_type'",
+    );
+    if (connectionTypeCheck && connectionTypeCheck.cnt === 0) {
+      try {
+        this.runSync(
+          "ALTER TABLE printer_settings ADD COLUMN connection_type TEXT NOT NULL DEFAULT 'network'",
         );
-        if (rowsToMigrate && rowsToMigrate.length > 0) {
-          console.log(`[MIGRATION] Found ${rowsToMigrate.length} printer settings to migrate from printer_name to printer_ip`);
-          // Note: We can't automatically convert printer names to IPs, so we'll leave them null
-          // Users will need to reconfigure their printers with IP addresses
-        }
+        console.log('[DB] ✅ Added connection_type column to printer_settings table');
+      } catch (error) {
+        console.error('[DB] Failed to add connection_type to printer_settings', error);
       }
-    } catch (error) {
-      console.error('Failed to check printer_name migration', error);
+    }
+
+    // Migration: printer_name (Windows Spooler queue name)
+    const printerNameCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('printer_settings') WHERE name='printer_name'",
+    );
+    if (printerNameCheck && printerNameCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE printer_settings ADD COLUMN printer_name TEXT');
+        console.log('[DB] ✅ Added printer_name column to printer_settings table');
+      } catch (error) {
+        console.error('[DB] Failed to add printer_name to printer_settings', error);
+      }
     }
 
     // Finance tables

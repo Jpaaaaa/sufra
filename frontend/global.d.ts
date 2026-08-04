@@ -65,14 +65,39 @@ declare global {
         getSettings: () => Promise<Array<{
           id: number;
           kitchen_id: number | null;
+          connection_type: 'network' | 'windows_spooler';
           printer_ip: string | null;
           printer_port: number;
+          printer_name: string | null;
           printer_type: 'kitchen' | 'customer';
           is_active: boolean;
         }>>;
-        saveSettings: (settings: { kitchen_id: number | null; printer_ip: string | null; printer_port?: number }) => Promise<any>;
-        test: (settings: { printer_ip: string; printer_port?: number }) => Promise<{ success: boolean; error?: string; message?: string }>;
-        available: () => Promise<Array<{ name: string; isDefault: boolean }>>;
+        saveSettings: (settings: {
+          kitchen_id: number | null;
+          connection_type?: 'network' | 'windows_spooler';
+          printer_ip?: string | null;
+          printer_port?: number;
+          printer_name?: string | null;
+        }) => Promise<any>;
+        test: (settings: {
+          connection_type?: 'network' | 'windows_spooler';
+          printer_ip?: string | null;
+          printer_port?: number;
+          printer_name?: string | null;
+          kitchen_id?: number | null;
+          kind?: 'customer' | 'kitchen';
+          kitchen_name?: string;
+          use_saved?: boolean;
+        }) => Promise<{ success: boolean; error?: string; message?: string }>;
+        preview: (settings?: {
+          kind?: 'customer' | 'kitchen';
+          kitchen_id?: number | null;
+          kitchen_name?: string;
+        }) => Promise<
+          | { success: true; imageBase64: string; kind: 'customer' | 'kitchen' }
+          | { success: false; error: string }
+        >;
+        available: (forceRefresh?: boolean) => Promise<Array<{ name: string; isDefault: boolean; status?: string }>>;
         scan: () => Promise<Array<{ ip: string; port: number }>>;
       };
       recipePrint?: {

@@ -4,7 +4,8 @@
 import { printersGetAllSettings } from '../../init/backend-loader';
 import {
   getAvailablePrinters,
-  printPngToPrinter,
+  isPrinterConfigured,
+  printPngUsingSetting,
   scanForPrinters,
 } from '../../print/printer';
 import { getIpcHandler } from '../ipc-handlers';
@@ -40,22 +41,18 @@ export function registerPrintRoutes(ctx: FastifyRouteContext): void {
       const png = await renderOrderToPng(orderData as Parameters<typeof renderOrderToPng>[0]);
       const settings = await printersGetAllSettings();
       const setting = settings.find(
-        (s: { kitchen_id: number | null; printer_type: string; is_active: boolean; printer_ip?: string; printer_port?: number }) =>
+        (s: any) =>
           s.kitchen_id === (kitchenId ?? null) &&
           s.printer_type === 'kitchen' &&
           s.is_active,
       );
-      if (!setting?.printer_ip) {
+      if (!isPrinterConfigured(setting)) {
         return reply.status(404).send({
           success: false,
           error: 'No printer configured for this kitchen',
         });
       }
-      const printResult = await printPngToPrinter(
-        png,
-        setting.printer_ip,
-        setting.printer_port,
-      );
+      const printResult = await printPngUsingSetting(png, setting);
       if (!printResult.success) {
         return reply.status(500).send({
           success: false,
@@ -95,22 +92,18 @@ export function registerPrintRoutes(ctx: FastifyRouteContext): void {
         );
         const settings = await printersGetAllSettings();
         const setting = settings.find(
-          (s: { kitchen_id: number | null; printer_type: string; is_active: boolean; printer_ip?: string; printer_port?: number }) =>
+          (s: any) =>
             s.kitchen_id === null &&
             s.printer_type === 'customer' &&
             s.is_active,
         );
-        if (!setting?.printer_ip) {
+        if (!isPrinterConfigured(setting)) {
           return reply.status(404).send({
             success: false,
             error: 'No customer receipt printer configured',
           });
         }
-        const printResult = await printPngToPrinter(
-          png,
-          setting.printer_ip,
-          setting.printer_port,
-        );
+        const printResult = await printPngUsingSetting(png, setting);
         if (!printResult.success) {
           return reply.status(500).send({
             success: false,
