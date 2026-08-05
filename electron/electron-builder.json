@@ -17,7 +17,10 @@
     "dist/**/*",
     "!dist/backend/**",
     "package.json",
-    "build/**/*"
+    "build/**/*",
+    "!release/**",
+    "!**/node_modules/sufra-lite-pos/**",
+    "!**/node_modules/sufra-lite-electron/**"
   ],
   "extraResources": [
     {
@@ -49,7 +52,17 @@
         "!**/docs/**",
         "!**/*.ts",
         "!**/*.map",
-        "!**/src/**"
+        "!**/src/**",
+        "!**/build/Release/*.pdb",
+        "!**/build/Release/*.lib",
+        "!**/build/Release/*.exp",
+        "!**/build/Release/*.iobj",
+        "!**/build/Release/*.ipdb",
+        "!**/build/Release/obj/**",
+        "!**/build/*.vcxproj*",
+        "!**/build/*.sln",
+        "!**/build/config.gypi",
+        "!**/.forge-meta"
       ]
     },
     {

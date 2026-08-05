@@ -1,8 +1,9 @@
 /**
- * Validate electron deps before dist. Cleans the accidental self-reference loop:
- *   "sufra-lite-electron": "file:"  → infinite node_modules nesting on Windows.
+ * Validate electron deps before dist. Cleans accidental file: dependency loops:
+ *   - "sufra-lite-electron": "file:"  → infinite node_modules nesting
+ *   - "sufra-lite-pos": "file:.."     → packs entire monorepo (+ release/*.exe) into installer
  *
- * Does NOT run npm install during dist — that lifecycle step re-creates the loop.
+ * Does NOT run npm install during dist — that lifecycle step re-creates loops.
  */
 const fs = require('fs');
 const path = require('path');
@@ -10,16 +11,22 @@ const path = require('path');
 const root = path.join(__dirname, '..');
 const pkgPath = path.join(root, 'package.json');
 const lockPath = path.join(root, 'package-lock.json');
-const nested = path.join(root, 'node_modules', 'sufra-lite-electron');
-const SELF_DEP = 'sufra-lite-electron';
+
+const SCRUB_DEPS = ['sufra-lite-electron', 'sufra-lite-pos'];
 
 function scrubPackageJson() {
   const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
-  if (!pkg.dependencies?.[SELF_DEP]) return false;
-  delete pkg.dependencies[SELF_DEP];
-  fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
-  console.log(`[DEPS] Removed accidental self-dependency: ${SELF_DEP}`);
-  return true;
+  let changed = false;
+  for (const name of SCRUB_DEPS) {
+    if (!pkg.dependencies?.[name]) continue;
+    delete pkg.dependencies[name];
+    console.log(`[DEPS] Removed accidental dependency: ${name}`);
+    changed = true;
+  }
+  if (changed) {
+    fs.writeFileSync(pkgPath, `${JSON.stringify(pkg, null, 2)}\n`);
+  }
+  return changed;
 }
 
 function scrubLockfile() {
@@ -27,32 +34,39 @@ function scrubLockfile() {
   const lock = JSON.parse(fs.readFileSync(lockPath, 'utf8'));
   let changed = false;
 
-  if (lock.packages?.['']?.dependencies?.[SELF_DEP]) {
-    delete lock.packages[''].dependencies[SELF_DEP];
-    changed = true;
-  }
-  if (lock.packages?.[`node_modules/${SELF_DEP}`]) {
-    delete lock.packages[`node_modules/${SELF_DEP}`];
-    changed = true;
+  for (const name of SCRUB_DEPS) {
+    if (lock.packages?.['']?.dependencies?.[name]) {
+      delete lock.packages[''].dependencies[name];
+      changed = true;
+    }
+    if (lock.packages?.[`node_modules/${name}`]) {
+      delete lock.packages[`node_modules/${name}`];
+      changed = true;
+    }
   }
 
   if (changed) {
     fs.writeFileSync(lockPath, `${JSON.stringify(lock, null, 2)}\n`);
-    console.log('[DEPS] Removed self-dependency from package-lock.json');
+    console.log('[DEPS] Removed scrubbed deps from package-lock.json');
   }
   return changed;
 }
 
-function removeNestedFolder() {
-  if (!fs.existsSync(nested)) return false;
-  fs.rmSync(nested, { recursive: true, force: true });
-  console.log(`[DEPS] Removed nested node_modules/${SELF_DEP}`);
-  return true;
+function removeNestedFolders() {
+  let changed = false;
+  for (const name of SCRUB_DEPS) {
+    const nested = path.join(root, 'node_modules', name);
+    if (!fs.existsSync(nested)) continue;
+    fs.rmSync(nested, { recursive: true, force: true });
+    console.log(`[DEPS] Removed nested node_modules/${name}`);
+    changed = true;
+  }
+  return changed;
 }
 
 scrubPackageJson();
 scrubLockfile();
-removeNestedFolder();
+removeNestedFolders();
 
 const required = ['electron', 'electron-builder', 'canvas'];
 const missing = required.filter((name) => !fs.existsSync(path.join(root, 'node_modules', name)));
@@ -63,12 +77,15 @@ if (missing.length > 0) {
   process.exit(1);
 }
 
-if (fs.existsSync(nested)) {
-  console.error(
-    `[DEPS] "${SELF_DEP}" self-dependency loop still present. ` +
-      'Delete electron/node_modules/sufra-lite-electron and remove "sufra-lite-electron": "file:" from package.json.',
-  );
-  process.exit(1);
+for (const name of SCRUB_DEPS) {
+  const nested = path.join(root, 'node_modules', name);
+  if (fs.existsSync(nested)) {
+    console.error(
+      `[DEPS] "${name}" file: dependency still present under node_modules. ` +
+        `Delete electron/node_modules/${name} and remove it from package.json.`,
+    );
+    process.exit(1);
+  }
 }
 
 console.log('[DEPS] ✓ electron dependencies OK (skipped npm install during dist)');
