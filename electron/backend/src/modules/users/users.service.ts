@@ -1,40 +1,44 @@
 import { NotFoundException, ConflictException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
-import { User, CreateUserDto, UpdateUserDto } from './user.entity';
+import { User, UserPublic, CreateUserDto, UpdateUserDto } from './user.entity';
 import * as bcrypt from 'bcrypt';
+
+const USER_PUBLIC_COLUMNS =
+  'id, username, password_plain, role, require_captain_approval, customer_free_order, created_at, updated_at';
+
+function mapPublicRow(row: any): UserPublic {
+  return {
+    ...row,
+    password_plain: row.password_plain ?? null,
+    require_captain_approval: row.role === 'customer' ? Boolean(row.require_captain_approval) : false,
+    customer_free_order: row.role === 'customer' ? Boolean(row.customer_free_order) : false,
+  } as UserPublic;
+}
 
 class UsersService {
   constructor(private readonly db: DatabaseService) {}
 
-  async findAll(): Promise<Omit<User, 'password_hash'>[]> {
+  async findAll(): Promise<UserPublic[]> {
     const rows = await this.db.all(
-      'SELECT id, username, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users ORDER BY created_at DESC',
+      `SELECT ${USER_PUBLIC_COLUMNS} FROM users ORDER BY created_at DESC`,
     );
-    return rows.map((row: any) => ({
-      ...row,
-      require_captain_approval: row.role === 'customer' ? Boolean(row.require_captain_approval) : false,
-      customer_free_order: row.role === 'customer' ? Boolean(row.customer_free_order) : false,
-    })) as Omit<User, 'password_hash'>[];
+    return rows.map(mapPublicRow);
   }
 
-  async findOne(id: number): Promise<Omit<User, 'password_hash'>> {
+  async findOne(id: number): Promise<UserPublic> {
     const row = await this.db.get(
-      'SELECT id, username, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users WHERE id = ?',
+      `SELECT ${USER_PUBLIC_COLUMNS} FROM users WHERE id = ?`,
       [id],
     );
     if (!row) {
       throw new NotFoundException('User not found');
     }
-    return {
-      ...row,
-      require_captain_approval: row.role === 'customer' ? Boolean(row.require_captain_approval) : false,
-      customer_free_order: row.role === 'customer' ? Boolean(row.customer_free_order) : false,
-    } as Omit<User, 'password_hash'>;
+    return mapPublicRow(row);
   }
 
   async findByUsername(username: string): Promise<User | null> {
     const row = await this.db.get(
-      'SELECT id, username, password_hash, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users WHERE username = ?',
+      'SELECT id, username, password_hash, password_plain, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users WHERE username = ?',
       [username],
     );
     if (!row) {
@@ -42,42 +46,40 @@ class UsersService {
     }
     return {
       ...row,
+      password_plain: row.password_plain ?? null,
       require_captain_approval: Boolean(row.require_captain_approval),
       customer_free_order: Boolean(row.customer_free_order),
     } as User;
   }
 
-  async create(dto: CreateUserDto): Promise<Omit<User, 'password_hash'>> {
+  async create(dto: CreateUserDto): Promise<UserPublic> {
     const existing = await this.findByUsername(dto.username);
     if (existing) {
       throw new ConflictException('Username already exists');
     }
 
     const password_hash = await bcrypt.hash(dto.password, 10);
+    const password_plain = dto.password;
 
     const isCustomer = dto.role === 'customer';
     const require_captain_approval = isCustomer && dto.customer_free_order ? 0 : (isCustomer && dto.require_captain_approval ? 1 : 0);
     const customer_free_order = isCustomer && dto.customer_free_order ? 1 : 0;
 
     await this.db.run(
-      'INSERT INTO users (username, password_hash, role, require_captain_approval, customer_free_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
-      [dto.username, password_hash, dto.role, require_captain_approval, customer_free_order],
+      'INSERT INTO users (username, password_hash, password_plain, role, require_captain_approval, customer_free_order, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+      [dto.username, password_hash, password_plain, dto.role, require_captain_approval, customer_free_order],
     );
     const row = await this.db.get(
-      'SELECT id, username, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users WHERE username = ? ORDER BY id DESC LIMIT 1',
+      `SELECT ${USER_PUBLIC_COLUMNS} FROM users WHERE username = ? ORDER BY id DESC LIMIT 1`,
       [dto.username],
     );
     if (!row) {
       throw new Error('Failed to retrieve created user');
     }
-    return {
-      ...row,
-      require_captain_approval: Boolean(row.require_captain_approval),
-      customer_free_order: Boolean(row.customer_free_order),
-    } as Omit<User, 'password_hash'>;
+    return mapPublicRow(row);
   }
 
-  async update(id: number, dto: UpdateUserDto): Promise<Omit<User, 'password_hash'>> {
+  async update(id: number, dto: UpdateUserDto): Promise<UserPublic> {
     const existing = await this.findOne(id);
 
     if (dto.username && dto.username !== existing.username) {
@@ -99,6 +101,8 @@ class UsersService {
       const password_hash = await bcrypt.hash(dto.password, 10);
       updates.push('password_hash = ?');
       values.push(password_hash);
+      updates.push('password_plain = ?');
+      values.push(dto.password);
     }
 
     if (dto.role) {
@@ -140,17 +144,13 @@ class UsersService {
 
     await this.db.run(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`, values);
     const row = await this.db.get(
-      'SELECT id, username, role, require_captain_approval, customer_free_order, created_at, updated_at FROM users WHERE id = ?',
+      `SELECT ${USER_PUBLIC_COLUMNS} FROM users WHERE id = ?`,
       [id],
     );
     if (!row) {
       throw new NotFoundException('User not found after update');
     }
-    return {
-      ...row,
-      require_captain_approval: Boolean(row.require_captain_approval),
-      customer_free_order: Boolean(row.customer_free_order),
-    } as Omit<User, 'password_hash'>;
+    return mapPublicRow(row);
   }
 
   async remove(id: number): Promise<void> {

@@ -2,6 +2,16 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.22] — 2026-08-05
+
+### Fixed
+
+- Dine-in hall view crash on older databases: `order_items.options_json` is preserved across schema rebuilds and re-added if missing
+
+### Added
+
+- Admin users page: view and change each employee login code (including admin), with show/hide controls
+
 ## [0.1.21] — 2026-08-05
 
 ### Fixed
