@@ -1,8 +1,8 @@
-; sufra pos installer — final upgrade path
+; sufra pos installer — safe upgrade path (0.1.13 Lite → current)
 ; 1) Force-kill running app (no Retry dialog)
-; 2) Delete old install files + clear Uninstall registry
-;    so electron-builder never runs the broken old uninstaller
-; 3) Recreate desktop / Start Menu shortcuts with embedded icon
+; 2) Skip broken old uninstaller via registry only — NEVER delete install
+;    files before the new copy succeeds (prevents "app vanished" on abort)
+; 3) After successful install: remove legacy Lite folders + recreate shortcuts
 
 !ifndef nsProcess::FindProcess
   !include "nsProcess.nsh"
@@ -62,42 +62,24 @@
   Pop $0
 !macroend
 
+; Remove dir only when it is not the active install target
+!macro SufraRemoveDirIfNotInstDir _DIR
+  !define SufraRmUid ${__COUNTER__}
+  StrCpy $R8 "${_DIR}"
+  StrCmp $R8 "" SufraSkipRm${SufraRmUid}
+  StrCmp $R8 $INSTDIR SufraSkipRm${SufraRmUid}
+  !insertmacro SufraForceRemoveDir "$R8"
+  SufraSkipRm${SufraRmUid}:
+  !undef SufraRmUid
+!macroend
+
 ; ---------------------------------------------------------------------------
-; Purge previous install so uninstallOldVersion is a no-op
-; (fixes: cannot be closed / Failed to uninstall old application files: 2)
+; Skip broken old uninstaller WITHOUT deleting files.
+; Clearing Uninstall keys makes electron-builder skip uninstallOldVersion.
+; Install dirs stay until customInstall (after files are on disk).
 ; ---------------------------------------------------------------------------
-!macro SufraPurgeOldInstall
-  DetailPrint "Preparing clean upgrade (removing previous files)..."
-  !insertmacro SufraForceKillApps
-  !insertmacro SufraWaitUntilClosed
-
-  ; Paths recorded by previous installs
-  StrCpy $R6 ""
-  ReadRegStr $R6 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${If} $R6 != ""
-    !insertmacro SufraForceRemoveDir "$R6"
-  ${EndIf}
-
-  StrCpy $R6 ""
-  ReadRegStr $R6 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
-  ${If} $R6 != ""
-    !insertmacro SufraForceRemoveDir "$R6"
-  ${EndIf}
-
-  ; Current target dir (already chosen by multiUser init)
-  ${If} $INSTDIR != ""
-    !insertmacro SufraForceRemoveDir "$INSTDIR"
-  ${EndIf}
-
-  ; Common fallbacks (legacy names / layouts)
-  !insertmacro SufraForceRemoveDir "$PROGRAMFILES64\sufra pos"
-  !insertmacro SufraForceRemoveDir "$PROGRAMFILES\sufra pos"
-  !insertmacro SufraForceRemoveDir "$PROGRAMFILES64\Sufra Lite POS"
-  !insertmacro SufraForceRemoveDir "$PROGRAMFILES\Sufra Lite POS"
-  !insertmacro SufraForceRemoveDir "$LOCALAPPDATA\Programs\sufra pos"
-  !insertmacro SufraForceRemoveDir "$LOCALAPPDATA\Programs\Sufra Lite POS"
-
-  ; Clear Uninstall registry so electron-builder SKIPS the broken old uninstaller
+!macro SufraSkipBrokenUninstaller
+  DetailPrint "Skipping legacy uninstaller (keeping existing files until success)..."
   SetRegView 64
   DeleteRegKey HKLM "${UNINSTALL_REGISTRY_KEY}"
   DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY}"
@@ -113,10 +95,35 @@
     DeleteRegKey HKCU "${UNINSTALL_REGISTRY_KEY_2}"
   !endif
   SetRegView 64
+  ClearErrors
+!macroend
+
+; ---------------------------------------------------------------------------
+; After NEW files are installed — clean legacy Lite / old folders only
+; ---------------------------------------------------------------------------
+!macro SufraCleanupLegacyAfterSuccess
+  DetailPrint "Cleaning legacy install folders (post-success)..."
+
+  ; Legacy product name folders (0.1.13 era) — never $INSTDIR
+  !insertmacro SufraRemoveDirIfNotInstDir "$PROGRAMFILES64\Sufra Lite POS"
+  !insertmacro SufraRemoveDirIfNotInstDir "$PROGRAMFILES\Sufra Lite POS"
+  !insertmacro SufraRemoveDirIfNotInstDir "$LOCALAPPDATA\Programs\Sufra Lite POS"
+  !insertmacro SufraRemoveDirIfNotInstDir "$LOCALAPPDATA\Sufra Lite POS"
+
+  ; If registry still points at a different previous location, remove it
+  StrCpy $R6 ""
+  ReadRegStr $R6 HKLM "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $R6 != ""
+    !insertmacro SufraRemoveDirIfNotInstDir "$R6"
+  ${EndIf}
+  StrCpy $R6 ""
+  ReadRegStr $R6 HKCU "${INSTALL_REGISTRY_KEY}" InstallLocation
+  ${If} $R6 != ""
+    !insertmacro SufraRemoveDirIfNotInstDir "$R6"
+  ${EndIf}
 
   ClearErrors
-  Sleep 800
-  DetailPrint "Previous installation cleaned."
+  DetailPrint "Legacy cleanup done."
 !macroend
 
 ; Override app-running check — never show Retry
@@ -129,15 +136,18 @@
   !insertmacro SufraForceKillApps
 !macroend
 
+; SAFE init: kill app + skip old uninstaller. Do NOT delete install dirs here.
 !macro customInit
-  !insertmacro SufraPurgeOldInstall
+  !insertmacro SufraForceKillApps
+  !insertmacro SufraWaitUntilClosed
+  !insertmacro SufraSkipBrokenUninstaller
 !macroend
 
 ; If old uninstaller still ran somehow — never abort the new install
 !macro customUnInstallCheck
   ClearErrors
   StrCpy $R0 0
-  DetailPrint "Uninstall check OK (manual purge)."
+  DetailPrint "Uninstall check OK (registry skip)."
 !macroend
 
 !macro customUnInstallCheckCurrentUser
@@ -145,9 +155,10 @@
   StrCpy $R0 0
 !macroend
 
-; After files land — shortcuts with exe icon
+; After files land — legacy cleanup + shortcuts with exe icon
 !macro customInstall
   !insertmacro SufraForceKillApps
+  !insertmacro SufraCleanupLegacyAfterSuccess
 
   SetShellVarContext all
   Delete "$DESKTOP\sufra pos.lnk"
@@ -187,7 +198,7 @@
 !macro customWelcomePage
   !define MUI_WELCOMEPAGE_TITLE "مرحباً بك في sufra pos"
   !define MUI_WELCOMEPAGE_TITLE_3LINES
-  !define MUI_WELCOMEPAGE_TEXT "نظام نقاط البيع الاحترافي للمطاعم والكافيهات.$\r$\n$\r$\nسيغلق المثبت أي نسخة سابقة ويزيل ملفاتها تلقائياً ثم يثبّت التحديث.$\r$\n$\r$\nاضغط «التالي» للمتابعة."
+  !define MUI_WELCOMEPAGE_TEXT "نظام نقاط البيع الاحترافي للمطاعم والكافيهات.$\r$\n$\r$\nسيغلق المثبت النسخة السابقة ثم يثبّت التحديث بأمان دون حذف التطبيق قبل اكتمال التثبيت.$\r$\n$\r$\nاضغط «التالي» للمتابعة."
   !insertmacro MUI_PAGE_WELCOME
 !macroend
 

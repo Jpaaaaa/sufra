@@ -2,6 +2,13 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.21] — 2026-08-05
+
+### Fixed
+
+- Safe auto-upgrade from Sufra Lite **0.1.13** to current builds: installer no longer deletes the old app before the new copy finishes (prevents “app uninstalled” if setup is cancelled or fails after UAC)
+- Legacy “Sufra Lite POS” folders are removed only after a successful install
+
 ## [0.1.20] — 2026-08-05
 
 ### Changed

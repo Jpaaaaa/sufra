@@ -23,6 +23,10 @@ Publish `latest.yml` + installer to:
 
 Must match `electron/updater/resolve-update-feed-url.ts` and `electron/electron-builder.json`.
 
+### Upgrading from 0.1.13 (Sufra Lite)
+
+Use **0.1.21+** as the Live feed target. Those builds keep the previous install until the new files are copied, then clean legacy Lite folders. Do not rely on 0.1.19/0.1.20 for the first auto-update jump from 0.1.13.
+
 ## Post-release
 
 - Verify hub checks for updates (Settings → License & updates)
