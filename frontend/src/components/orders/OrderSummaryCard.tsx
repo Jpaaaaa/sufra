@@ -93,10 +93,10 @@ export const OrderSummaryCard = memo(function OrderSummaryCard({
       {showItemList && (
         <div className="mb-3 rounded-xl bg-white/60 p-3 md:mb-0 md:p-0.5 md:rounded-md xl:mb-3 xl:p-3 xl:rounded-xl">
           <div className="text-[16px] font-bold text-obsidian mb-1.5 pb-1.5 border-b border-black/10 md:text-[11px] md:mb-0 md:pb-0 xl:text-[16px] xl:mb-1.5 xl:pb-1.5">
-            {t('orders.summaryLineItems', { count: order.items.length })}
+            {t('orders.summaryLineItems', { count: order.items?.length ?? 0 })}
           </div>
           <div className="space-y-1.5 md:space-y-0 md:max-h-[44px] md:overflow-y-auto xl:space-y-1.5 xl:max-h-none xl:overflow-visible">
-            {order.items.map((item: any) => {
+            {(order.items ?? []).map((item: any) => {
               const serviceType = item.service_type || 'dine-in';
               const serviceLabel =
                 serviceType === 'pickup' ? t('orders.servicePickup') : t('orders.serviceDineIn');

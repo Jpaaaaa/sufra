@@ -2,6 +2,13 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.23] — 2026-08-05
+
+### Fixed
+
+- Tablet/LAN clients: opening a table or adding an item no longer crashes with a white screen (`crypto.randomUUID` unavailable on plain HTTP)
+- Notification panel: restored hall order checks (correct `/orders/dine-in/hall/:id` path; removed 404 spam)
+
 ## [0.1.22] — 2026-08-05
 
 ### Fixed

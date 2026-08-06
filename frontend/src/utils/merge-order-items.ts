@@ -41,7 +41,7 @@ export function mergeOrderItemsAcrossOrders(
   const map = new Map<string, MergedOrderLine>();
 
   for (const order of orders) {
-    for (const item of order.items) {
+    for (const item of order.items ?? []) {
       const key = buildMergeKey(item);
       const existing = map.get(key);
       if (existing) {

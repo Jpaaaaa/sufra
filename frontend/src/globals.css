@@ -339,7 +339,7 @@
   }
 }
 
-/* Tablet PORTRAIT: VERTICAL layout - menu on top, cart below (768px–1279px, height > width) */
+/* Tablet PORTRAIT: VERTICAL layout - menu on top, cart below (768pxâ€“1279px, height > width) */
 @media (min-width: 768px) and (max-width: 1279px) and (max-aspect-ratio: 1/1) {
   [data-order-modal] {
     height: 85svh !important;
@@ -396,7 +396,7 @@
   [data-order-modal] input, [data-order-modal] textarea {
     padding: 4px 8px !important;
   }
-}/* Tablet LANDSCAPE: HORIZONTAL layout - menu left, cart right (768px–1279px, width >= height) */
+}/* Tablet LANDSCAPE: HORIZONTAL layout - menu left, cart right (768pxâ€“1279px, width >= height) */
 @media (min-width: 768px) and (max-width: 1279px) and (min-aspect-ratio: 1/1) {
   [data-order-modal] {
     height: 85svh !important;
@@ -548,7 +548,7 @@ html.tablet-viewport [data-order-modal] textarea {
 /* @media (min-width: 768px) and (max-width: 1024px) {
   html { zoom: 0.6; }
 } */
-/* Home dashboard ad slider � transitions disabled in Tailwind config */
+/* Home dashboard ad slider — transitions disabled in Tailwind config */
 .home-ad-slide {
   opacity: 0;
   pointer-events: none;

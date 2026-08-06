@@ -3,14 +3,13 @@
 import { memo, useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Megaphone } from 'lucide-react';
 import type { HomeAd } from '../../types/homeAds';
 import { useHomeAds } from '../../hooks/useHomeAds';
-import { APP_BRAND_NAME } from '../../lib/brand';
 import { homeUi } from './home-ui';
 
 const AUTOPLAY_MS = 6000;
-const SUFRA_LOGO = './logo/logo.png';
+const AMAAN_LOGO = './logo/amaan.png';
 
 async function openAdLink(ad: HomeAd, navigate: ReturnType<typeof useNavigate>) {
   if (ad.linkTarget === 'internal') {
@@ -38,6 +37,39 @@ async function openAdLink(ad: HomeAd, navigate: ReturnType<typeof useNavigate>) 
   } catch {
     // ignore
   }
+}
+
+function BrandPanel() {
+  const { t } = useTranslation();
+
+  return (
+    <aside className="flex w-full shrink-0 flex-col justify-center gap-3 px-4 py-3 sm:w-[200px] sm:px-3 md:w-[230px] lg:w-[260px] lg:pe-2 lg:ps-4">
+      <div className="flex flex-col items-center gap-2 text-center">
+        <img
+          src={AMAAN_LOGO}
+          alt={t('home.adsBrandName')}
+          className="h-16 w-auto flex-shrink-0 object-contain sm:h-[4.5rem] md:h-20"
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+        <p className="text-[14px] font-semibold tracking-tight text-obsidian sm:text-[15px]">
+          {t('home.adsBrandName')}
+        </p>
+        <p className="max-w-[15rem] text-[12px] font-medium leading-relaxed text-obsidian/55 sm:text-[13px]">
+          {t('home.adsBrandTagline')}
+        </p>
+      </div>
+
+      <div className="min-w-0 border-t border-obsidian/10 pt-3 text-center">
+        <h2 className={`${homeUi.sectionTitle} inline-flex items-center justify-center gap-2`}>
+          <Megaphone className="h-4 w-4 flex-shrink-0 text-[#0066FF]" aria-hidden />
+          <span>{t('home.adsSectionTitle')}</span>
+        </h2>
+        <p className="mt-0.5 text-[12px] font-medium text-obsidian/60">{t('home.adsSectionLede')}</p>
+      </div>
+    </aside>
+  );
 }
 
 function HomeAdvertisementSlider() {
@@ -73,11 +105,14 @@ function HomeAdvertisementSlider() {
   if (isLoading && count === 0) {
     return (
       <section
-        className="w-full bg-gradient-to-br from-cyber-aqua/45 via-cyber-aqua/25 to-cyber-aqua/15 py-6 md:py-8"
+        className="w-full bg-gradient-to-br from-[#0066FF]/18 via-[#0066FF]/10 to-[#0066FF]/06 py-5 md:py-6"
         aria-label={t('home.adsCarouselLabel')}
         aria-busy="true"
       >
-        <div className="mx-auto h-[210px] w-full max-w-7xl rounded-2xl border-2 border-cyber-aqua/50 bg-white/40 px-4 md:px-5 lg:px-6 sm:h-[230px] md:h-[260px]" />
+        <div className="flex w-full flex-col items-stretch gap-3 px-3 md:px-4 lg:px-5">
+          <BrandPanel />
+          <div className="h-[210px] min-w-0 flex-1 rounded-2xl border-2 border-[#0066FF]/35 bg-white/40 sm:h-[230px] md:h-[260px]" />
+        </div>
       </section>
     );
   }
@@ -92,37 +127,15 @@ function HomeAdvertisementSlider() {
 
   return (
     <section
-      className="w-full bg-gradient-to-br from-cyber-aqua/50 via-cyber-aqua/28 to-cyber-aqua/16 py-6 md:py-8"
+      className="w-full bg-gradient-to-br from-[#0066FF]/20 via-[#0066FF]/12 to-[#0066FF]/07 py-5 md:py-6"
       aria-label={t('home.adsCarouselLabel')}
     >
-      {/* Aligned with dashboard content width (max-w-7xl) */}
-      <div className="mx-auto w-full max-w-7xl px-4 md:px-5 lg:px-6">
-        <div className="mb-3 flex items-center justify-center gap-2.5 text-center sm:justify-start sm:text-start">
-          <img
-            src={SUFRA_LOGO}
-            alt={APP_BRAND_NAME}
-            className="h-8 w-8 flex-shrink-0 rounded-md bg-white/90 object-contain p-0.5 shadow-sm"
-            onError={(e) => {
-              e.currentTarget.style.display = 'none';
-            }}
-          />
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center justify-center gap-2 sm:justify-start">
-              <h2 className="text-[15px] font-semibold tracking-tight text-obsidian">
-                {t('home.adsSectionTitle')}
-              </h2>
-              <span className={`${homeUi.chip} border-cyber-aqua/50 bg-white/90 text-charcoal-graphite`}>
-                {t('home.adsSponsoredBadge')}
-              </span>
-            </div>
-            <p className="mt-0.5 text-[12px] font-medium text-obsidian/60">
-              {t('home.adsSectionLede')}
-            </p>
-          </div>
-        </div>
+      {/* Wide band: brand near sidebar → slider with matching rounded corners */}
+      <div className="flex w-full flex-col items-stretch gap-3 px-3 sm:flex-row sm:gap-3 md:px-4 lg:px-5">
+        <BrandPanel />
 
         <div
-          className="relative overflow-hidden rounded-2xl border-2 border-cyber-aqua/55 bg-white shadow-[0_8px_28px_rgba(46,231,201,0.22)]"
+          className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border-2 border-[#0066FF]/40 bg-white shadow-[0_8px_28px_rgba(0,102,255,0.16)]"
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
           aria-roledescription="carousel"
@@ -178,7 +191,7 @@ function HomeAdvertisementSlider() {
                   <button
                     type="button"
                     onClick={() => void openAdLink(current, navigate)}
-                    className="inline-flex items-center rounded-lg bg-cyber-aqua px-4 py-2 text-[13px] font-semibold text-charcoal-graphite hover:bg-cyber-aqua/90"
+                    className="inline-flex items-center rounded-lg bg-[#0066FF] px-4 py-2 text-[13px] font-semibold text-white hover:bg-[#0066FF]/90"
                   >
                     {current.ctaLabel || t('home.adsCtaDefault')}
                   </button>
@@ -186,40 +199,44 @@ function HomeAdvertisementSlider() {
               </div>
             ) : null}
 
-            <button
-              type="button"
-              onClick={goPrev}
-              className="absolute start-3 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white shadow-md backdrop-blur-sm hover:bg-black/60"
-              aria-label={t('home.adsPrev')}
-            >
-              <ChevronLeft className="h-5 w-5 rtl:rotate-180" />
-            </button>
-            <button
-              type="button"
-              onClick={goNext}
-              className="absolute end-3 top-1/2 z-20 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-white/25 bg-black/45 text-white shadow-md backdrop-blur-sm hover:bg-black/60"
-              aria-label={t('home.adsNext')}
-            >
-              <ChevronRight className="h-5 w-5 rtl:rotate-180" />
-            </button>
+            {/* Prev / dots / next — one control cluster */}
+            <div className="absolute bottom-3 start-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/35 px-1.5 py-1 backdrop-blur-sm">
+              <button
+                type="button"
+                onClick={goPrev}
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white hover:bg-white/15"
+                aria-label={t('home.adsPrev')}
+              >
+                <ChevronLeft className="h-4 w-4 rtl:rotate-180" />
+              </button>
 
-            <div className="absolute bottom-3 start-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-black/35 px-2.5 py-1.5 backdrop-blur-sm">
-              {Array.from({ length: slideCount }, (_, i) => {
-                const ad = ads[i];
-                const key = ad?.id ?? `dot-${i}`;
-                return (
-                  <button
-                    key={key}
-                    type="button"
-                    onClick={() => setIndex(i)}
-                    className={`h-1.5 rounded-full transition-all ${
-                      i === index ? 'w-5 bg-cyber-aqua' : 'w-1.5 bg-white/50 hover:bg-white/80'
-                    }`}
-                    aria-label={t('home.adsGoTo', { n: i + 1 })}
-                    aria-current={i === index}
-                  />
-                );
-              })}
+              <div className="flex items-center gap-1.5 px-0.5">
+                {Array.from({ length: slideCount }, (_, i) => {
+                  const ad = ads[i];
+                  const key = ad?.id ?? `dot-${i}`;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setIndex(i)}
+                      className={`h-1.5 rounded-full transition-all ${
+                        i === index ? 'w-5 bg-[#0066FF]' : 'w-1.5 bg-white/50 hover:bg-white/80'
+                      }`}
+                      aria-label={t('home.adsGoTo', { n: i + 1 })}
+                      aria-current={i === index}
+                    />
+                  );
+                })}
+              </div>
+
+              <button
+                type="button"
+                onClick={goNext}
+                className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-white hover:bg-white/15"
+                aria-label={t('home.adsNext')}
+              >
+                <ChevronRight className="h-4 w-4 rtl:rotate-180" />
+              </button>
             </div>
           </div>
         </div>

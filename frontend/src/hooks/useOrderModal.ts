@@ -63,7 +63,7 @@ export function useOrderModal(table: TableEntity) {
   const tableSubtotal = useMemo(() => {
     let t = 0;
     for (const order of existingOrders) {
-      for (const item of order.items) {
+      for (const item of order.items ?? []) {
         t += (item.price || 0) * (item.quantity || 0);
       }
     }
