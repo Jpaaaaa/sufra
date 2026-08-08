@@ -65,7 +65,7 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
 
     const infoFields = buildReceiptInfoFields(data, serviceType);
     const visible = infoFields.filter((f) => f.value != null && String(f.value).trim() !== '');
-    y += Math.ceil(Math.max(1, visible.length) / 2) * 56 + T.sectionGap;
+    y += Math.ceil(Math.max(1, visible.length) / 2) * 72 + T.sectionGap;
 
     if (serviceType === 'delivery') {
       if (data.customer_name) y += r.lineHeight;
@@ -100,8 +100,10 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     const p = new ReceiptPainter(ctx, paper);
 
     // —— Header ——
-    const logoH = await p.drawLogo(data.logoUrl, paper === 58 ? 48 : 64);
-    if (logoH) p.advance(logoH + 6);
+    const logoH = await p.drawLogo(data.logoUrl, paper === 58 ? 48 : 64, {
+      allowFallback: !data.skipDefaultLogo,
+    });
+    if (logoH) p.advance(logoH + 8);
     else p.advance(4);
 
     let lines = p.text(
@@ -139,8 +141,8 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     p.advance(T.sectionGap);
 
     // —— Info grid ——
-    const gridH = p.infoGrid(infoFields, p.y, 2, T.font.sm);
-    if (gridH) p.advance(gridH + T.gap);
+    const gridH = p.infoGrid(infoFields, p.y, 2, T.font.md);
+    if (gridH) p.advance(gridH + T.sectionGap);
 
     if (serviceType === 'delivery') {
       if (data.customer_name) {
@@ -340,7 +342,12 @@ function buildReceiptInfoFields(data: ReceiptPrintData, serviceType: string) {
   if (data.invoiceNumber != null && data.invoiceNumber !== '') {
     fields.push({ label: 'الفاتورة', value: data.invoiceNumber });
   }
-  if (data.orderId != null) fields.push({ label: 'الطلب', value: `#${data.orderId}` });
+  // Skip "الطلب" when invoice already lists multiple order ids (e.g. "74 + 75")
+  const invoiceStr = String(data.invoiceNumber ?? '');
+  const isCombinedInvoice = invoiceStr.includes('+');
+  if (data.orderId != null && !isCombinedInvoice) {
+    fields.push({ label: 'الطلب', value: `#${data.orderId}` });
+  }
   if (data.timestamp) {
     fields.push({ label: 'التاريخ', value: formatDateAr(data.timestamp) });
     fields.push({ label: 'الوقت', value: formatTimeAr(data.timestamp) });

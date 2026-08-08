@@ -78,6 +78,8 @@ export interface ReceiptPrintData {
   timestamp: string;
   restaurantName: string;
   logoUrl?: string;
+  /** When true, do not fall back to the built-in Sufra logo. */
+  skipDefaultLogo?: boolean;
   address?: string | null;
   phone?: string | null;
   taxNumber?: string | null;

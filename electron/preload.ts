@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('sufra', {
     getSettings: () => invoke('recipePrint:getSettings'),
     saveSettings: (settings: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
       invoke('recipePrint:saveSettings', settings),
+    pickLogo: () => invoke('recipePrint:pickLogo'),
+    removeLogo: () => invoke('recipePrint:removeLogo'),
+    logoPreview: () => invoke('recipePrint:logoPreview'),
     preview: (branding: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
       invoke('recipePrint:preview', branding),
     print: (branding: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
@@ -406,12 +409,51 @@ declare global {
         scan: () => Promise<Array<{ ip: string; port: number }>>;
       };
       recipePrint: {
-        getSettings: () => Promise<{ restaurantName: string; thankYouLine: string; mobileNumber: string }>;
+        getSettings: () => Promise<{
+          restaurantName: string;
+          thankYouLine: string;
+          mobileNumber: string;
+          logoPath: string;
+        }>;
         saveSettings: (settings: {
           restaurantName?: string;
           thankYouLine?: string;
           mobileNumber?: string;
-        }) => Promise<{ restaurantName: string; thankYouLine: string; mobileNumber: string }>;
+        }) => Promise<{
+          restaurantName: string;
+          thankYouLine: string;
+          mobileNumber: string;
+          logoPath: string;
+        }>;
+        pickLogo: () => Promise<
+          | {
+              success: true;
+              branding: {
+                restaurantName: string;
+                thankYouLine: string;
+                mobileNumber: string;
+                logoPath: string;
+              };
+              logoPreviewBase64: string | null;
+            }
+          | { success: false; error: string }
+        >;
+        removeLogo: () => Promise<
+          | {
+              success: true;
+              branding: {
+                restaurantName: string;
+                thankYouLine: string;
+                mobileNumber: string;
+                logoPath: string;
+              };
+            }
+          | { success: false; error: string }
+        >;
+        logoPreview: () => Promise<
+          | { success: true; logoPreviewBase64: string | null }
+          | { success: false; error: string }
+        >;
         preview: (branding: {
           restaurantName?: string;
           thankYouLine?: string;

@@ -1,7 +1,7 @@
 /**
  * IPC handlers: printers, print, export-pdf.
  */
-import { ipcMain, BrowserWindow, app } from 'electron';
+import { ipcMain, BrowserWindow, app, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -24,6 +24,10 @@ import {
 import {
   readRecipePrintBranding,
   writeRecipePrintBranding,
+  saveRestaurantLogoFromFile,
+  removeRestaurantLogo,
+  getRestaurantLogoPreviewBase64,
+  mergeCustomerReceiptBranding,
 } from '../../recipe-print-branding-store';
 import { buildRecipePreviewSample } from '../../print/recipe-preview-sample';
 import { invalidateWindowsPrinterCache } from '../../print/windows-printer-cache';
@@ -128,7 +132,8 @@ async function renderSamplePng(
 ): Promise<Buffer> {
   if (kind === 'customer') {
     const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
-    return renderReceiptToPng(customerTestReceiptData());
+    const merged = await mergeCustomerReceiptBranding(customerTestReceiptData());
+    return renderReceiptToPng(merged);
   }
   const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
   return renderOrderToPng(kitchenTestPrintData(kitchenName));
@@ -165,6 +170,51 @@ export function registerPrintHandlers() {
     async (_, data: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
       writeRecipePrintBranding(data ?? {}),
   );
+  ipcMain.handle('recipePrint:pickLogo', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options: Electron.OpenDialogOptions = {
+        title: 'اختر شعار المطعم',
+        filters: [
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] },
+        ],
+        properties: ['openFile'],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || !result.filePaths[0]) {
+        return { success: false as const, error: 'CANCELLED' };
+      }
+      const branding = await saveRestaurantLogoFromFile(result.filePaths[0]);
+      const preview = await getRestaurantLogoPreviewBase64();
+      return {
+        success: true as const,
+        branding,
+        logoPreviewBase64: preview,
+      };
+    } catch (err: any) {
+      console.error('[recipePrint:pickLogo]', err);
+      return { success: false as const, error: err?.message || 'فشل رفع الشعار' };
+    }
+  });
+  ipcMain.handle('recipePrint:removeLogo', async () => {
+    try {
+      const branding = await removeRestaurantLogo();
+      return { success: true as const, branding };
+    } catch (err: any) {
+      console.error('[recipePrint:removeLogo]', err);
+      return { success: false as const, error: err?.message || 'فشل حذف الشعار' };
+    }
+  });
+  ipcMain.handle('recipePrint:logoPreview', async () => {
+    try {
+      const preview = await getRestaurantLogoPreviewBase64();
+      return { success: true as const, logoPreviewBase64: preview };
+    } catch (err: any) {
+      return { success: false as const, error: err?.message || 'فشل تحميل الشعار' };
+    }
+  });
   ipcMain.handle(
     'recipePrint:preview',
     async (_, branding: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) => {
@@ -273,7 +323,8 @@ export function registerPrintHandlers() {
   ipcMain.handle('print:receipt', async (_event, receiptData: any) => {
     try {
       const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
-      const png = await renderReceiptToPng(receiptData);
+      const merged = await mergeCustomerReceiptBranding(receiptData ?? {});
+      const png = await renderReceiptToPng(merged);
       const settings = await printersGetAllSettings();
       const setting = settings.find(
         (s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active,

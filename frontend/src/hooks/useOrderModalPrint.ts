@@ -204,7 +204,7 @@ export function createOrderModalPrintHandlers(
     });
   };
 
-  const handlePrintReceipt = async (hallName: string, tableName: string) => {
+  const handlePrintReceipt = async (hallName: string, _tableName: string) => {
     await withPrintPasswordCheck(user, async () => {
       try {
       const totalItems = existingOrders.reduce((sum, o) => sum + o.items.length, 0);
@@ -222,10 +222,16 @@ export function createOrderModalPrintHandlers(
         }))
       );
 
+      const orderIds = existingOrders
+        .map((o) => o.id)
+        .filter((id): id is number => id != null && Number.isFinite(Number(id)));
+      const invoiceNumber = orderIds.length > 0 ? orderIds.join(' + ') : '0';
+
       const printData = {
-        orderId: existingOrders[0]?.id || 0,
-        invoiceNumber: existingOrders[0]?.id || 0,
-        table: parseInt(tableName) || table.id || 0,
+        orderId: orderIds.length === 1 ? orderIds[0] : undefined,
+        invoiceNumber,
+        // Use table.number (display number), not table.id or parseInt(name)
+        table: table.number || table.id || 0,
         hall: hallName || 'القاعة',
         items: receiptItems,
         totals: {

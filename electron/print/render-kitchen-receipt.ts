@@ -75,7 +75,7 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
     const serviceType = data.service_type || items[0]?.service_type || 'dine-in';
     const printTime = data.printTime || new Date().toISOString();
     const cols = kitchenColumnLayout(paper);
-    const infoFields = buildInfoFields(data, serviceType);
+    const { highlight, fields: infoFields } = buildKitchenMeta(data, serviceType);
 
     // —— Measure ——
     const { ctx: tempCtx } = await createPrintCanvas(width, 80);
@@ -89,7 +89,8 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
     est += k.fontMd + 16; // service type
     if (data.priority) est += 36;
     est += T.font.sm + 12; // print time
-    est += Math.ceil(Math.max(1, infoFields.length) / 2) * 34 + 16;
+    if (highlight) est += k.fontLg + 28;
+    est += Math.ceil(Math.max(1, infoFields.length) / 2) * 56 + 20;
 
     const nameInnerW = cols.name.w - 16;
     const cellPadY = 10;
@@ -111,8 +112,11 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
 
     est += headerH + (rowHeights.length ? rowHeights.reduce((a, b) => a + b, 0) : 40) + 16;
     if (data.note) {
-      tempCtx.font = printFont(T.font.sm, false);
-      est += wrapText(tempCtx, data.note, measure.contentW - 20).length * (T.font.sm + 6) + 28;
+      tempCtx.font = printFont(T.font.sm, true);
+      const noteLines = wrapText(tempCtx, data.note, measure.contentW - 20).length;
+      const titleH = T.font.sm + 14;
+      const bodyH = noteLines * (T.font.sm + 6) + 20;
+      est += titleH + bodyH + 16;
     }
     est += 50 + T.bottomBuffer;
     const height = Math.max(360, est);
@@ -164,12 +168,26 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
       p.advance(lines * (T.font.xs + 2) + 8);
     }
 
-    // Meta — compact borderless pairs
+    // Meta — table highlight + clear label/value grid
+    p.hLine(T.line.hair);
+    p.advance(10);
+
+    if (highlight) {
+      const hiH = k.fontLg + 18;
+      p.fillBox(p.pad, p.y, p.contentW, hiH);
+      ctx.fillStyle = T.paper;
+      ctx.font = printFont(k.fontLg, true);
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(highlight, p.centerX, p.y + hiH / 2);
+      ctx.fillStyle = T.ink;
+      ctx.textBaseline = 'top';
+      p.advance(hiH + 10);
+    }
+
     if (infoFields.length) {
-      p.hLine(T.line.hair);
-      p.advance(8);
-      const gridH = p.infoGrid(infoFields, p.y, 2, T.font.sm);
-      p.advance(gridH + 6);
+      const gridH = p.infoGrid(infoFields, p.y, 2, T.font.md);
+      p.advance(gridH + 4);
     }
 
     // Items table
@@ -188,8 +206,9 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
     ctx.font = printFont(T.font.sm, true);
     ctx.textBaseline = 'middle';
     const headerMid = tableTop + headerH / 2;
+    ctx.textAlign = 'center';
+    ctx.fillText('الكمية', (cols.qty.left + cols.qty.right) / 2, headerMid);
     ctx.textAlign = 'right';
-    ctx.fillText('الكمية', cols.qty.x, headerMid);
     ctx.fillText('الصنف', cols.name.x, headerMid);
     ctx.fillStyle = T.ink;
     ctx.textBaseline = 'top';
@@ -207,8 +226,17 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
         const textY = rowY + cellPadY;
         let cursorY = textY;
 
-        // Qty emphasized
-        p.text(`${qty}×`, cols.qty.x, textY, k.fontXl, 'right', true, cols.qty.w - 8, k.fontXl + 2);
+        // Qty centered in qty column (matches header)
+        p.text(
+          `${qty}×`,
+          (cols.qty.left + cols.qty.right) / 2,
+          textY,
+          k.fontXl,
+          'center',
+          true,
+          cols.qty.w - 8,
+          k.fontXl + 2,
+        );
 
         const nameLines = p.text(name, cols.name.x, cursorY, k.fontMd, 'right', true, nameInnerW, k.fontMd + 6);
         cursorY += nameLines * (k.fontMd + 6) + 2;
@@ -219,7 +247,6 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
         }
 
         if (item.note) {
-          // Bold note line — no nested box clutter
           const noteText = `※ ${item.note}`;
           const nl = p.text(noteText, cols.name.x, cursorY + 2, T.font.sm, 'right', true, nameInnerW - 6, T.font.sm + 4);
           cursorY += nl * (T.font.sm + 4) + 4;
@@ -232,19 +259,12 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
 
     p.tableFrame(tableX, tableTop, tableW, tableH, headerH, cols.dividers, rowYs, T.line.thick);
     p.y = tableTop + tableH;
-    p.advance(10);
+    p.advance(12);
 
-    // Order note
+    // Order note — professional titled block
     if (data.note) {
-      const noteH = (() => {
-        ctx.font = printFont(T.font.sm, true);
-        const nLines = wrapText(ctx, data.note!, p.contentW - 20);
-        return nLines.length * (T.font.sm + 6) + 16;
-      })();
-      p.box(p.pad, p.y, p.contentW, noteH, T.line.thick);
-      p.text('ملاحظة الطلب', p.right - 8, p.y + 6, T.font.xs, 'right', true, p.contentW - 16, T.font.xs + 2);
-      p.text(data.note, p.right - 8, p.y + 6 + T.font.xs + 4, T.font.sm, 'right', true, p.contentW - 16, T.font.sm + 4);
-      p.advance(noteH + 10);
+      const noteH = p.orderNoteBlock('ملاحظة الطلب', data.note, p.y, T.font.md);
+      p.advance(noteH + 12);
     }
 
     // Footer
@@ -276,17 +296,22 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
   }
 }
 
-function buildInfoFields(data: OrderPrintData, serviceType: string) {
+function buildKitchenMeta(data: OrderPrintData, serviceType: string) {
+  let highlight: string | null = null;
+  if (serviceType === 'dine-in' && data.table) {
+    highlight = `الطاولة ${data.table}`;
+  } else if (serviceType === 'pickup') {
+    highlight = 'سفري';
+  } else if (serviceType === 'delivery') {
+    highlight = 'توصيل';
+  }
+
   const fields: Array<{ label: string; value?: string | number | null }> = [];
   if (data.floor) fields.push({ label: 'الطابق', value: data.floor });
   if (data.hall) fields.push({ label: 'القاعة', value: data.hall });
-  if (serviceType === 'dine-in' && data.table) {
-    fields.push({ label: 'الطاولة', value: data.table });
-  }
   if (data.seat) fields.push({ label: 'المقعد', value: data.seat });
   if (data.waiter) fields.push({ label: 'النادل', value: data.waiter });
   if (data.cashier) fields.push({ label: 'الكاشير', value: data.cashier });
-  // guests intentionally omitted — not used in kitchen workflow
   if (data.timestamp) {
     fields.push({ label: 'وقت الطلب', value: formatTimeAr(data.timestamp) });
   }
@@ -294,5 +319,5 @@ function buildInfoFields(data: OrderPrintData, serviceType: string) {
     if (data.customer_name) fields.push({ label: 'العميل', value: data.customer_name });
     if (data.customer_phone) fields.push({ label: 'الهاتف', value: data.customer_phone });
   }
-  return fields;
+  return { highlight, fields };
 }
