@@ -13,18 +13,31 @@ import {
   buildCartItem,
   cartSubtotal,
   getCartLineKey,
+  mergeIntoTrayChildren,
+  trayUnitPrice,
   updateCartLine,
 } from './cart-item-utils';
+import {
+  buildTrayCartItem,
+  nextTrayNumber,
+  removeCartLine,
+  findCartLine,
+} from '../utils/order-trays';
+import { orderItemsTopLevelSubtotal } from '../utils/order-trays';
 
 export type { Category, ExistingOrder, CartItem } from './useOrderModalTypes';
 import type { CartItem, ExistingOrder } from './useOrderModalTypes';
 import type { TableEntity } from '../utils';
 
-export function useOrderModal(table: TableEntity) {
+export function useOrderModal(
+  table: TableEntity,
+  hall?: { name?: string; floor_id?: number | null; floor?: { name?: string; number?: number } | null } | null,
+) {
   const { user } = useAuth();
   const offers = useOffers();
 
   const [selectedItems, setSelectedItems] = useState<CartItem[]>([]);
+  const [activeTrayId, setActiveTrayId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [ordersExpanded, setOrdersExpanded] = useState(true);
@@ -63,9 +76,7 @@ export function useOrderModal(table: TableEntity) {
   const tableSubtotal = useMemo(() => {
     let t = 0;
     for (const order of existingOrders) {
-      for (const item of order.items ?? []) {
-        t += (item.price || 0) * (item.quantity || 0);
-      }
+      t += orderItemsTopLevelSubtotal(order.items ?? []);
     }
     return t;
   }, [existingOrders]);
@@ -83,9 +94,10 @@ export function useOrderModal(table: TableEntity) {
         setExistingOrders,
         appliedDiscount,
         tableTotal,
-        user ?? undefined
+        user ?? undefined,
+        hall ?? null,
       ),
-    [table, existingOrders, kitchens, setExistingOrders, appliedDiscount, tableTotal, user]
+    [table, existingOrders, kitchens, setExistingOrders, appliedDiscount, tableTotal, user, hall]
   );
 
   const orderHandlers = useMemo(
@@ -137,8 +149,37 @@ export function useOrderModal(table: TableEntity) {
     setSelectedItems((prev) => {
       const next = buildCartItem(item, extras ?? {}, 'dine-in');
       const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
+
+      if (activeTrayId) {
+        const tray = prev.find((si) => si.cartLineId === activeTrayId && si.lineKind === 'tray');
+        if (!tray) {
+          // fall through to top-level add
+        } else {
+          const children = tray.children ?? [];
+          const existingChild = children.find(
+            (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+          );
+          if (existingChild && s && existingChild.quantity + 1 > s.quantity) {
+            showToast(`الكمية المتوفرة: ${s.quantity}`, 'error');
+            return prev;
+          }
+          if (s && !existingChild && s.quantity === 0) {
+            showToast('نفذت الكمية', 'error');
+            return prev;
+          }
+          const newChildren = mergeIntoTrayChildren(children, next);
+          return prev.map((si) =>
+            si.cartLineId === activeTrayId
+              ? { ...si, children: newChildren, linePrice: trayUnitPrice(newChildren) }
+              : si,
+          );
+        }
+      }
+
       const existing = prev.find(
-        (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+        (si) =>
+          si.lineKind !== 'tray' &&
+          getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
       );
       if (existing) {
         if (s && existing.quantity + 1 > s.quantity) {
@@ -156,15 +197,24 @@ export function useOrderModal(table: TableEntity) {
       return [...prev, next];
     });
     if (ordersExpanded && existingOrders.length > 0) setOrdersExpanded(false);
+  }, [ordersExpanded, existingOrders.length, activeTrayId]);
+
+  const addTrayToOrder = useCallback(() => {
+    setSelectedItems((prev) => {
+      const tray = buildTrayCartItem(nextTrayNumber(prev), 'dine-in');
+      setActiveTrayId(tray.cartLineId);
+      return [...prev, tray];
+    });
+    if (ordersExpanded && existingOrders.length > 0) setOrdersExpanded(false);
   }, [ordersExpanded, existingOrders.length]);
+
+  const selectTray = useCallback((cartLineId: string | null) => {
+    setActiveTrayId((prev) => (prev === cartLineId ? null : cartLineId));
+  }, []);
 
   const updateCartLineOptions = useCallback(
     (cartLineId: string, selectedOptions: import('../lib/item-options').SelectedItemOptions, linePrice: number) => {
-      setSelectedItems((prev) =>
-        prev.map((si) =>
-          si.cartLineId === cartLineId ? { ...si, selectedOptions, linePrice } : si,
-        ),
-      );
+      setSelectedItems((prev) => updateCartLine(prev, cartLineId, { selectedOptions, linePrice }));
     },
     [],
   );
@@ -212,15 +262,17 @@ export function useOrderModal(table: TableEntity) {
   }, []);
 
   const removeItemFromOrder = useCallback((cartLineId: string) => {
-    setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
+    setSelectedItems((prev) => removeCartLine(prev, cartLineId));
+    setActiveTrayId((prev) => (prev === cartLineId ? null : prev));
   }, []);
 
   const updateQuantity = useCallback((cartLineId: string, quantity: number) => {
     if (quantity <= 0) {
-      setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
+      setSelectedItems((prev) => removeCartLine(prev, cartLineId));
+      setActiveTrayId((prev) => (prev === cartLineId ? null : prev));
     } else {
       setSelectedItems((prev) => {
-        const line = prev.find((si) => si.cartLineId === cartLineId);
+        const line = findCartLine(prev, cartLineId);
         if (line?.shelfItem && quantity > line.shelfItem.quantity) {
           showToast(`الكمية المتوفرة: ${line.shelfItem.quantity}`, 'error');
           return prev;
@@ -279,6 +331,7 @@ export function useOrderModal(table: TableEntity) {
     kitchens,
     existingOrders,
     selectedItems,
+    activeTrayId,
     loadingItems,
     loadingOrders,
     selectedCategory,
@@ -316,6 +369,8 @@ export function useOrderModal(table: TableEntity) {
     setTableDiscount,
     handleApplyDiscount,
     addItemToOrder,
+    addTrayToOrder,
+    selectTray,
     addShelfItemByBarcode,
     updateItemOrderType,
     removeItemFromOrder,
@@ -323,6 +378,7 @@ export function useOrderModal(table: TableEntity) {
     updateCartLineOptions,
     clearCart: () => {
       setSelectedItems([]);
+      setActiveTrayId(null);
       setNote('');
     },
     handleSubmitOrder: orderHandlers.handleSubmitOrder,

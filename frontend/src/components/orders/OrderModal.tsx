@@ -21,7 +21,7 @@ interface OrderModalProps {
 function OrderModal({ hall, table, onClose }: OrderModalProps) {
   const { t } = useTranslation();
   const fmt = useOrderMoney();
-  const orderModal = useOrderModal(table);
+  const orderModal = useOrderModal(table, hall);
   const { setPriorityHandler } = useBarcodeListener();
   const modalContainerRef = useRef<HTMLDivElement>(null);
   const backdropRef = useRef<HTMLDivElement>(null);
@@ -213,13 +213,13 @@ function OrderModal({ hall, table, onClose }: OrderModalProps) {
             padding: 6px !important;
           }
           [data-order-modal] [data-order-cart] {
-            width: 28% !important;
-            min-width: 180px !important;
-            max-width: 280px !important;
+            width: 38% !important;
+            min-width: 260px !important;
+            max-width: 400px !important;
             flex: 0 0 auto !important;
             border-left: 1px solid rgba(0,0,0,0.05) !important;
             border-top: none !important;
-            padding: 6px !important;
+            padding: 8px !important;
           }
           [data-order-modal] [data-order-menu-filters] {
             flex-direction: column !important;
@@ -253,9 +253,9 @@ function OrderModal({ hall, table, onClose }: OrderModalProps) {
             padding: 1rem !important;
           }
           [data-order-modal] [data-order-cart] {
-            width: 30% !important;
-            min-width: 260px !important;
-            max-width: 360px !important;
+            width: 40% !important;
+            min-width: 340px !important;
+            max-width: 480px !important;
             flex: 0 0 auto !important;
             border-left: 1px solid rgba(0,0,0,0.05) !important;
             border-top: none !important;
@@ -388,6 +388,9 @@ function OrderModal({ hall, table, onClose }: OrderModalProps) {
             <OrderModalCart
               existingOrders={orderModal.existingOrders}
               selectedItems={orderModal.selectedItems}
+              activeTrayId={orderModal.activeTrayId}
+              onAddTray={orderModal.addTrayToOrder}
+              onSelectTray={orderModal.selectTray}
               ordersExpanded={orderModal.ordersExpanded}
               editingOrder={orderModal.editingOrder}
               editingOrderType={orderModal.editingOrderType}

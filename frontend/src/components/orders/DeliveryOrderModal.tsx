@@ -218,6 +218,9 @@ function DeliveryOrderModal({ onClose, orderToEdit }: DeliveryOrderModalProps) {
             <OrderModalCart
               existingOrders={orderModal.existingOrders}
               selectedItems={orderModal.selectedItems}
+              activeTrayId={orderModal.activeTrayId}
+              onAddTray={orderModal.addTrayToOrder}
+              onSelectTray={orderModal.selectTray}
               ordersExpanded={orderModal.ordersExpanded}
               editingOrder={orderModal.editingOrder}
               editingOrderType="delivery"

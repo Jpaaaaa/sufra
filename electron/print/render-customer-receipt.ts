@@ -1,4 +1,4 @@
-import type { ReceiptPrintData } from './receipt-utils';
+import type { ReceiptPrintData, ReceiptPrintItem } from './receipt-utils';
 import {
   PRINT_TOKENS,
   canvasWidthFor,
@@ -7,6 +7,7 @@ import {
 } from './tokens';
 import { registerArabicFontIfAvailable, printFont } from './canvas/fonts';
 import {
+  formatAmountIqd,
   formatCurrencyIqd,
   formatDateAr,
   formatTimeAr,
@@ -18,9 +19,11 @@ import {
   createPrintCanvas,
   generateMinimalFallbackPng,
 } from './canvas/primitives';
+import { getTrayPrintName } from './tray-print-name';
 
 /**
- * Render customer receipt to PNG for thermal printers.
+ * Customer sales receipt — formal table layout.
+ * Tray header = billed row; tray children = detail rows (qty only, money cells empty).
  */
 export async function renderReceiptToPng(data: ReceiptPrintData | null | undefined): Promise<Buffer> {
   console.log('[RECEIPT] Starting PNG generation...');
@@ -48,14 +51,26 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     const items = data.items;
     const serviceType = data.service_type || items[0]?.service_type || 'dine-in';
     const layout = receiptColumnLayout(paper);
-    const compact = layout.mode === 'compact';
+    const cols = layout.cols;
+
+    const nameFont = (item: ReceiptPrintItem) =>
+      item.is_tray_child ? T.font.sm : T.font.md;
+    const nameInnerW = (item: ReceiptPrintItem) =>
+      cols.item.w - (item.is_tray_child ? 22 : 12);
+
+    const rowLabel = (item: ReceiptPrintItem): string => {
+      const raw = (item.item_name || 'صنف').trim();
+      if (item.is_tray_header) return getTrayPrintName(item.tray_number, raw);
+      if (item.is_tray_child) return `• ${raw}`;
+      return raw;
+    };
 
     // Pass 1 — measure
     const { ctx: tempCtx } = await createPrintCanvas(width, 100);
     const measure = new ReceiptPainter(tempCtx, paper);
     let y = measure.pad;
 
-    y += 70; // logo
+    y += 70;
     y += T.font.xl + 8;
     if (data.address) y += T.font.sm * 2 + 4;
     if (data.phone) y += T.font.sm + 4;
@@ -77,20 +92,22 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
       y += T.gap;
     }
 
-    y += T.font.sm + 20; // table header
+    y += T.font.xs + 10;
+    y += T.font.sm + 20;
 
     for (const item of items) {
-      const nameW = layout.cols.item.w;
-      tempCtx.font = printFont(T.font.md, true);
-      const nameLines = wrapText(tempCtx, item.item_name || 'صنف', nameW);
-      y += Math.max(r.lineHeight, nameLines.length * r.lineHeight) + 10;
+      const font = nameFont(item);
+      tempCtx.font = printFont(font, !item.is_tray_child);
+      const lh = item.is_tray_child ? r.lineHeightSm : r.lineHeight;
+      const nameLines = wrapText(tempCtx, rowLabel(item), nameInnerW(item));
+      y += Math.max(lh, nameLines.length * lh) + 10;
     }
 
     y += T.sectionGap;
-    y += (r.lineHeight + 4) * 5; // summary rows
-    y += T.font.xl + 20; // grand total
-    y += (r.lineHeight + 4) * 4; // payment
-    y += T.sectionGap + T.font.md + 40; // footer
+    y += (r.lineHeight + 4) * 5;
+    y += T.font.xl + 20;
+    y += (r.lineHeight + 4) * 4;
+    y += T.sectionGap + T.font.md + 40;
     y += T.bottomBuffer;
 
     const height = Math.max(500, y);
@@ -99,7 +116,6 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     const { canvas, ctx } = await createPrintCanvas(width, height);
     const p = new ReceiptPainter(ctx, paper);
 
-    // —— Header ——
     const logoH = await p.drawLogo(data.logoUrl, paper === 58 ? 48 : 64, {
       allowFallback: !data.skipDefaultLogo,
     });
@@ -140,7 +156,6 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     p.hLine(T.line.thick);
     p.advance(T.sectionGap);
 
-    // —— Info grid ——
     const gridH = p.infoGrid(infoFields, p.y, 2, T.font.md);
     if (gridH) p.advance(gridH + T.sectionGap);
 
@@ -161,24 +176,31 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
 
     p.advance(T.gap);
     p.hLine(T.line.thick);
-    p.advance(10);
+    p.advance(6);
+    p.text('المبالغ بالدينار (د.ع)', p.centerX, p.y, T.font.xs, 'center', false, p.contentW);
+    p.advance(T.font.xs + 8);
 
-    // —— Items table (with borders + column dividers) ——
-    const cols = layout.cols;
+    // —— Sales table: الصنف | الكمية | السعر | المجموع ——
     const tableX = layout.tableLeft;
     const tableW = layout.tableRight - layout.tableLeft;
     const headerPadY = 8;
     const headerH = T.font.sm + headerPadY * 2;
-    const cellPadY = 8;
-    const nameInnerW = cols.item.w - 12;
+    const cellPadY = 6;
 
-    type RowMeasure = { height: number; nameLines: number };
+    type RowMeasure = { height: number; font: number; lh: number; label: string; nameW: number };
     const rowMeasures: RowMeasure[] = items.map((item) => {
-      ctx.font = printFont(T.font.md, true);
-      const nameLines = wrapText(ctx, item.item_name || 'صنف', nameInnerW).length;
+      const font = nameFont(item);
+      const lh = item.is_tray_child ? r.lineHeightSm : r.lineHeight;
+      const label = rowLabel(item);
+      const nameW = nameInnerW(item);
+      ctx.font = printFont(font, !item.is_tray_child);
+      const nameLines = wrapText(ctx, label, nameW).length;
       return {
-        nameLines,
-        height: Math.max(r.lineHeight, nameLines * r.lineHeight) + cellPadY * 2,
+        font,
+        lh,
+        label,
+        nameW,
+        height: Math.max(lh, nameLines * lh) + cellPadY * 2,
       };
     });
 
@@ -189,19 +211,12 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     const tableH = headerH + bodyH;
     const tableTop = p.y;
 
-    // Header text
     const headerTextY = tableTop + headerPadY;
     p.text('الصنف', cols.item.x, headerTextY, T.font.sm, 'right', true, cols.item.w - 12);
     p.text('الكمية', cols.qty.x, headerTextY, T.font.sm, 'center', true, cols.qty.w - 4);
-    if (!compact) {
-      const unit = layout.cols.unit!;
-      const disc = layout.cols.disc!;
-      p.text('السعر', unit.x, headerTextY, T.font.sm, 'center', true, unit.w - 4);
-      p.text('خصم', disc.x, headerTextY, T.font.sm, 'center', true, disc.w - 4);
-    }
+    p.text('السعر', cols.price.x, headerTextY, T.font.sm, 'center', true, cols.price.w - 4);
     p.text('المجموع', cols.total.x, headerTextY, T.font.sm, 'left', true, cols.total.w - 12);
 
-    // Body rows
     const rowYs: number[] = [];
     let rowY = tableTop + headerH;
 
@@ -209,23 +224,41 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
       p.text('لا توجد أصناف', p.centerX, rowY + cellPadY, T.font.md, 'center', false);
     } else {
       items.forEach((item, index) => {
-        const name = item.item_name || 'صنف';
-        const qty = item.quantity || 1;
-        const unitPrice = item.price || 0;
-        const disc = item.discount || 0;
-        const lineTotal = qty * unitPrice - disc;
-        const textY = rowY + cellPadY;
         const m = rowMeasures[index];
+        const textY = rowY + cellPadY;
+        const qty = item.quantity || 1;
+        const isDetail = Boolean(item.is_tray_child);
 
-        p.text(name, cols.item.x, textY, T.font.md, 'right', true, nameInnerW, r.lineHeight);
-        p.text(String(qty), cols.qty.x, textY, T.font.md, 'center', false, cols.qty.w - 4);
-        if (!compact) {
-          const unit = layout.cols.unit!;
-          const discCol = layout.cols.disc!;
-          p.text(formatCurrencyIqd(unitPrice), unit.x, textY, T.font.sm, 'center', false, unit.w - 4);
-          p.text(disc ? formatCurrencyIqd(disc) : '—', discCol.x, textY, T.font.sm, 'center', false, discCol.w - 4);
+        // Name (indented via bullet + narrower wrap for children)
+        p.text(m.label, cols.item.x, textY, m.font, 'right', !isDetail, m.nameW, m.lh);
+
+        // Qty always shown
+        p.singleLine(String(qty), cols.qty.x, textY, m.font, 'center', !isDetail, cols.qty.w - 4);
+
+        if (!isDetail) {
+          const unitPrice = item.price || 0;
+          const disc = item.discount || 0;
+          const lineTotal = qty * unitPrice - disc;
+          p.singleLine(
+            formatAmountIqd(unitPrice),
+            cols.price.x,
+            textY,
+            T.font.sm,
+            'center',
+            false,
+            cols.price.w - 6,
+          );
+          p.singleLine(
+            formatAmountIqd(lineTotal),
+            cols.total.x,
+            textY,
+            T.font.md,
+            'left',
+            true,
+            cols.total.w - 10,
+          );
         }
-        p.text(formatCurrencyIqd(lineTotal), cols.total.x, textY, T.font.md, 'left', true, cols.total.w - 12);
+        // Detail rows: leave السعر / المجموع empty (no —, no 0)
 
         rowY += m.height;
         if (index < items.length - 1) rowYs.push(rowY);
@@ -269,7 +302,6 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     p.doubleHLine(p.y);
     p.advance(12);
 
-    // Grand total emphasized
     const gtBoxPad = 10;
     const gtLabel = 'الإجمالي';
     const gtValue = formatCurrencyIqd(totals.total);
@@ -280,7 +312,6 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     p.text(gtValue, p.left + gtBoxPad, p.y + gtBoxPad, T.font.xl, 'left', true, amountW);
     p.advance(gtH + T.sectionGap);
 
-    // —— Payment ——
     if (data.paymentMethod || data.paidAmount != null || data.change != null || data.remaining != null) {
       p.hLine(T.line.hair);
       p.advance(8);
@@ -302,7 +333,6 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     p.hLine(T.line.thick);
     p.advance(T.sectionGap);
 
-    // —— Footer ——
     const thanks = data.thankYouMessage || 'شكراً لزيارتكم';
     lines = p.text(thanks, p.centerX, p.y, T.font.md, 'center', true, p.contentW);
     p.advance(lines * (T.font.md + 4) + 6);
@@ -342,11 +372,14 @@ function buildReceiptInfoFields(data: ReceiptPrintData, serviceType: string) {
   if (data.invoiceNumber != null && data.invoiceNumber !== '') {
     fields.push({ label: 'الفاتورة', value: data.invoiceNumber });
   }
-  // Skip "الطلب" when invoice already lists multiple order ids (e.g. "74 + 75")
   const invoiceStr = String(data.invoiceNumber ?? '');
   const isCombinedInvoice = invoiceStr.includes('+');
   if (data.orderId != null && !isCombinedInvoice) {
-    fields.push({ label: 'الطلب', value: `#${data.orderId}` });
+    const ticketNo =
+      data.displayNumber != null && Number(data.displayNumber) > 0
+        ? Number(data.displayNumber)
+        : data.orderId;
+    fields.push({ label: 'الطلب', value: `#${ticketNo}` });
   }
   if (data.timestamp) {
     fields.push({ label: 'التاريخ', value: formatDateAr(data.timestamp) });

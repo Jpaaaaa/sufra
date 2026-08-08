@@ -11,6 +11,8 @@ export interface Category {
 
 export interface ExistingOrder {
   id: number;
+  /** Daily ticket number for the business day (preferred for display). */
+  display_number?: number | null;
   order_type: 'dine-in' | 'pickup' | 'delivery';
   status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'draft' | 'preparing' | 'ready' | 'out_for_delivery' | 'delivered' | 'archived' | 'open';
   total: number;
@@ -30,6 +32,11 @@ export interface ExistingOrder {
 
 export interface CartItem {
   cartLineId: string;
+  /** Default 'item'. Tray is a container of children. */
+  lineKind?: 'item' | 'tray';
+  trayName?: string;
+  /** Products inside a tray (only when lineKind === 'tray'). */
+  children?: CartItem[];
   item: Item;
   quantity: number;
   selectedOptions: SelectedItemOptions;

@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PRINT_TOKENS, canvasWidthFor, type PaperWidthMm } from '../tokens';
 import { printFont } from './fonts';
-import { drawWrappedText, wrapText, type TextAlign } from './text';
+import { drawWrappedText, drawSingleLineText, wrapText, type TextAlign } from './text';
 
 export interface CanvasCtx {
   fillStyle: string;
@@ -116,6 +116,27 @@ export class ReceiptPainter {
       bold,
       maxWidth,
       lineHeight,
+      fillStyle: PRINT_TOKENS.ink,
+    });
+  }
+
+  /** Single-line cell text (no wrap) — use for amounts / quantities. */
+  singleLine(
+    value: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    align: TextAlign = 'left',
+    bold = false,
+    maxWidth?: number,
+  ) {
+    drawSingleLineText(this.ctx, value, {
+      x,
+      y,
+      fontSize,
+      align,
+      bold,
+      maxWidth,
       fillStyle: PRINT_TOKENS.ink,
     });
   }
@@ -255,6 +276,7 @@ export class ReceiptPainter {
    * Draw a full items table frame: outer border + vertical column dividers + row rules.
    * `dividers` are X positions of internal vertical lines (between columns).
    * `rowYs` are Y positions of horizontal rules inside the body (after header rule).
+   * Horizontal rules are clipped to the table box (not full receipt width).
    */
   tableFrame(
     x: number,
@@ -265,16 +287,28 @@ export class ReceiptPainter {
     dividers: number[],
     rowYs: number[],
     lineWidth: number = PRINT_TOKENS.line.thick,
+    rowLineWidth: number = PRINT_TOKENS.line.thick,
   ) {
     this.box(x, y, w, h, lineWidth);
-    // Header separator
-    this.hLine(lineWidth, y + headerH);
+    // Header separator (within table bounds)
+    this.hRule(x, x + w, y + headerH, lineWidth);
     for (const dx of dividers) {
-      this.vLine(dx, y, y + h, PRINT_TOKENS.line.hair);
+      this.vLine(dx, y, y + h, lineWidth);
     }
     for (const ry of rowYs) {
-      this.hLine(PRINT_TOKENS.line.hair, ry);
+      this.hRule(x, x + w, ry, rowLineWidth);
     }
+  }
+
+  /** Horizontal rule between two X coordinates (table-scoped). */
+  hRule(x1: number, x2: number, y: number, width: number = PRINT_TOKENS.line.thick) {
+    const ctx = this.ctx;
+    ctx.strokeStyle = PRINT_TOKENS.ink;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x2, y);
+    ctx.stroke();
   }
 
   /**

@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { OrderReport } from '@/lib/reports/types';
 import { formatCurrency } from '@/lib/reports/utils';
+import { orderDisplayNumber } from '@/utils/order-display-number';
 
 interface OrdersTableProps {
   data: OrderReport[];
@@ -223,7 +224,7 @@ export default function OrdersTable({ data }: OrdersTableProps) {
                 key={order.id}
                 className="border-b border-black/5 hover:bg-cloud-soft-white/50"
               >
-                <td className="px-4 py-3 text-[15px] leading-normal font-medium text-obsidian">#{order.id}</td>
+                <td className="px-4 py-3 text-[15px] leading-normal font-medium text-obsidian">#{orderDisplayNumber(order)}</td>
                 <td className="px-4 py-3 text-[15px] leading-normal text-obsidian">{formatDateTime(order.openTime)}</td>
                 <td className="px-4 py-3 text-[15px] leading-normal text-obsidian">
                   {order.closeTime ? formatDateTime(order.closeTime) : '—'}

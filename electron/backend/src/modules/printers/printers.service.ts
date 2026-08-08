@@ -234,7 +234,11 @@ class PrintersService {
     output += '================================' + LF;
 
     orders.forEach((order) => {
-      output += `طلب #${order.id}${LF}`;
+      const ticket =
+        order.display_number != null && Number(order.display_number) > 0
+          ? Number(order.display_number)
+          : order.id;
+      output += `طلب #${ticket}${LF}`;
       order.items.forEach((item: any) => {
         const lineTotal = item.quantity * item.price;
         const serviceType = item.service_type || 'dine-in';

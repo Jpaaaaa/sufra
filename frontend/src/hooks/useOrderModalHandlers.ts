@@ -6,7 +6,8 @@ import type { Item } from './useItems';
 import type { TableEntity } from '../utils';
 import { parseDiscountFromOrder, getOrdersWithDiscount } from './useOrderModalDiscountUtils';
 import { createClearTableHandler } from './useOrderModalClearTable';
-import { mapCartItemToOrderPayload, orderItemToCartLine } from './cart-item-utils';
+import { mapCartItemToOrderPayload } from './cart-item-utils';
+import { orderItemsToCartLines } from '../utils/order-trays';
 import { withOrderCreator } from '../utils/order-payload';
 
 interface UserRole {
@@ -104,6 +105,10 @@ export function createOrderModalHandlers(
 
   const handleSubmitOrder = async () => {
     if (selectedItems.length === 0) return;
+    if (selectedItems.some((si) => si.lineKind === 'tray' && !(si.children?.length))) {
+      showToast('المجموعة يجب أن تحتوي على منتج واحد على الأقل', 'error');
+      return;
+    }
     if (!table.hall_id) {
       showToast('خطأ: الطاولة لا تحتوي على معرف الصالة', 'error');
       return;
@@ -171,9 +176,7 @@ export function createOrderModalHandlers(
   );
 
   const handleEditOrder = (order: ExistingOrder) => {
-    const orderItems: CartItem[] = order.items
-      .map((item: any) => orderItemToCartLine(item, items))
-      .filter((x): x is CartItem => x != null);
+    const orderItems: CartItem[] = orderItemsToCartLines(order.items ?? [], items);
     setSelectedItems(orderItems);
     setEditingOrder(order);
     setEditingOrderType(order.order_type);
@@ -212,6 +215,10 @@ export function createOrderModalHandlers(
   const handleSaveEditedOrder = async () => {
     if (selectedItems.length === 0) {
       showToast('يجب إضافة صنف واحد على الأقل', 'error');
+      return;
+    }
+    if (selectedItems.some((si) => si.lineKind === 'tray' && !(si.children?.length))) {
+      showToast('المجموعة يجب أن تحتوي على منتج واحد على الأقل', 'error');
       return;
     }
     if (!editingOrder || !table.hall_id) return;

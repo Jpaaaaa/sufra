@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { createPortal } from 'react-dom';
 import { Bell, X, AlertCircle, Clock, Package, Printer, Trash2 } from 'lucide-react';
 import { getServerUrl, fetchJson, Hall } from '../../utils';
+import { orderDisplayNumber } from '../../utils/order-display-number';
 
 interface Notification {
   id: string;
@@ -15,6 +16,7 @@ interface Notification {
 
 interface Order {
   id: number;
+  display_number?: number | null;
   table_id: number;
   status: string;
   created_at: string;
@@ -151,7 +153,7 @@ export default function NotificationPanel() {
                   id: `kitchen-${order.id}`,
                   type: 'kitchen',
                   title: 'تأخير في المطبخ',
-                  message: `الطلب #${order.id} متأخر في المطبخ منذ ${diffMins} دقيقة`,
+                  message: `الطلب #${orderDisplayNumber(order)} متأخر في المطبخ منذ ${diffMins} دقيقة`,
                   time: formatTimeAgo(order.created_at),
                 });
               }

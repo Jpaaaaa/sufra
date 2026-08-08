@@ -3,29 +3,28 @@ import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { requireTables, TablesService } from '../tables/tables.service';
 import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
-import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
-import { mapOrderItemRow, serializeOptionsJson } from '../../utils/order-item-options';
+import { allocateDailyDisplayNumber } from './daily-display-number';
+import { mapOrderItemRow } from '../../utils/order-item-options';
 import {
   distributeTableDiscount,
   parseStoredGlobalDiscount,
   getTableDiscountTotal,
-  validateOrderItemPrices,
 } from '../../utils/order-pricing';
+import {
+  ORDER_ITEM_SELECT_COLS,
+  type OrderItemInput,
+  topLevelSubtotal,
+  topLevelSubtotalFromRows,
+  validateOrderItemsWithTrays,
+  insertOrderItemsWithTrays,
+  shelfStockDecrements,
+} from '../../utils/order-trays';
 
 function mapItemRows(rows: any[]) {
   return rows.map((row) => mapOrderItemRow(row));
 }
 
-export interface DineInOrderItem {
-  item_id: number | null;
-  item_name: string;
-  quantity: number;
-  price: number;
-  kitchen_id?: number | null;
-  service_type?: 'dine-in' | 'pickup';
-  shelf_item_id?: number | null;
-  options_json?: unknown[] | null;
-}
+export type DineInOrderItem = OrderItemInput;
 
 export interface CreateDineInOrderDto {
   table_id: number;
@@ -40,6 +39,8 @@ export interface CreateDineInOrderDto {
 
 export interface DineInOrder {
   id: number;
+  /** Daily ticket # for business_date (resets each business day). */
+  display_number?: number | null;
   table_id: number;
   hall_id: number;
   table_session_id: number;
@@ -56,13 +57,15 @@ export interface DineInOrderWithItems extends DineInOrder {
   items: Array<{
     id: number;
     order_id: number;
-    item_id: number;
+    item_id: number | null;
     item_name: string;
     quantity: number;
     price: number;
     kitchen_id?: number | null;
     service_type?: 'dine-in' | 'pickup' | null;
     shelf_item_id?: number | null;
+    line_kind?: string | null;
+    parent_order_item_id?: number | null;
   }>;
 }
 
@@ -78,7 +81,7 @@ class DineInOrdersService {
 
     try {
       const orderRows = await this.db.all(
-        `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+        `SELECT id, display_number, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
          FROM dine_in_orders 
          WHERE table_id = ? AND status IN ('pending', 'printed') 
          ORDER BY created_at DESC`,
@@ -98,7 +101,7 @@ class DineInOrdersService {
         const placeholders = orderIds.map(() => '?').join(',');
         // CRITICAL: Always filter by order_type to ensure domain separation
         itemRows = await this.db.all(
-          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
+          `SELECT ${ORDER_ITEM_SELECT_COLS}
            FROM order_items 
            WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
           orderIds,
@@ -131,7 +134,7 @@ class DineInOrdersService {
     console.log('[DINE_IN_ORDERS] findByHall: querying orders for hall_id', hallId);
 
     const orderRows = await this.db.all(
-      `SELECT dio.id, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
+      `SELECT dio.id, dio.display_number, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
               t.name AS table_name, t.number AS table_number, h.name AS hall_name, f.name AS floor_name
        FROM dine_in_orders dio
        LEFT JOIN tables t ON dio.table_id = t.id
@@ -153,7 +156,7 @@ class DineInOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
         // CRITICAL: Always filter by order_type to ensure domain separation
         itemRows = await this.db.all(
-          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+          `SELECT ${ORDER_ITEM_SELECT_COLS}
            FROM order_items 
            WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
           orderIds,
@@ -182,7 +185,7 @@ class DineInOrdersService {
     console.log('[DINE_IN_ORDERS] findActive: querying active orders');
 
     const orderRows = await this.db.all(
-      `SELECT dio.id, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
+      `SELECT dio.id, dio.display_number, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
               t.name AS table_name, h.name AS hall_name
        FROM dine_in_orders dio
        INNER JOIN tables t ON dio.table_id = t.id
@@ -212,7 +215,7 @@ class DineInOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
         // CRITICAL: Always filter by order_type to ensure domain separation
         itemRows = await this.db.all(
-          `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+          `SELECT ${ORDER_ITEM_SELECT_COLS}
            FROM order_items 
            WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
           orderIds,
@@ -246,7 +249,7 @@ class DineInOrdersService {
     console.log('[DINE_IN_ORDERS] findArchived: raw count of completed/archived/cancelled orders:', rawCount?.count || 0);
 
     const orderRows = await this.db.all(
-      `SELECT dio.id, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
+      `SELECT dio.id, dio.display_number, dio.table_id, dio.hall_id, dio.table_session_id, dio.status, dio.total, dio.discount, dio.globalDiscount, dio.note, dio.created_at, dio.updated_at,
               t.name AS table_name, h.name AS hall_name
        FROM dine_in_orders dio
        LEFT JOIN tables t ON dio.table_id = t.id
@@ -284,7 +287,7 @@ class DineInOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+        `SELECT ${ORDER_ITEM_SELECT_COLS}
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'dine_in'`,
         orderIds,
@@ -363,15 +366,15 @@ class DineInOrdersService {
       }
     }
 
-    const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    await validateOrderItemPrices(this.db, data.items);
-    const total = subtotal;
+    await validateOrderItemsWithTrays(this.db, data.items);
+    const total = topLevelSubtotal(data.items);
     const globalDiscountJson: string | null = null;
     const shiftFields = await resolveOrderShiftFields();
+    const displayNumber = await allocateDailyDisplayNumber(this.db, shiftFields.business_date);
 
     await this.db.run(
-      `INSERT INTO dine_in_orders (table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, created_by_user_id, business_date, shift_definition_id) 
-       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?, ?, ?)`,
+      `INSERT INTO dine_in_orders (table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, created_by_user_id, business_date, shift_definition_id, display_number) 
+       VALUES (?, ?, ?, 'pending', ?, 0, ?, ?, datetime('now', 'localtime'), ?, ?, ?, ?)`,
       [
         data.table_id,
         data.hall_id,
@@ -382,6 +385,7 @@ class DineInOrdersService {
         data.userId ?? null,
         shiftFields.business_date,
         shiftFields.shift_definition_id,
+        displayNumber,
       ],
     );
 
@@ -390,42 +394,29 @@ class DineInOrdersService {
       throw new BadRequestException('Failed to create order: Invalid order ID returned');
     }
 
-    for (const item of data.items) {
-      await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          orderId,
-          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
-          item.item_name,
-          item.quantity,
-          item.price,
-          item.kitchen_id ?? null,
-          item.service_type || 'dine-in',
-          item.shelf_item_id ?? null,
-          'dine_in',
-          serializeOptionsJson(item.options_json),
-        ],
-      );
-    }
+    await insertOrderItemsWithTrays(this.db, {
+      orderId,
+      orderType: 'dine_in',
+      items: data.items,
+      withServiceType: true,
+    });
 
     console.log('[DINE_IN_ORDERS] ✅ Order created with id', orderId);
 
-    // Decrease stock for shelf items
+    // Decrease stock for shelf items (tray children × tray qty)
     try {
-      for (const item of data.items) {
-        if (item.shelf_item_id) {
-          try {
-            await this.shelvesService.decreaseStock(item.shelf_item_id, item.quantity);
-          } catch (stockErr: any) {
-            console.error('[DINE_IN_ORDERS] create: stock decrease failed, rolling back order', orderId);
-            await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [orderId]);
-            await this.db.run('DELETE FROM dine_in_orders WHERE id = ?', [orderId]);
-            throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'كمية غير كافية'}`);
-          }
+      for (const stock of shelfStockDecrements(data.items)) {
+        try {
+          await this.shelvesService.decreaseStock(stock.shelf_item_id, stock.quantity);
+        } catch (stockErr: any) {
+          console.error('[DINE_IN_ORDERS] create: stock decrease failed, rolling back order', orderId);
+          await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [orderId]);
+          await this.db.run('DELETE FROM dine_in_orders WHERE id = ?', [orderId]);
+          throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'كمية غير كافية'}`);
         }
       }
     } catch (stockErr: any) {
+      if (stockErr instanceof BadRequestException) throw stockErr;
       console.error('[DINE_IN_ORDERS] create: error during stock update, rolling back order', orderId);
       await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [orderId]);
       await this.db.run('DELETE FROM dine_in_orders WHERE id = ?', [orderId]);
@@ -439,7 +430,7 @@ class DineInOrdersService {
     }
 
     const orderRow = await this.db.get(
-      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+      `SELECT id, display_number, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
        FROM dine_in_orders WHERE id = ?`,
       [orderId],
     );
@@ -458,7 +449,7 @@ class DineInOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
+      `SELECT ${ORDER_ITEM_SELECT_COLS}
        FROM order_items 
        WHERE order_id = ? AND order_type = 'dine_in'`,
       [orderId],
@@ -481,7 +472,7 @@ class DineInOrdersService {
     console.log('[DINE_IN_ORDERS] updateStatus: order', id, 'updated to', status);
 
     const row = await this.db.get(
-      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+      `SELECT id, display_number, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
        FROM dine_in_orders WHERE id = ?`,
       [id],
     );
@@ -521,9 +512,8 @@ class DineInOrdersService {
       throw new BadRequestException('Order must have at least one item');
     }
 
-    await validateOrderItemPrices(this.db, data.items);
-    const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    const total = subtotal;
+    await validateOrderItemsWithTrays(this.db, data.items);
+    const total = topLevelSubtotal(data.items);
 
     // Update order (discount is applied at table level via setTableGlobalDiscount)
     await this.db.run(
@@ -534,24 +524,12 @@ class DineInOrdersService {
     // Delete old order items (only for this order_type to prevent accidental deletion)
     await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'dine_in'", [id]);
 
-    for (const item of data.items) {
-      await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
-          item.item_name,
-          item.quantity,
-          item.price,
-          item.kitchen_id ?? null,
-          item.service_type || 'dine-in',
-          item.shelf_item_id ?? null,
-          'dine_in',
-          serializeOptionsJson(item.options_json),
-        ],
-      );
-    }
+    await insertOrderItemsWithTrays(this.db, {
+      orderId: id,
+      orderType: 'dine_in',
+      items: data.items,
+      withServiceType: true,
+    });
 
     console.log('[DINE_IN_ORDERS] ✅ Order updated with id', id);
 
@@ -563,7 +541,7 @@ class DineInOrdersService {
 
     // Return the updated order with items
     const orderRow = await this.db.get(
-      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+      `SELECT id, display_number, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
        FROM dine_in_orders WHERE id = ?`,
       [id],
     );
@@ -581,7 +559,7 @@ class DineInOrdersService {
     }
 
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id 
+      `SELECT ${ORDER_ITEM_SELECT_COLS} 
        FROM order_items 
        WHERE order_id = ?`,
       [id],
@@ -601,7 +579,7 @@ class DineInOrdersService {
 
   async findById(id: number): Promise<DineInOrderWithItems | null> {
     const orderRow = await this.db.get(
-      `SELECT id, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
+      `SELECT id, display_number, table_id, hall_id, table_session_id, status, total, discount, globalDiscount, note, created_at, updated_at 
        FROM dine_in_orders WHERE id = ?`,
       [id],
     );
@@ -619,7 +597,7 @@ class DineInOrdersService {
     }
 
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id 
+      `SELECT ${ORDER_ITEM_SELECT_COLS} 
        FROM order_items 
        WHERE order_id = ?`,
       [id],
@@ -791,10 +769,10 @@ class DineInOrdersService {
 
     for (const order of orders) {
       const items = await this.db.all(
-        `SELECT quantity, price FROM order_items WHERE order_id = ? AND order_type = 'dine_in'`,
+        `SELECT quantity, price, parent_order_item_id FROM order_items WHERE order_id = ? AND order_type = 'dine_in'`,
         [order.id],
       );
-      const subtotal = items.reduce((sum: number, item: any) => sum + item.price * item.quantity, 0);
+      const subtotal = topLevelSubtotalFromRows(items as Array<{ price: number; quantity: number; parent_order_item_id?: number | null }>);
       orderSubtotalRows.push({ orderId: order.id, subtotal });
     }
 
