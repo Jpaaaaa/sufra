@@ -702,6 +702,16 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
           const endDate = urlParams.get('end_date') || urlParams.get('to') || undefined;
           return await sufra.finance.revenues(startDate || undefined, endDate || undefined);
         }
+        // Handle /finance/expenses/recurring (all recurring templates)
+        if (idOrAction === 'expenses' && rest?.[0] === 'recurring') {
+          if (typeof sufra.finance?.recurringExpenses === 'function') {
+            return await sufra.finance.recurringExpenses();
+          }
+          // Stale preload (Electron not restarted): approximate via date-filtered list
+          const to = new Date().toISOString().slice(0, 10);
+          const rows = await sufra.finance.expenses('2000-01-01', to);
+          return (Array.isArray(rows) ? rows : []).filter((e: { is_recurring?: boolean }) => Boolean(e?.is_recurring));
+        }
         // Handle /finance/expenses?from=...&to=...
         if (idOrAction === 'expenses') {
           const urlParams = new URLSearchParams(queryString || '');
@@ -785,15 +795,15 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
       }
       if (method === 'PATCH' || method === 'PUT') {
         const parts = normalizedEndpoint.split('/');
-        // Handle /finance/expenses/:id
-        if (parts[1] === 'expenses' && parts[2]) {
+        // Handle /finance/expenses/:id (numeric only)
+        if (parts[1] === 'expenses' && parts[2] && /^\d+$/.test(parts[2])) {
           return await sufra.finance.updateExpense(parseInt(parts[2], 10), body);
         }
       }
       if (method === 'DELETE') {
         const parts = normalizedEndpoint.split('/');
-        // Handle /finance/expenses/:id
-        if (parts[1] === 'expenses' && parts[2]) {
+        // Handle /finance/expenses/:id (numeric only)
+        if (parts[1] === 'expenses' && parts[2] && /^\d+$/.test(parts[2])) {
           return await sufra.finance.deleteExpense(parseInt(parts[2], 10));
         }
       }

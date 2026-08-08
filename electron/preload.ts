@@ -254,6 +254,7 @@ contextBridge.exposeInMainWorld('sufra', {
     revenues: (startDate?: string, endDate?: string) => invoke('finance:revenues', startDate, endDate),
     createRevenue: (data: any) => invoke('finance:createRevenue', data),
     expenses: (startDate?: string, endDate?: string) => invoke('finance:expenses', startDate, endDate),
+    recurringExpenses: () => invoke('finance:recurringExpenses'),
     createExpense: (data: any) => invoke('finance:createExpense', data),
     updateExpense: (id: number, data: any) => invoke('finance:updateExpense', id, data),
     deleteExpense: (id: number) => invoke('finance:deleteExpense', id),
@@ -702,6 +703,7 @@ declare global {
         revenues: (startDate?: string, endDate?: string) => Promise<any[]>;
         createRevenue: (data: any) => Promise<any>;
         expenses: (startDate?: string, endDate?: string) => Promise<any[]>;
+        recurringExpenses: () => Promise<any[]>;
         createExpense: (data: any) => Promise<any>;
         updateExpense: (id: number, data: any) => Promise<any>;
         deleteExpense: (id: number) => Promise<any>;

@@ -239,10 +239,36 @@ export function useFinancePageHandlers(
     [filters, loadData, t],
   );
 
-  const openExpenseForm = useCallback(() => {
-    resetExpenseForm();
+  const handleStopRecurring = useCallback(
+    async (expense: Expense) => {
+      if (!(await showConfirm({ message: t('finance.confirmStopRecurring') }))) return;
+
+      try {
+        await updateExpense(expense.id, {
+          is_recurring: false,
+          recurrence_type: null,
+          recurrence_interval: null,
+        });
+        showToast(t('finance.toastRecurringStopped'), 'success');
+        await loadData(filters);
+      } catch (error) {
+        console.error('Failed to stop recurring expense:', error);
+        showToast(t('finance.toastRecurringStopFailed'), 'error');
+      }
+    },
+    [filters, loadData, t],
+  );
+
+  const openExpenseForm = useCallback((opts?: { recurring?: boolean }) => {
+    setExpenseFormState({
+      ...INITIAL_EXPENSE_FORM,
+      date: new Date().toISOString().split('T')[0],
+      is_recurring: Boolean(opts?.recurring),
+      recurrence_type: opts?.recurring ? 'monthly' : '',
+      recurrence_interval: '1',
+    });
     setIsExpenseFormOpen(true);
-  }, [resetExpenseForm]);
+  }, []);
 
   const closeExpenseForm = useCallback(() => {
     setIsExpenseFormOpen(false);
@@ -263,6 +289,7 @@ export function useFinancePageHandlers(
     handleExpenseSubmit,
     handleEditExpense,
     handleDeleteExpense,
+    handleStopRecurring,
     openExpenseForm,
     closeExpenseForm,
   };

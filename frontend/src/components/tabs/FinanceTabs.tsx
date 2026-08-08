@@ -2,14 +2,14 @@
 
 import { useTranslation } from 'react-i18next';
 
-export type FinanceTabKey = 'general' | 'expenses' | 'revenue';
+export type FinanceTabKey = 'general' | 'expenses' | 'recurring' | 'revenue';
 
 interface FinanceTabsProps {
   activeTab: FinanceTabKey;
   onTabChange: (tab: FinanceTabKey) => void;
 }
 
-const TAB_KEYS: FinanceTabKey[] = ['general', 'expenses', 'revenue'];
+const TAB_KEYS: FinanceTabKey[] = ['general', 'expenses', 'recurring', 'revenue'];
 
 export default function FinanceTabs({ activeTab, onTabChange }: FinanceTabsProps) {
   const { t } = useTranslation();
@@ -17,6 +17,7 @@ export default function FinanceTabs({ activeTab, onTabChange }: FinanceTabsProps
   const labelFor = (key: FinanceTabKey) => {
     if (key === 'general') return t('finance.tabGeneral');
     if (key === 'expenses') return t('finance.tabExpenses');
+    if (key === 'recurring') return t('finance.tabRecurring');
     return t('finance.tabRevenue');
   };
 

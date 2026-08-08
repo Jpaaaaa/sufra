@@ -16,6 +16,7 @@ import FinancePageFiltersSection from './FinancePageFiltersSection';
 import FinancePageGeneralSection from './FinancePageGeneralSection';
 import FinancePageRevenueSection from './FinancePageRevenueSection';
 import FinancePageExpensesSection from './FinancePageExpensesSection';
+import FinancePageRecurringSection from './FinancePageRecurringSection';
 import FinancePageExpenseForm from './FinancePageExpenseForm';
 
 export default function FinancePage() {
@@ -30,6 +31,7 @@ export default function FinancePage() {
     setFilters,
     revenues,
     expenses,
+    recurringExpenses,
     isLoading,
     hasAutoSynced,
     setHasAutoSynced,
@@ -53,6 +55,7 @@ export default function FinancePage() {
     handleExpenseSubmit,
     handleEditExpense,
     handleDeleteExpense,
+    handleStopRecurring,
     openExpenseForm,
     closeExpenseForm,
     autoSyncIfNeeded,
@@ -168,6 +171,17 @@ export default function FinancePage() {
                     onEditExpense={handleEditExpense}
                     onDeleteExpense={handleDeleteExpense}
                     onOpenExpenseForm={openExpenseForm}
+                  />
+                )}
+
+                {activeTab === 'recurring' && (
+                  <FinancePageRecurringSection
+                    expenses={recurringExpenses}
+                    users={users}
+                    onEditExpense={handleEditExpense}
+                    onDeleteExpense={handleDeleteExpense}
+                    onStopRecurring={handleStopRecurring}
+                    onOpenExpenseForm={() => openExpenseForm({ recurring: true })}
                   />
                 )}
 

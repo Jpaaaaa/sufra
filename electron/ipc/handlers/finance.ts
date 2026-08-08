@@ -16,6 +16,7 @@ import {
   financeCreateRevenue,
   financeSyncRevenueFromOrders,
   financeGetExpenses,
+  financeGetRecurringExpenses,
   financeCreateExpense,
   financeUpdateExpense,
   financeDeleteExpense,
@@ -45,6 +46,9 @@ export function registerFinanceHandlers() {
   });
   ipcMain.handle('finance:expenses', async (_, startDate?: string, endDate?: string) => {
     return await financeGetExpenses({ from: startDate, to: endDate });
+  });
+  ipcMain.handle('finance:recurringExpenses', async () => {
+    return await financeGetRecurringExpenses();
   });
   ipcMain.handle('finance:profit', async (_, startDate?: string, endDate?: string) => {
     return await financeGetProfitAndLoss({ from: startDate, to: endDate });

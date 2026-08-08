@@ -4,6 +4,7 @@ export {
   createRevenue,
   syncRevenueFromOrders,
   getExpenses,
+  getRecurringExpenses,
   createExpense,
   updateExpense,
   deleteExpense,
