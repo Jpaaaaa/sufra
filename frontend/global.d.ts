@@ -353,6 +353,7 @@ declare global {
         createRevenue: (data: any) => Promise<any>;
         syncRevenue: (date: string) => Promise<any | null>;
         expenses: (startDate?: string, endDate?: string) => Promise<any[]>;
+        recurringExpenses: () => Promise<any[]>;
         createExpense: (data: any) => Promise<any>;
         updateExpense: (id: number, data: any) => Promise<any>;
         deleteExpense: (id: number) => Promise<any>;
