@@ -1160,6 +1160,7 @@
     "pdfPeriod": "Period",
     "toastPdfNoData": "Nothing to export for this period.",
     "toastPdfOpened": "Print dialog opened — choose Save as PDF.",
+    "toastPdfSaved": "PDF saved to Downloads: {{fileName}}",
     "toastPdfPopupBlocked": "Could not open print window. Allow pop-ups and try again.",
     "toastPdfFailed": "Could not export PDF."
   }

@@ -1,6 +1,7 @@
 import { useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import BottomNav from './BottomNav';
+import TabletZoomControls from './TabletZoomControls';
 
 export default function LayoutWrapper({
   children,
@@ -30,6 +31,7 @@ export default function LayoutWrapper({
 
         {/* Bottom nav bar - visible only on mobile/tablet */}
         <BottomNav />
+        <TabletZoomControls />
       </div>
     </main>
   );

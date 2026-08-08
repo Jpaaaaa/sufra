@@ -180,12 +180,33 @@ function OrderModalCartComponent({
       )}
 
       {!hasCart && existingOrders.length === 0 && (
-        <div className="flex flex-1 items-center justify-center px-6">
+        <div className="flex flex-1 flex-col items-center justify-center gap-4 px-6">
           <p className="text-center text-[14px] leading-relaxed text-obsidian/40">
             {t('orders.cartEmptyHint')}
           </p>
+          {onAddTray ? (
+            <button
+              type="button"
+              onClick={onAddTray}
+              className="rounded-lg border border-dashed border-cyber-aqua/40 bg-cyber-aqua/[0.06] px-4 py-2.5 text-[13px] font-bold text-cyber-aqua hover:bg-cyber-aqua/10"
+            >
+              + {t('orders.addTray')}
+            </button>
+          ) : null}
         </div>
       )}
+
+      {!hasCart && existingOrders.length > 0 && onAddTray ? (
+        <div className="flex flex-shrink-0 items-center justify-end gap-2 border-b border-black/[0.06] bg-white px-3 py-2.5">
+          <button
+            type="button"
+            onClick={onAddTray}
+            className="shrink-0 rounded-lg border border-dashed border-cyber-aqua/40 bg-cyber-aqua/[0.06] px-2.5 py-1.5 text-[12px] font-bold text-cyber-aqua hover:bg-cyber-aqua/10"
+          >
+            + {t('orders.addTray')}
+          </button>
+        </div>
+      ) : null}
 
       {hasCart && (
         <div className="flex min-h-0 flex-1 flex-col">

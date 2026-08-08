@@ -1160,6 +1160,7 @@
     "pdfPeriod": "ماوە",
     "toastPdfNoData": "هیچ شتێک بۆ هەناردەکردن لەم ماوەیەدا نییە.",
     "toastPdfOpened": "پەنجەرەی چاپ کردن کرایەوە — پاشەکەوتکردن وەک PDF هەڵبژێرە.",
+    "toastPdfSaved": "PDF پاشەکەوت کرا لە Downloads: {{fileName}}",
     "toastPdfPopupBlocked": "نەتوانرا پەنجەرەی چاپ کردن بکرێتەوە. ڕێگە بە پەنجەرە دەرچووەکان بدە و دووبارە هەوڵ بدە.",
     "toastPdfFailed": "نەتوانرا PDF هەناردە بکرێت."
   }

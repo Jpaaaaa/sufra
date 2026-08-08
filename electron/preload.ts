@@ -318,6 +318,8 @@ contextBridge.exposeInMainWorld('sufra', {
         drawer?: any;
       };
     }) => invoke('export-pdf', exportData),
+    htmlPdf: (payload: { html: string; fileName?: string }) =>
+      invoke('export-html-pdf', payload),
   },
   // Generic API method for routing any endpoint via IPC
   api: (endpoint: string, method: string = 'GET', body?: any) => {

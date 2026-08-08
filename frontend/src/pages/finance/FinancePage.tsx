@@ -8,7 +8,7 @@ import TabTransition from '../../components/ui/TabTransition';
 import { showToast } from '../../components/ui/Toast';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
 import { buildFinanceDailyRows } from '../../lib/finance/daily-rows';
-import { buildFinanceGeneralPdfHtml, printFinanceHtml } from '../../lib/finance/export-general-pdf';
+import { buildFinanceGeneralPdfHtml, saveFinanceHtmlPdf } from '../../lib/finance/export-general-pdf';
 import { APP_BRAND_NAME } from '../../lib/brand';
 import { useFinancePageData } from './useFinancePageData';
 import { useFinancePageHandlers } from './useFinancePageHandlers';
@@ -64,7 +64,7 @@ export default function FinancePage() {
     }
   }, []);
 
-  const handleExportPdf = useCallback(() => {
+  const handleExportPdf = useCallback(async () => {
     const rows = buildFinanceDailyRows(revenues, expenses, t);
     if (rows.length === 0) {
       showToast(t('finance.toastPdfNoData'), 'warning');
@@ -90,8 +90,19 @@ export default function FinancePage() {
         },
         numberLocale,
       });
-      printFinanceHtml(html);
-      showToast(t('finance.toastPdfOpened'), 'success');
+      const fileName = `sufra-finance-${filters.from || 'from'}-${filters.to || 'to'}.pdf`;
+      const result = await saveFinanceHtmlPdf(html, fileName);
+      if (result.fileName) {
+        showToast(
+          t('finance.toastPdfSaved', {
+            defaultValue: `تم حفظ PDF: ${result.fileName}`,
+            fileName: result.fileName,
+          }),
+          'success',
+        );
+      } else {
+        showToast(t('finance.toastPdfOpened'), 'success');
+      }
     } catch (error: any) {
       console.error('Failed to export finance PDF:', error);
       if (error?.message === 'POPUP_BLOCKED') {

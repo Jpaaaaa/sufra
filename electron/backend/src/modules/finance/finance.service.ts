@@ -193,6 +193,13 @@ class FinanceService {
     to?: string;
     category?: string;
   }): Promise<Expense[]> {
+    // Materialize any due recurring expenses before listing
+    try {
+      await this.processDueRecurringExpenses();
+    } catch (err) {
+      console.error('[FINANCE] processDueRecurringExpenses failed:', err);
+    }
+
     let query = `SELECT e.* FROM expenses e WHERE 1=1`;
     const params: any[] = [];
 
@@ -227,12 +234,94 @@ class FinanceService {
     }));
   }
 
+  /**
+   * Create expense rows for recurring templates whose next_occurrence_date is due.
+   * Generated rows are non-recurring copies; the template advances next_occurrence_date.
+   */
+  async processDueRecurringExpenses(asOfDate?: string): Promise<{ created: number }> {
+    const today = (asOfDate || new Date().toISOString().split('T')[0]).slice(0, 10);
+    const templates = await this.db.all(
+      `SELECT * FROM expenses
+       WHERE is_recurring = 1
+         AND next_occurrence_date IS NOT NULL
+         AND next_occurrence_date != ''
+         AND DATE(next_occurrence_date) <= DATE(?)
+       ORDER BY id ASC`,
+      [today],
+    );
+
+    if (!templates?.length) return { created: 0 };
+
+    let created = 0;
+    const maxCatchUp = 400; // safety: ~1 year of daily
+
+    for (const tpl of templates) {
+      const recurrenceType = tpl.recurrence_type as
+        | 'daily'
+        | 'weekly'
+        | 'monthly'
+        | 'yearly'
+        | null;
+      if (!recurrenceType) continue;
+
+      const interval = Number(tpl.recurrence_interval) > 0 ? Number(tpl.recurrence_interval) : 1;
+      let next = String(tpl.next_occurrence_date).split('T')[0];
+      let steps = 0;
+
+      while (next && next <= today && steps < maxCatchUp) {
+        // Avoid duplicate generated rows for the same template date
+        const existing = await this.db.get(
+          `SELECT id FROM expenses
+           WHERE DATE(date) = DATE(?)
+             AND category = ?
+             AND amount = ?
+             AND is_recurring = 0
+             AND COALESCE(notes, '') = COALESCE(?, '')
+           LIMIT 1`,
+          [next, tpl.category, tpl.amount, tpl.notes ?? null],
+        );
+
+        if (!existing) {
+          await this.db.run(
+            `INSERT INTO expenses
+              (date, category, amount, notes, user_id, is_recurring, recurrence_type, recurrence_interval, next_occurrence_date, created_at)
+             VALUES (?, ?, ?, ?, ?, 0, NULL, NULL, NULL, CURRENT_TIMESTAMP)`,
+            [next, tpl.category, tpl.amount, tpl.notes ?? null, tpl.user_id ?? null],
+          );
+          created++;
+        }
+
+        const advanced = this.calculateNextOccurrence(next, recurrenceType, interval);
+        if (!advanced || advanced <= next) break;
+        next = advanced;
+        steps++;
+      }
+
+      await this.db.run('UPDATE expenses SET next_occurrence_date = ? WHERE id = ?', [
+        next,
+        tpl.id,
+      ]);
+    }
+
+    if (created > 0) {
+      console.log(`[FINANCE] ✓ Materialized ${created} recurring expense occurrence(s)`);
+    }
+    return { created };
+  }
+
   private calculateNextOccurrence(
     date: string,
     recurrenceType: 'daily' | 'weekly' | 'monthly' | 'yearly',
     interval: number = 1,
   ): string {
-    const currentDate = new Date(date);
+    const parts = String(date).split('T')[0].split('-').map((p) => Number(p));
+    const y = parts[0];
+    const m = parts[1];
+    const d = parts[2];
+    const currentDate =
+      Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)
+        ? new Date(y, m - 1, d)
+        : new Date(date);
     const nextDate = new Date(currentDate);
 
     switch (recurrenceType) {
@@ -240,7 +329,7 @@ class FinanceService {
         nextDate.setDate(currentDate.getDate() + interval);
         break;
       case 'weekly':
-        nextDate.setDate(currentDate.getDate() + (7 * interval));
+        nextDate.setDate(currentDate.getDate() + 7 * interval);
         break;
       case 'monthly':
         nextDate.setMonth(currentDate.getMonth() + interval);
@@ -250,7 +339,10 @@ class FinanceService {
         break;
     }
 
-    return nextDate.toISOString().split('T')[0];
+    const yy = nextDate.getFullYear();
+    const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(nextDate.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
   }
 
   async createExpense(dto: CreateExpenseDto): Promise<Expense> {
@@ -482,6 +574,12 @@ class FinanceService {
     from?: string;
     to?: string;
   }): Promise<ProfitSummary> {
+    try {
+      await this.processDueRecurringExpenses();
+    } catch (err) {
+      console.error('[FINANCE] processDueRecurringExpenses failed (P&L):', err);
+    }
+
     const fromDate = filters?.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const toDate = filters?.to || new Date().toISOString().split('T')[0];
 
@@ -549,6 +647,12 @@ export function getExpenses(
   ...args: Parameters<FinanceService['getExpenses']>
 ): ReturnType<FinanceService['getExpenses']> {
   return requireFinance().getExpenses(...args);
+}
+
+export function processDueRecurringExpenses(
+  ...args: Parameters<FinanceService['processDueRecurringExpenses']>
+): ReturnType<FinanceService['processDueRecurringExpenses']> {
+  return requireFinance().processDueRecurringExpenses(...args);
 }
 
 export function createExpense(

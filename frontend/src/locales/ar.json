@@ -1160,6 +1160,7 @@
     "pdfPeriod": "الفترة",
     "toastPdfNoData": "لا توجد بيانات للتصدير في هذه الفترة.",
     "toastPdfOpened": "تم فتح نافذة الطباعة — اختر حفظ كـ PDF.",
+    "toastPdfSaved": "تم حفظ PDF في التنزيلات: {{fileName}}",
     "toastPdfPopupBlocked": "تعذر فتح نافذة الطباعة. اسمح بالنوافذ المنبثقة وحاول مجددًا.",
     "toastPdfFailed": "تعذر تصدير PDF."
   }

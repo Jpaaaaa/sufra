@@ -7,6 +7,7 @@ export {
   createExpense,
   updateExpense,
   deleteExpense,
+  processDueRecurringExpenses,
   getCashFlow,
   createCashFlow,
   syncCashFlowFromOrders,

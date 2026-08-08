@@ -417,4 +417,76 @@ export function registerPrintHandlers() {
       }
     },
   );
+
+  ipcMain.handle(
+    'export-html-pdf',
+    async (
+      _event,
+      payload: { html: string; fileName?: string },
+    ) => {
+      let pdfWin: BrowserWindow | null = null;
+      try {
+        const html = String(payload?.html || '');
+        if (!html.trim()) throw new Error('Empty HTML for PDF export');
+
+        pdfWin = new BrowserWindow({
+          show: false,
+          width: 1200,
+          height: 1600,
+          webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: false },
+        });
+        const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+        const loadPromise = new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error('Page load timeout after 120 seconds')),
+            120000,
+          );
+          pdfWin!.webContents.once('dom-ready', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          pdfWin!.webContents.once('did-fail-load', (_, __, errorDescription) => {
+            clearTimeout(timeout);
+            reject(new Error(`Page load failed: ${errorDescription}`));
+          });
+        });
+        pdfWin.loadURL(dataUrl);
+        await loadPromise;
+        await pdfWin.webContents.executeJavaScript(`
+        new Promise((resolve) => {
+          if (document.fonts?.ready) document.fonts.ready.then(resolve).catch(() => setTimeout(resolve, 1000));
+          else setTimeout(resolve, 1000);
+        })
+      `);
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const pdfBuffer = await pdfWin.webContents.printToPDF({
+          pageSize: 'A4',
+          margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+          printBackground: true,
+          preferCSSPageSize: false,
+        });
+        if (!pdfBuffer || pdfBuffer.length === 0) throw new Error('PDF generation returned empty buffer');
+
+        const downloadsPath = app.getPath('downloads');
+        const baseFileName = (payload.fileName || `sufra-finance-${new Date().toISOString().slice(0, 10)}.pdf`).replace(
+          /[<>:"/\\|?*]/g,
+          '-',
+        );
+        const safeName = baseFileName.toLowerCase().endsWith('.pdf') ? baseFileName : `${baseFileName}.pdf`;
+        const { filePath, fileName } = writePdfBufferToDownloads(downloadsPath, safeName, pdfBuffer);
+        return { success: true, filePath, fileName };
+      } catch (error: any) {
+        return { success: false, error: error.message || 'Unknown error during PDF export' };
+      } finally {
+        if (pdfWin) {
+          try {
+            pdfWin.close();
+          } catch {
+            /* ignore */
+          }
+          pdfWin = null;
+        }
+      }
+    },
+  );
 }
