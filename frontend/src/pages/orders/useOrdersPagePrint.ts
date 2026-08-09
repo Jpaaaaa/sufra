@@ -55,10 +55,12 @@ export function createOrdersPagePrintHandlers(
         note: order.note || null,
         cashier: user?.username,
         service_type: orderType,
-        ...(orderType === 'delivery' && {
+        ...((orderType === 'pickup' || orderType === 'delivery') && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
-          customer_address: order.customer_address || null,
+          ...(orderType === 'delivery'
+            ? { customer_address: order.customer_address || null }
+            : {}),
         }),
       };
 
@@ -160,10 +162,12 @@ export function createOrdersPagePrintHandlers(
         service_type: orderType,
         thankYouMessage: 'شكراً لزيارتكم',
         cashier: user?.username,
-        ...(orderType === 'delivery' && {
+        ...((orderType === 'pickup' || orderType === 'delivery') && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
-          customer_address: order.customer_address || null,
+          ...(orderType === 'delivery'
+            ? { customer_address: order.customer_address || null }
+            : {}),
         }),
       };
 

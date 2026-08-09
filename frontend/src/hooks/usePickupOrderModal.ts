@@ -481,6 +481,8 @@ export function usePickupOrderModal() {
         restaurantName: APP_BRAND_NAME,
         note: order.note || null,
         printTime: new Date().toISOString(),
+        customer_name: order.customer_name || null,
+        customer_phone: order.customer_phone || null,
       };
       
       // Group items by kitchen (expand trays) and print each

@@ -299,9 +299,25 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
     }
     if (orderTime) est += K.time + K.gapAfterMeta;
     if (data.priority) est += 28;
-    if (serviceType === 'delivery') {
-      if (data.customer_name) est += K.secondary + 4;
-      if (data.customer_phone) est += K.secondary + 4;
+    if (serviceType === 'pickup' || serviceType === 'delivery') {
+      const hasCust =
+        Boolean(data.customer_name) ||
+        Boolean(data.customer_phone) ||
+        (serviceType === 'delivery' && Boolean(data.customer_address));
+      if (hasCust) {
+        est += K.secondary + 14; // header band
+        est += 12;
+        if (data.customer_name) est += K.tableNumber + 8;
+        if (data.customer_phone) est += K.location + 8;
+        if (serviceType === 'delivery' && data.customer_address) {
+          tempCtx.font = printFont(K.singleItem, true);
+          est +=
+            wrapText(tempCtx, `العنوان: ${data.customer_address}`, measure.contentW - 24).length *
+              (K.singleItem + 4) +
+            6;
+        }
+        est += 12 + 8;
+      }
     }
     est += 10;
     est += tableHeaderH;
@@ -407,14 +423,71 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
       p.advance(lines * (K.time + 2) + K.gapAfterMeta);
     }
 
-    if (serviceType === 'delivery') {
-      if (data.customer_name) {
-        lines = p.text(String(data.customer_name), p.centerX, p.y, K.secondary, 'center', true, p.contentW);
-        p.advance(lines * (K.secondary + 2) + 2);
-      }
-      if (data.customer_phone) {
-        lines = p.text(String(data.customer_phone), p.centerX, p.y, K.secondary, 'center', false, p.contentW);
-        p.advance(lines * (K.secondary + 2) + 2);
+    if (serviceType === 'pickup' || serviceType === 'delivery') {
+      const hasCust =
+        Boolean(data.customer_name) ||
+        Boolean(data.customer_phone) ||
+        (serviceType === 'delivery' && Boolean(data.customer_address));
+      if (hasCust) {
+        const custHeaderH = K.secondary + 12;
+        p.fillBox(p.pad, p.y, p.contentW, custHeaderH);
+        ctx.fillStyle = T.paper;
+        ctx.font = printFont(K.secondary, true);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('بيانات العميل', p.centerX, p.y + custHeaderH / 2);
+        ctx.fillStyle = T.ink;
+        ctx.textBaseline = 'top';
+        p.advance(custHeaderH);
+
+        const boxPad = 10;
+        const boxTop = p.y;
+        let cy = boxTop + boxPad;
+        const innerW = p.contentW - boxPad * 2;
+
+        if (data.customer_name) {
+          lines = p.text(
+            String(data.customer_name),
+            p.centerX,
+            cy,
+            K.tableNumber,
+            'center',
+            true,
+            innerW,
+            K.tableNumber + 2,
+          );
+          cy += lines * (K.tableNumber + 2) + 6;
+        }
+        if (data.customer_phone) {
+          lines = p.text(
+            `هاتف: ${data.customer_phone}`,
+            p.centerX,
+            cy,
+            K.location,
+            'center',
+            true,
+            innerW,
+            K.location + 2,
+          );
+          cy += lines * (K.location + 2) + 6;
+        }
+        if (serviceType === 'delivery' && data.customer_address) {
+          lines = p.text(
+            `العنوان: ${data.customer_address}`,
+            p.centerX,
+            cy,
+            K.singleItem,
+            'center',
+            true,
+            innerW,
+            K.singleItem + 2,
+          );
+          cy += lines * (K.singleItem + 2);
+        }
+
+        const boxH = Math.max(K.tableNumber + boxPad * 2, cy + boxPad - boxTop);
+        p.box(p.pad, boxTop, p.contentW, boxH, T.line.heavy);
+        p.advance(boxH + 8);
       }
     }
 

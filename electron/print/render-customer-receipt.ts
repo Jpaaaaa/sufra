@@ -82,14 +82,25 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     const visible = infoFields.filter((f) => f.value != null && String(f.value).trim() !== '');
     y += Math.ceil(Math.max(1, visible.length) / 2) * 72 + T.sectionGap;
 
-    if (serviceType === 'delivery') {
-      if (data.customer_name) y += r.lineHeight;
-      if (data.customer_phone) y += r.lineHeight;
-      if (data.customer_address) {
-        tempCtx.font = printFont(T.font.sm, false);
-        y += wrapText(tempCtx, String(data.customer_address), measure.contentW).length * r.lineHeightSm;
+    if (serviceType === 'pickup' || serviceType === 'delivery') {
+      const hasCustomer =
+        Boolean(data.customer_name) ||
+        Boolean(data.customer_phone) ||
+        (serviceType === 'delivery' && Boolean(data.customer_address));
+      if (hasCustomer) {
+        y += T.font.md + 16; // inverted header band
+        y += 14; // box pad top
+        if (data.customer_name) y += T.font.xl + 10;
+        if (data.customer_phone) y += T.font.lg + 10;
+        if (serviceType === 'delivery' && data.customer_address) {
+          tempCtx.font = printFont(T.font.md, true);
+          y +=
+            wrapText(tempCtx, `العنوان: ${data.customer_address}`, measure.contentW - 28).length *
+              (T.font.md + 6) +
+            8;
+        }
+        y += 14 + T.sectionGap; // box pad bottom + gap
       }
-      y += T.gap;
     }
 
     y += T.font.xs + 10;
@@ -156,25 +167,82 @@ export async function renderReceiptToPng(data: ReceiptPrintData | null | undefin
     p.hLine(T.line.thick);
     p.advance(T.sectionGap);
 
-    const gridH = p.infoGrid(infoFields, p.y, 2, T.font.md);
-    if (gridH) p.advance(gridH + T.sectionGap);
+    // Customer block first for pickup/delivery — dominant for staff/drivers
+    if (serviceType === 'pickup' || serviceType === 'delivery') {
+      const hasCustomer =
+        Boolean(data.customer_name) ||
+        Boolean(data.customer_phone) ||
+        (serviceType === 'delivery' && Boolean(data.customer_address));
+      if (hasCustomer) {
+        const headerH = T.font.md + 16;
+        p.fillBox(p.pad, p.y, p.contentW, headerH);
+        const ctxHeader = ctx;
+        ctxHeader.fillStyle = T.paper;
+        ctxHeader.font = printFont(T.font.md, true);
+        ctxHeader.textAlign = 'center';
+        ctxHeader.textBaseline = 'middle';
+        ctxHeader.fillText('بيانات العميل', p.centerX, p.y + headerH / 2);
+        ctxHeader.fillStyle = T.ink;
+        ctxHeader.textBaseline = 'top';
+        p.advance(headerH);
 
-    if (serviceType === 'delivery') {
-      if (data.customer_name) {
-        p.text(`العميل: ${data.customer_name}`, p.right, p.y, T.font.sm, 'right', true);
-        p.advance(r.lineHeightSm);
-      }
-      if (data.customer_phone) {
-        p.text(`الهاتف: ${data.customer_phone}`, p.right, p.y, T.font.sm, 'right', false);
-        p.advance(r.lineHeightSm);
-      }
-      if (data.customer_address) {
-        lines = p.text(`العنوان: ${data.customer_address}`, p.right, p.y, T.font.sm, 'right', false);
-        p.advance(lines * r.lineHeightSm + 4);
+        const boxPadX = 14;
+        const boxPadY = 14;
+        const innerW = p.contentW - boxPadX * 2;
+        const boxTop = p.y;
+        let innerY = boxTop + boxPadY;
+
+        if (data.customer_name) {
+          lines = p.text(
+            String(data.customer_name),
+            p.centerX,
+            innerY,
+            T.font.xl,
+            'center',
+            true,
+            innerW,
+            T.font.xl + 6,
+          );
+          innerY += lines * (T.font.xl + 6) + 8;
+        }
+        if (data.customer_phone) {
+          lines = p.text(
+            `هاتف: ${data.customer_phone}`,
+            p.centerX,
+            innerY,
+            T.font.lg,
+            'center',
+            true,
+            innerW,
+            T.font.lg + 6,
+          );
+          innerY += lines * (T.font.lg + 6) + 8;
+        }
+        if (serviceType === 'delivery' && data.customer_address) {
+          lines = p.text(
+            `العنوان: ${data.customer_address}`,
+            p.centerX,
+            innerY,
+            T.font.md,
+            'center',
+            true,
+            innerW,
+            T.font.md + 6,
+          );
+          innerY += lines * (T.font.md + 6);
+        }
+
+        const boxH = Math.max(T.font.xl + boxPadY * 2, innerY + boxPadY - boxTop);
+        // Double outline for thermal contrast
+        p.box(p.pad, boxTop, p.contentW, boxH, T.line.heavy);
+        p.box(p.pad + 3, boxTop + 3, p.contentW - 6, boxH - 6, T.line.thick);
+        p.advance(boxH + T.sectionGap);
       }
     }
 
-    p.advance(T.gap);
+    const gridH = p.infoGrid(infoFields, p.y, 2, T.font.md);
+    if (gridH) p.advance(gridH + T.sectionGap);
+
     p.hLine(T.line.thick);
     p.advance(6);
     p.text('المبالغ بالدينار (د.ع)', p.centerX, p.y, T.font.xs, 'center', false, p.contentW);

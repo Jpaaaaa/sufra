@@ -2,6 +2,17 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.28] — 2026-08-09
+
+### Fixed
+
+- Pickup (takeaway) customer receipts now include customer name and phone
+- Delivery and pickup kitchen tickets show customer details more clearly
+
+### Changed
+
+- Customer block on pickup/delivery receipts: bold header bar, double outline, larger name/phone/address for thermal readability
+
 ## [0.1.24] — 2026-08-08
 
 ### Added
