@@ -310,6 +310,93 @@ export class DatabaseService {
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP
       )`,
     );
+
+    this.ensureOfferBundleColumns();
+  }
+
+  /**
+   * Bundle contents for daily / happy hour / scheduled (like combo_items).
+   * Safe to call repeatedly.
+   */
+  private ensureOfferBundleColumns(): void {
+    const addPricingMode = (table: string) => {
+      const check = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name='pricing_mode'`,
+      );
+      if (check && check.cnt === 0) {
+        try {
+          this.runSync(`ALTER TABLE ${table} ADD COLUMN pricing_mode TEXT DEFAULT 'fixed'`);
+          this.runSync(`UPDATE ${table} SET pricing_mode = 'fixed' WHERE pricing_mode IS NULL`);
+          console.log(`[DB] ✅ Added pricing_mode to ${table}`);
+        } catch (error) {
+          console.error(`[DB] Failed to add pricing_mode to ${table}`, error);
+        }
+      }
+    };
+
+    addPricingMode('daily_deals');
+    addPricingMode('happy_hour');
+    addPricingMode('scheduled_offers');
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS daily_deal_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        daily_deal_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        FOREIGN KEY(daily_deal_id) REFERENCES daily_deals(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS happy_hour_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        happy_hour_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        FOREIGN KEY(happy_hour_id) REFERENCES happy_hour(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS scheduled_offer_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scheduled_offer_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        FOREIGN KEY(scheduled_offer_id) REFERENCES scheduled_offers(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+
+    try {
+      this.runSync(
+        `INSERT INTO daily_deal_items (daily_deal_id, product_id, quantity)
+         SELECT d.id, d.product_id, 1 FROM daily_deals d
+         WHERE d.product_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM daily_deal_items i WHERE i.daily_deal_id = d.id
+         )`,
+      );
+      this.runSync(
+        `INSERT INTO happy_hour_items (happy_hour_id, product_id, quantity)
+         SELECT h.id, h.product_id, 1 FROM happy_hour h
+         WHERE h.product_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM happy_hour_items i WHERE i.happy_hour_id = h.id
+         )`,
+      );
+      this.runSync(
+        `INSERT INTO scheduled_offer_items (scheduled_offer_id, product_id, quantity)
+         SELECT s.id, s.product_id, 1 FROM scheduled_offers s
+         WHERE s.product_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM scheduled_offer_items i WHERE i.scheduled_offer_id = s.id
+         )`,
+      );
+    } catch (error) {
+      console.error('[DB] Failed to backfill offer bundle items', error);
+    }
   }
 
   private createTablesTable() {

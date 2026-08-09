@@ -1,6 +1,15 @@
 /** Pure offer domain helpers — shared conceptually between FE and BE. */
 
-export type OfferType = 'daily_deal' | 'combo' | 'scheduled' | 'featured' | 'happy_hour';
+export type OfferType = 'daily_deal' | 'combo' | 'scheduled' | 'happy_hour';
+
+/** True when the offer is a multi-line tray (not a single unit of one product). */
+export function isMultiProductOffer(
+  products?: Array<{ quantity?: number }> | null,
+): boolean {
+  if (!products || products.length === 0) return false;
+  if (products.length > 1) return true;
+  return Math.max(1, Math.floor(Number(products[0]?.quantity) || 1)) > 1;
+}
 
 export type OfferStatusCode =
   | 'active_now'
@@ -90,7 +99,6 @@ export function resolveOfferStatus(input: OfferStatusInput, now: Date = new Date
       return 'outside_time';
     }
     case 'combo':
-    case 'featured':
       if (!isWeekdayIncluded(input.weekdays, now)) return 'outside_time';
       return 'active_now';
     default:

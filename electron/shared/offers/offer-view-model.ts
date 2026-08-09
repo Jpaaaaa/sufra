@@ -1,11 +1,23 @@
-import { resolveOfferStatus, type OfferStatusCode, type OfferType } from './offer-domain';
+import {
+  resolveOfferStatus,
+  type OfferStatusCode,
+  type OfferType,
+  isMultiProductOffer,
+} from './offer-domain';
 import { savingsFromPrices } from './offer-domain';
+
+export interface OfferProductRef {
+  id: number;
+  name: string;
+  price?: number;
+  quantity?: number;
+}
 
 export interface OfferViewModel {
   id: number;
   type: OfferType;
   title: string;
-  targetType: 'product' | 'combo' | 'none';
+  targetType: 'product' | 'combo' | 'bundle' | 'none';
   targetId: number | null;
   targetLabel: string;
   basePrice: number | null;
@@ -33,6 +45,24 @@ function withSavings(
   return { discountAmount: s.discountAmount, discountPercent: s.discountPercent };
 }
 
+function formatContentsLabel(products?: OfferProductRef[]): string {
+  if (!products?.length) return '';
+  return products
+    .map((p) => {
+      const q = Math.max(1, Number(p.quantity) || 1);
+      return q > 1 ? `${q}× ${p.name}` : p.name;
+    })
+    .join(' · ');
+}
+
+function contentsSum(products?: OfferProductRef[]): number | null {
+  if (!products?.length) return null;
+  return products.reduce(
+    (s, p) => s + (p.price || 0) * Math.max(1, Number(p.quantity) || 1),
+    0,
+  );
+}
+
 export function dailyDealToViewModel(
   d: {
     id: number;
@@ -44,19 +74,23 @@ export function dailyDealToViewModel(
     created_at?: string;
     product_name?: string;
     catalog_price?: number;
+    pricing_mode?: string;
+    products?: OfferProductRef[];
   },
   now = new Date(),
 ): OfferViewModel {
   const isActive = d.is_active !== 0;
-  const basePrice = d.catalog_price ?? null;
+  const label = formatContentsLabel(d.products) || d.product_name || `#${d.product_id}`;
+  const basePrice = contentsSum(d.products) ?? d.catalog_price ?? null;
   const offerPrice = d.special_price;
+  const multi = isMultiProductOffer(d.products);
   return {
     id: d.id,
     type: 'daily_deal',
-    title: d.product_name || `Daily #${d.id}`,
-    targetType: 'product',
+    title: label,
+    targetType: multi ? 'bundle' : 'product',
     targetId: d.product_id,
-    targetLabel: d.product_name || `#${d.product_id}`,
+    targetLabel: label,
     basePrice,
     offerPrice,
     ...withSavings(basePrice, offerPrice),
@@ -101,10 +135,10 @@ export function comboToViewModel(
       const q = Math.max(1, Number(p.quantity) || 1);
       return q > 1 ? `${q}× ${p.name}` : p.name;
     }) ?? [];
-  const contentsSum =
+  const contentsTotal =
     c.products?.reduce((s, p) => s + (p.price || 0) * Math.max(1, Number(p.quantity) || 1), 0) ??
     null;
-  const basePrice = contentsSum;
+  const basePrice = contentsTotal;
   return {
     id: c.id,
     type: 'combo',
@@ -149,20 +183,24 @@ export function scheduledToViewModel(
     product_name?: string;
     combo_name?: string;
     catalog_price?: number;
+    pricing_mode?: string;
+    products?: OfferProductRef[];
   },
   now = new Date(),
 ): OfferViewModel {
   const isActive = s.is_active !== 0;
-  const isCombo = s.combo_id != null;
+  const isCombo = s.combo_id != null && !(s.products && s.products.length > 0);
+  const contentsLabel = formatContentsLabel(s.products);
   const title = isCombo
     ? s.combo_name || `Combo #${s.combo_id}`
-    : s.product_name || `Product #${s.product_id}`;
-  const basePrice = s.catalog_price ?? null;
+    : contentsLabel || s.product_name || `Product #${s.product_id}`;
+  const basePrice = contentsSum(s.products) ?? s.catalog_price ?? null;
+  const multi = isMultiProductOffer(s.products);
   return {
     id: s.id,
     type: 'scheduled',
     title,
-    targetType: isCombo ? 'combo' : 'product',
+    targetType: isCombo ? 'combo' : multi ? 'bundle' : 'product',
     targetId: isCombo ? s.combo_id : s.product_id,
     targetLabel: title,
     basePrice,
@@ -189,45 +227,6 @@ export function scheduledToViewModel(
   };
 }
 
-export function featuredToViewModel(
-  f: {
-    id: number;
-    product_id: number;
-    featured?: number;
-    archived_at?: string | null;
-    created_at?: string;
-    product_name?: string;
-    catalog_price?: number;
-  },
-  now = new Date(),
-): OfferViewModel {
-  const isActive = f.featured !== 0 && !f.archived_at;
-  return {
-    id: f.id,
-    type: 'featured',
-    title: f.product_name || `Product #${f.product_id}`,
-    targetType: 'product',
-    targetId: f.product_id,
-    targetLabel: f.product_name || `#${f.product_id}`,
-    basePrice: f.catalog_price ?? null,
-    offerPrice: f.catalog_price ?? null,
-    discountAmount: null,
-    discountPercent: null,
-    startAt: null,
-    endAt: null,
-    weekdays: undefined,
-    isActive,
-    archivedAt: f.archived_at ?? null,
-    status: resolveOfferStatus(
-      { type: 'featured', isActive, archivedAt: f.archived_at },
-      now,
-    ),
-    createdAt: f.created_at ?? null,
-    updatedAt: null,
-    raw: f,
-  };
-}
-
 export function happyHourToViewModel(
   h: {
     id: number;
@@ -241,18 +240,22 @@ export function happyHourToViewModel(
     created_at?: string;
     product_name?: string;
     catalog_price?: number;
+    pricing_mode?: string;
+    products?: OfferProductRef[];
   },
   now = new Date(),
 ): OfferViewModel {
   const isActive = h.is_active !== 0;
-  const basePrice = h.catalog_price ?? null;
+  const label = formatContentsLabel(h.products) || h.product_name || `#${h.product_id}`;
+  const basePrice = contentsSum(h.products) ?? h.catalog_price ?? null;
+  const multi = isMultiProductOffer(h.products);
   return {
     id: h.id,
     type: 'happy_hour',
-    title: h.product_name || `Product #${h.product_id}`,
-    targetType: 'product',
+    title: label,
+    targetType: multi ? 'bundle' : 'product',
     targetId: h.product_id,
-    targetLabel: h.product_name || `#${h.product_id}`,
+    targetLabel: label,
     basePrice,
     offerPrice: h.happy_hour_price,
     ...withSavings(basePrice, h.happy_hour_price),

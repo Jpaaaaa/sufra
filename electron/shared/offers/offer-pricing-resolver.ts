@@ -4,9 +4,14 @@ import {
   savingsFromPrices,
   toDateOnlyString,
   parseDateTimeLocal,
+  isMultiProductOffer,
 } from './offer-domain';
 
 export type OfferTargetType = 'product' | 'combo';
+
+export interface PricingProductRef {
+  quantity?: number;
+}
 
 export interface PricingDailyDeal {
   product_id: number;
@@ -14,6 +19,7 @@ export interface PricingDailyDeal {
   date: string;
   is_active?: number;
   archived_at?: string | null;
+  products?: PricingProductRef[];
 }
 
 export interface PricingHappyHour {
@@ -24,6 +30,7 @@ export interface PricingHappyHour {
   weekdays?: number[] | null;
   is_active?: number;
   archived_at?: string | null;
+  products?: PricingProductRef[];
 }
 
 export interface PricingScheduled {
@@ -34,6 +41,7 @@ export interface PricingScheduled {
   end_datetime: string;
   is_active?: number;
   archived_at?: string | null;
+  products?: PricingProductRef[];
 }
 
 export interface ResolveOfferPriceInput {
@@ -68,6 +76,7 @@ function notArchived(archived_at?: string | null): boolean {
 
 /**
  * Product priority: Daily → Happy Hour → Scheduled → catalog.
+ * Multi-product trays are excluded (POS shows them as locked trays).
  * Combo: only scheduled overrides combo base (catalogPrice = combo_price).
  */
 export function resolveEffectivePrice(input: ResolveOfferPriceInput): ResolveOfferPriceResult {
@@ -115,7 +124,8 @@ export function resolveEffectivePrice(input: ResolveOfferPriceInput): ResolveOff
       d.product_id === input.targetId &&
       d.date === today &&
       isActiveFlag(d.is_active) &&
-      notArchived(d.archived_at),
+      notArchived(d.archived_at) &&
+      !isMultiProductOffer(d.products),
   );
   if (daily) {
     return finish(Math.round(daily.special_price), 'daily_deal');
@@ -124,6 +134,7 @@ export function resolveEffectivePrice(input: ResolveOfferPriceInput): ResolveOff
   const hh = (input.happyHours ?? []).find((h) => {
     if (h.product_id !== input.targetId) return false;
     if (!isActiveFlag(h.is_active) || !notArchived(h.archived_at)) return false;
+    if (isMultiProductOffer(h.products)) return false;
     if (!isWeekdayIncluded(h.weekdays, now)) return false;
     return isNowInTimeRange(h.time_start, h.time_end, now);
   });
@@ -134,6 +145,7 @@ export function resolveEffectivePrice(input: ResolveOfferPriceInput): ResolveOff
   const scheduled = (input.scheduledOffers ?? []).find((so) => {
     if (!isActiveFlag(so.is_active) || !notArchived(so.archived_at)) return false;
     if (so.product_id !== input.targetId) return false;
+    if (isMultiProductOffer(so.products)) return false;
     const start = parseDateTimeLocal(so.start_datetime);
     const end = parseDateTimeLocal(so.end_datetime);
     if (!start || !end) return false;

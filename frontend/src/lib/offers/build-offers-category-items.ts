@@ -3,8 +3,71 @@ import type { useOffers } from '../../hooks/useOffers';
 import { isWeekdayIncluded } from '../../utils/weekdays';
 import { isHappyHourActiveNow, resolveComboOfferPrice } from '../../utils/offer-pricing';
 import { OFFERS_CATEGORY_ID } from '../../components/orders/CategoryTabs';
+import { isMultiProductOffer } from '@sufra-offers';
 
 type OffersApi = ReturnType<typeof useOffers>;
+
+type BundleSource = {
+  id: number;
+  name: string;
+  price: number;
+  pricing_mode?: string;
+  products?: Array<{
+    id: number;
+    name: string;
+    price: number;
+    quantity: number;
+    kitchen_id?: number | null;
+  }>;
+};
+
+/** Synthetic negative ids: combos keep -id; daily/hh/scheduled use namespaces. */
+const DAILY_TRAY_OFFSET = 1_000_000;
+const HH_TRAY_OFFSET = 2_000_000;
+const SCHED_TRAY_OFFSET = 3_000_000;
+
+function toTrayItem(
+  source: BundleSource,
+  syntheticId: number,
+  menuItems: Item[],
+): any {
+  const productList = (source.products || []).map((p) => ({
+    id: p.id,
+    name: p.name,
+    price: p.price || 0,
+    quantity: Math.max(1, Number(p.quantity) || 1),
+    kitchen_id: p.kitchen_id ?? menuItems.find((i) => i.id === p.id)?.kitchen_id ?? null,
+  }));
+  const contentsTotal = productList.reduce(
+    (sum, p) => sum + (p.price || 0) * (p.quantity || 1),
+    0,
+  );
+  return {
+    id: syntheticId,
+    name: source.name,
+    price: source.price,
+    categoryId: OFFERS_CATEGORY_ID,
+    kitchen_id: null,
+    original_price: contentsTotal > source.price ? contentsTotal : undefined,
+    is_featured: false,
+    _comboProducts: productList,
+    _isCombo: true,
+    _pricingMode: source.pricing_mode || 'fixed',
+  };
+}
+
+function labelFromProducts(
+  products?: Array<{ name: string; quantity?: number }>,
+  fallback = 'عرض',
+): string {
+  if (!products?.length) return fallback;
+  return products
+    .map((p) => {
+      const q = Math.max(1, Number(p.quantity) || 1);
+      return q > 1 ? `${q}× ${p.name}` : p.name;
+    })
+    .join(' · ');
+}
 
 /** Shared Offers-category menu builder for dine-in / pickup / delivery. */
 export function buildOffersCategoryItems(
@@ -13,16 +76,6 @@ export function buildOffersCategoryItems(
 ): Item[] {
   const allOffersItems: any[] = [];
 
-  const featuredItemIds = new Set(
-    offers.featuredItems
-      .filter((fi) => !(fi as { archived_at?: string | null }).archived_at)
-      .map((fi) => fi.product_id),
-  );
-  const featuredItems = menuItems.filter((item) => featuredItemIds.has(item.id));
-  allOffersItems.push(
-    ...featuredItems.map((item) => ({ ...item, is_featured: true })),
-  );
-
   const activeDailyDeal = offers.getActiveDailyDeal();
   const activeScheduledOffers = offers.getActiveScheduledOffers();
   const activeHappyHours = offers.happyHours.filter(
@@ -30,18 +83,78 @@ export function buildOffersCategoryItems(
   );
 
   const offerItemIds = new Set<number>();
-  if (activeDailyDeal && !(activeDailyDeal as { archived_at?: string | null }).archived_at) {
+  if (
+    activeDailyDeal &&
+    !(activeDailyDeal as { archived_at?: string | null }).archived_at &&
+    !isMultiProductOffer(activeDailyDeal.products)
+  ) {
     offerItemIds.add(activeDailyDeal.product_id);
   }
   activeScheduledOffers.forEach((so) => {
-    if (so.product_id) offerItemIds.add(so.product_id);
+    if (so.product_id && !isMultiProductOffer(so.products) && !so.combo_id) {
+      offerItemIds.add(so.product_id);
+    }
   });
-  activeHappyHours.forEach((hh) => offerItemIds.add(hh.product_id));
+  activeHappyHours.forEach((hh) => {
+    if (!isMultiProductOffer(hh.products)) offerItemIds.add(hh.product_id);
+  });
 
-  const offerItems = menuItems.filter(
-    (item) => offerItemIds.has(item.id) && !featuredItemIds.has(item.id),
-  );
-  allOffersItems.push(...offerItems);
+  allOffersItems.push(...menuItems.filter((item) => offerItemIds.has(item.id)));
+
+  // Multi-product daily / happy hour / scheduled as trays
+  if (
+    activeDailyDeal &&
+    !(activeDailyDeal as { archived_at?: string | null }).archived_at &&
+    isMultiProductOffer(activeDailyDeal.products)
+  ) {
+    allOffersItems.push(
+      toTrayItem(
+        {
+          id: activeDailyDeal.id,
+          name: labelFromProducts(activeDailyDeal.products, activeDailyDeal.product_name),
+          price: activeDailyDeal.special_price,
+          pricing_mode: activeDailyDeal.pricing_mode,
+          products: activeDailyDeal.products,
+        },
+        -(DAILY_TRAY_OFFSET + activeDailyDeal.id),
+        menuItems,
+      ),
+    );
+  }
+
+  for (const hh of activeHappyHours) {
+    if (!isMultiProductOffer(hh.products)) continue;
+    allOffersItems.push(
+      toTrayItem(
+        {
+          id: hh.id,
+          name: labelFromProducts(hh.products, hh.product_name),
+          price: hh.happy_hour_price,
+          pricing_mode: hh.pricing_mode,
+          products: hh.products,
+        },
+        -(HH_TRAY_OFFSET + hh.id),
+        menuItems,
+      ),
+    );
+  }
+
+  for (const so of activeScheduledOffers) {
+    if (!isMultiProductOffer(so.products)) continue;
+    allOffersItems.push(
+      toTrayItem(
+        {
+          id: so.id,
+          name: labelFromProducts(so.products, so.product_name || so.combo_name),
+          price: so.special_price,
+          pricing_mode: so.pricing_mode,
+          products: so.products,
+        },
+        -(SCHED_TRAY_OFFSET + so.id),
+        menuItems,
+      ),
+    );
+  }
 
   const activeCombos = offers.combos.filter(
     (c) =>
@@ -107,12 +220,8 @@ export function buildOffersCategoryItems(
     new Map(allOffersItems.map((item) => [item.id, item])).values(),
   );
   uniqueItems.sort((a, b) => {
-    const aFeatured = a.is_featured || false;
-    const bFeatured = b.is_featured || false;
     const aCombo = a.id < 0;
     const bCombo = b.id < 0;
-    if (aFeatured && !bFeatured) return -1;
-    if (!aFeatured && bFeatured) return 1;
     if (!aCombo && bCombo) return -1;
     if (aCombo && !bCombo) return 1;
     return a.name.localeCompare(b.name, 'ar');

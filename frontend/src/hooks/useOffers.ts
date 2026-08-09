@@ -4,6 +4,17 @@ import { showToast } from '../components/ui/Toast';
 import { parseWeekdaysJson } from '../utils/weekdays';
 
 // Types
+export type ComboPricingMode = 'fixed' | 'sum';
+export type ComboItemInput = { product_id: number; quantity: number };
+
+export interface ComboProductRef {
+  id: number;
+  name: string;
+  price: number;
+  quantity: number;
+  kitchen_id?: number | null;
+}
+
 export interface DailyDeal {
   id: number;
   product_id: number;
@@ -14,17 +25,10 @@ export interface DailyDeal {
   /** 1 = مفعّل في نقطة البيع */
   is_active?: number;
   archived_at?: string | null;
+  pricing_mode?: ComboPricingMode;
+  product_ids?: number[];
+  products?: ComboProductRef[];
 }
-
-export interface ComboProductRef {
-  id: number;
-  name: string;
-  price: number;
-  quantity: number;
-  kitchen_id?: number | null;
-}
-
-export type ComboPricingMode = 'fixed' | 'sum';
 
 export interface Combo {
   id: number;
@@ -41,8 +45,6 @@ export interface Combo {
   archived_at?: string | null;
 }
 
-export type ComboItemInput = { product_id: number; quantity: number };
-
 export interface ScheduledOffer {
   id: number;
   product_id: number | null;
@@ -55,15 +57,9 @@ export interface ScheduledOffer {
   product_name?: string;
   combo_name?: string;
   archived_at?: string | null;
-}
-
-export interface FeaturedItem {
-  id: number;
-  product_id: number;
-  featured: number;
-  created_at: string;
-  product_name?: string;
-  archived_at?: string | null;
+  pricing_mode?: ComboPricingMode;
+  product_ids?: number[];
+  products?: ComboProductRef[];
 }
 
 export interface HappyHour {
@@ -77,13 +73,20 @@ export interface HappyHour {
   product_name?: string;
   weekdays?: number[];
   archived_at?: string | null;
+  pricing_mode?: ComboPricingMode;
+  product_ids?: number[];
+  products?: ComboProductRef[];
+}
+
+function normalizeBundleProducts(raw: { products?: ComboProductRef[] }): ComboProductRef[] {
+  return (raw.products || []).map((p) => ({
+    ...p,
+    quantity: Math.max(1, Number(p.quantity) || 1),
+  }));
 }
 
 function normalizeComboRow(raw: Combo): Combo {
-  const products = (raw.products || []).map((p) => ({
-    ...p,
-    quantity: Math.max(1, Number((p as ComboProductRef).quantity) || 1),
-  }));
+  const products = normalizeBundleProducts(raw);
   return {
     ...raw,
     pricing_mode: raw.pricing_mode === 'sum' ? 'sum' : 'fixed',
@@ -92,15 +95,41 @@ function normalizeComboRow(raw: Combo): Combo {
   };
 }
 
+function normalizeDailyDealRow(raw: DailyDeal): DailyDeal {
+  const products = normalizeBundleProducts(raw);
+  return {
+    ...raw,
+    pricing_mode: raw.pricing_mode === 'sum' ? 'sum' : 'fixed',
+    products,
+    product_ids: products.map((p) => p.id),
+  };
+}
+
+function normalizeScheduledRow(raw: ScheduledOffer): ScheduledOffer {
+  const products = normalizeBundleProducts(raw);
+  return {
+    ...raw,
+    pricing_mode: raw.pricing_mode === 'sum' ? 'sum' : 'fixed',
+    products,
+    product_ids: products.map((p) => p.id),
+  };
+}
+
 function normalizeHappyHourRow(raw: HappyHour): HappyHour {
-  return { ...raw, weekdays: parseWeekdaysJson((raw as unknown as { weekdays?: unknown }).weekdays) };
+  const products = normalizeBundleProducts(raw);
+  return {
+    ...raw,
+    pricing_mode: raw.pricing_mode === 'sum' ? 'sum' : 'fixed',
+    products,
+    product_ids: products.map((p) => p.id),
+    weekdays: parseWeekdaysJson((raw as unknown as { weekdays?: unknown }).weekdays),
+  };
 }
 
 export function useOffers() {
   const [dailyDeals, setDailyDeals] = useState<DailyDeal[]>([]);
   const [combos, setCombos] = useState<Combo[]>([]);
   const [scheduledOffers, setScheduledOffers] = useState<ScheduledOffer[]>([]);
-  const [featuredItems, setFeaturedItems] = useState<FeaturedItem[]>([]);
   const [happyHours, setHappyHours] = useState<HappyHour[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -109,7 +138,7 @@ export function useOffers() {
     try {
       const serverUrl = getServerUrl();
       const data = await fetchJson<DailyDeal[]>(`${serverUrl}/offers/daily-deals`);
-      setDailyDeals(data || []);
+      setDailyDeals((data || []).map(normalizeDailyDealRow));
     } catch (e: any) {
       console.error('Failed to load daily deals:', e);
       setError(e.message || 'تعذر تحميل عروض اليوم');
@@ -131,21 +160,10 @@ export function useOffers() {
     try {
       const serverUrl = getServerUrl();
       const data = await fetchJson<ScheduledOffer[]>(`${serverUrl}/offers/scheduled-offers`);
-      setScheduledOffers(data || []);
+      setScheduledOffers((data || []).map(normalizeScheduledRow));
     } catch (e: any) {
       console.error('Failed to load scheduled offers:', e);
       setError(e.message || 'تعذر تحميل العروض المجدولة');
-    }
-  };
-
-  const loadFeaturedItems = async () => {
-    try {
-      const serverUrl = getServerUrl();
-      const data = await fetchJson<FeaturedItem[]>(`${serverUrl}/offers/featured-items`);
-      setFeaturedItems(data || []);
-    } catch (e: any) {
-      console.error('Failed to load featured items:', e);
-      setError(e.message || 'تعذر تحميل الوجبات المميزة');
     }
   };
 
@@ -167,7 +185,6 @@ export function useOffers() {
       loadDailyDeals(),
       loadCombos(),
       loadScheduledOffers(),
-      loadFeaturedItems(),
       loadHappyHours(),
     ]);
     setLoading(false);
@@ -178,7 +195,14 @@ export function useOffers() {
   }, []);
 
   // Daily Deals
-  const createDailyDeal = async (data: { product_id: number; special_price: number; date: string }) => {
+  const createDailyDeal = async (data: {
+    product_id?: number;
+    special_price?: number;
+    date: string;
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
+  }) => {
     try {
       const serverUrl = getServerUrl();
       const result = await fetchJson<DailyDeal>(`${serverUrl}/offers/daily-deals`, {
@@ -195,7 +219,17 @@ export function useOffers() {
     }
   };
 
-  const updateDailyDeal = async (id: number, data: { is_active: number }) => {
+  const updateDailyDeal = async (
+    id: number,
+    data: {
+      is_active?: number;
+      special_price?: number;
+      date?: string;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
+    },
+  ) => {
     try {
       const serverUrl = getServerUrl();
       await fetchJson<DailyDeal>(`${serverUrl}/offers/daily-deals/${id}`, {
@@ -204,7 +238,14 @@ export function useOffers() {
         body: JSON.stringify(data),
       });
       await loadDailyDeals();
-      showToast(data.is_active === 1 ? 'تم تفعيل عرض اليوم' : 'تم تعطيل عرض اليوم', 'success');
+      showToast(
+        data.is_active === 0
+          ? 'تم تعطيل عرض اليوم'
+          : data.is_active === 1
+            ? 'تم تفعيل عرض اليوم'
+            : 'تم تحديث عرض اليوم',
+        'success',
+      );
     } catch (e: any) {
       showToast(e.message || 'فشل تحديث عرض اليوم', 'error');
       throw e;
@@ -302,9 +343,12 @@ export function useOffers() {
   const createScheduledOffer = async (data: {
     product_id?: number;
     combo_id?: number;
-    special_price: number;
+    special_price?: number;
     start_datetime: string;
     end_datetime: string;
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
   }) => {
     try {
       const serverUrl = getServerUrl();
@@ -324,7 +368,15 @@ export function useOffers() {
 
   const updateScheduledOffer = async (
     id: number,
-    data: { special_price?: number; start_datetime?: string; end_datetime?: string; is_active?: number },
+    data: {
+      special_price?: number;
+      start_datetime?: string;
+      end_datetime?: string;
+      is_active?: number;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
+    },
   ) => {
     try {
       const serverUrl = getServerUrl();
@@ -356,31 +408,16 @@ export function useOffers() {
     }
   };
 
-  // Featured Items
-  const setFeatured = async (product_id: number, featured: boolean) => {
-    try {
-      const serverUrl = getServerUrl();
-      const result = await fetchJson<FeaturedItem>(`${serverUrl}/offers/featured-items`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id, featured }),
-      });
-      await loadFeaturedItems();
-      showToast(featured ? 'تم تمييز المنتج بنجاح' : 'تم إلغاء تمييز المنتج بنجاح', 'success');
-      return result;
-    } catch (e: any) {
-      showToast(e.message || 'فشل تحديث حالة التمييز', 'error');
-      throw e;
-    }
-  };
-
   // Happy Hour
   const createHappyHour = async (data: {
-    product_id: number;
-    happy_hour_price: number;
+    product_id?: number;
+    happy_hour_price?: number;
     time_start: string;
     time_end: string;
     weekdays?: number[];
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
   }) => {
     try {
       const serverUrl = getServerUrl();
@@ -400,7 +437,16 @@ export function useOffers() {
 
   const updateHappyHour = async (
     id: number,
-    data: { happy_hour_price?: number; time_start?: string; time_end?: string; is_active?: number; weekdays?: number[] | null },
+    data: {
+      happy_hour_price?: number;
+      time_start?: string;
+      time_end?: string;
+      is_active?: number;
+      weekdays?: number[] | null;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
+    },
   ) => {
     try {
       const serverUrl = getServerUrl();
@@ -482,7 +528,7 @@ export function useOffers() {
     dailyDeals,
     combos,
     scheduledOffers,
-    featuredItems,
+    featuredItems: [] as Array<{ id: number; product_id: number; featured: number; created_at: string; product_name?: string }>,
     happyHours,
     loading,
     error,
@@ -492,7 +538,7 @@ export function useOffers() {
     loadDailyDeals,
     loadCombos,
     loadScheduledOffers,
-    loadFeaturedItems,
+    loadFeaturedItems: async () => {},
     loadHappyHours,
     
     // Daily Deals
@@ -510,8 +556,10 @@ export function useOffers() {
     updateScheduledOffer,
     deleteScheduledOffer,
     
-    // Featured Items
-    setFeatured,
+    // Featured Items (removed from UI; stub for older call sites)
+    setFeatured: async (_product_id: number, _featured: boolean) => {
+      throw new Error('Featured products were removed');
+    },
     
     // Happy Hour
     createHappyHour,

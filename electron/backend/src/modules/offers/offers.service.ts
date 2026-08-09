@@ -13,6 +13,9 @@ export interface DailyDeal {
   product_name?: string;
   /** 1 = applied in POS; 0 = disabled */
   is_active?: number;
+  pricing_mode?: ComboPricingMode;
+  product_ids?: number[];
+  products?: ComboProductRef[];
 }
 
 // Combo interfaces
@@ -62,9 +65,12 @@ export interface ScheduledOffer {
   created_at: string;
   product_name?: string;
   combo_name?: string;
+  pricing_mode?: ComboPricingMode;
+  product_ids?: number[];
+  products?: ComboProductRef[];
 }
 
-// Featured Item interfaces
+// Featured Item interfaces (legacy table; UI removed)
 export interface FeaturedItem {
   id: number;
   product_id: number;
@@ -85,33 +91,116 @@ export interface HappyHour {
   product_name?: string;
   /** 0–6 (Sun–Sat); empty/undefined = كل الأيام */
   weekdays?: number[];
+  pricing_mode?: ComboPricingMode;
+  product_ids?: number[];
+  products?: ComboProductRef[];
+}
+
+function isSingleUnitOffer(products?: ComboProductRef[]): boolean {
+  if (!products || products.length === 0) return true;
+  if (products.length > 1) return false;
+  return Math.max(1, Number(products[0]?.quantity) || 1) === 1;
 }
 
 class OffersService {
   constructor(private readonly db: DatabaseService) {}
 
   // ========== Daily Deals ==========
-  async createDailyDeal(data: { product_id: number; special_price: number; date: string }): Promise<DailyDeal> {
-    // Check if product exists
-    const product = await this.db.get('SELECT id, name FROM items WHERE id = ?', [data.product_id]);
-    if (!product) {
-      throw new NotFoundException('Product not found');
+  private mapOfferProducts(itemRows: any[]): ComboProductRef[] {
+    return itemRows.map((item: any) => ({
+      id: item.product_id,
+      name: item.name,
+      price: item.price,
+      quantity: Math.max(1, Number(item.quantity) || 1),
+      kitchen_id: item.kitchen_id ?? null,
+    }));
+  }
+
+  private async loadOfferItemRows(
+    table: 'daily_deal_items' | 'happy_hour_items' | 'scheduled_offer_items',
+    fk: string,
+    ids: number[],
+  ): Promise<any[]> {
+    if (ids.length === 0) return [];
+    return this.db.all(
+      `SELECT ci.*, i.name, i.price, i.kitchen_id
+       FROM ${table} ci
+       INNER JOIN items i ON ci.product_id = i.id
+       WHERE ci.${fk} IN (${ids.join(',')})`,
+    );
+  }
+
+  private async replaceOfferItems(
+    table: 'daily_deal_items' | 'happy_hour_items' | 'scheduled_offer_items',
+    fk: string,
+    parentId: number,
+    items: ComboItemInput[],
+  ): Promise<void> {
+    await this.db.run(`DELETE FROM ${table} WHERE ${fk} = ?`, [parentId]);
+    for (const row of items) {
+      await this.db.run(
+        `INSERT INTO ${table} (${fk}, product_id, quantity) VALUES (?, ?, ?)`,
+        [parentId, row.product_id, row.quantity],
+      );
+    }
+  }
+
+  private hydrateDailyDeal(row: any, itemRows: any[]): DailyDeal {
+    const products = this.mapOfferProducts(itemRows);
+    return {
+      ...(row as DailyDeal),
+      pricing_mode: row.pricing_mode === 'sum' ? 'sum' : 'fixed',
+      product_ids: products.map((p) => p.id),
+      products,
+      product_name: products[0]?.name ?? row.product_name,
+    };
+  }
+
+  async createDailyDeal(data: {
+    product_id?: number;
+    special_price?: number;
+    date: string;
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
+  }): Promise<DailyDeal> {
+    const items = this.normalizeComboItems({
+      items: data.items,
+      product_ids:
+        data.product_ids ??
+        (data.product_id != null ? [data.product_id] : undefined),
+    });
+    if (items.length === 0) {
+      throw new BadRequestException('Daily deal must have at least one product');
+    }
+    if (!data.date) {
+      throw new BadRequestException('Date is required');
     }
 
+    const productIds = [...new Set(items.map((i) => i.product_id))];
+    const products = await this.db.all(
+      `SELECT id, name, price, kitchen_id FROM items WHERE id IN (${productIds.join(',')})`,
+    );
+    if (products.length !== productIds.length) {
+      throw new NotFoundException('One or more products not found');
+    }
+
+    const pricing_mode: ComboPricingMode = data.pricing_mode === 'sum' ? 'sum' : 'fixed';
+    const special_price = await this.resolveComboPrice({
+      pricing_mode,
+      combo_price: data.special_price,
+      items,
+      productRows: products as Array<{ id: number; price: number }>,
+    });
+    const primaryId = items[0].product_id;
+
     await this.db.run(
-      'INSERT INTO daily_deals (product_id, special_price, date, is_active) VALUES (?, ?, ?, 1)',
-      [data.product_id, data.special_price, data.date],
+      'INSERT INTO daily_deals (product_id, special_price, date, is_active, pricing_mode) VALUES (?, ?, ?, 1, ?)',
+      [primaryId, special_price, data.date, pricing_mode],
     );
     const id = await this.db.getLastInsertRowId();
-    return {
-      id: id,
-      product_id: data.product_id,
-      special_price: data.special_price,
-      date: data.date,
-      created_at: new Date().toISOString(),
-      product_name: product.name,
-      is_active: 1,
-    };
+    await this.replaceOfferItems('daily_deal_items', 'daily_deal_id', id, items);
+    return this.getDailyDealRowById(id);
   }
 
   async getDailyDealByDate(date: string): Promise<DailyDeal | null> {
@@ -122,7 +211,9 @@ class OffersService {
        WHERE d.date = ?`,
       [date],
     );
-    return (row as DailyDeal) || null;
+    if (!row) return null;
+    const items = await this.loadOfferItemRows('daily_deal_items', 'daily_deal_id', [row.id]);
+    return this.hydrateDailyDeal(row, items);
   }
 
   async getActiveDailyDeal(): Promise<DailyDeal | null> {
@@ -134,18 +225,82 @@ class OffersService {
        WHERE d.date = ? AND COALESCE(d.is_active, 1) = 1 AND d.archived_at IS NULL`,
       [today],
     );
-    return (row as DailyDeal) || null;
+    if (!row) return null;
+    const items = await this.loadOfferItemRows('daily_deal_items', 'daily_deal_id', [row.id]);
+    return this.hydrateDailyDeal(row, items);
   }
 
-  async updateDailyDeal(id: number, data: { is_active?: number }): Promise<DailyDeal> {
-    const existing = await this.db.get('SELECT id FROM daily_deals WHERE id = ?', [id]);
-    if (!existing) {
-      throw new NotFoundException('Daily deal not found');
+  async updateDailyDeal(
+    id: number,
+    data: {
+      is_active?: number;
+      special_price?: number;
+      date?: string;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
+    },
+  ): Promise<DailyDeal> {
+    const existing = await this.getDailyDealRowById(id);
+    const hasItemsUpdate = data.items !== undefined || data.product_ids !== undefined;
+    const nextItems = hasItemsUpdate
+      ? this.normalizeComboItems(data)
+      : (existing.products || []).map((p) => ({ product_id: p.id, quantity: p.quantity }));
+
+    if (hasItemsUpdate && nextItems.length === 0) {
+      throw new BadRequestException('Daily deal must have at least one product');
     }
-    if (data.is_active === undefined) {
-      return this.getDailyDealRowById(id);
+
+    const productIds = [...new Set(nextItems.map((i) => i.product_id))];
+    const products = await this.db.all(
+      `SELECT id, name, price, kitchen_id FROM items WHERE id IN (${productIds.join(',')})`,
+    );
+    if (products.length !== productIds.length) {
+      throw new NotFoundException('One or more products not found');
     }
-    await this.db.run('UPDATE daily_deals SET is_active = ? WHERE id = ?', [data.is_active, id]);
+
+    const pricing_mode: ComboPricingMode =
+      data.pricing_mode === 'sum' || data.pricing_mode === 'fixed'
+        ? data.pricing_mode
+        : existing.pricing_mode || 'fixed';
+
+    const shouldResolvePrice =
+      data.special_price !== undefined || data.pricing_mode !== undefined || hasItemsUpdate;
+
+    const special_price = shouldResolvePrice
+      ? await this.resolveComboPrice({
+          pricing_mode,
+          combo_price: data.special_price !== undefined ? data.special_price : existing.special_price,
+          items: nextItems,
+          productRows: products as Array<{ id: number; price: number }>,
+        })
+      : existing.special_price;
+
+    const updates: string[] = [];
+    const values: any[] = [];
+    if (shouldResolvePrice || hasItemsUpdate) {
+      updates.push('special_price = ?');
+      values.push(special_price);
+      updates.push('pricing_mode = ?');
+      values.push(pricing_mode);
+      updates.push('product_id = ?');
+      values.push(nextItems[0].product_id);
+    }
+    if (data.date !== undefined) {
+      updates.push('date = ?');
+      values.push(data.date);
+    }
+    if (data.is_active !== undefined) {
+      updates.push('is_active = ?');
+      values.push(data.is_active);
+    }
+    if (updates.length > 0) {
+      values.push(id);
+      await this.db.run(`UPDATE daily_deals SET ${updates.join(', ')} WHERE id = ?`, values);
+    }
+    if (hasItemsUpdate) {
+      await this.replaceOfferItems('daily_deal_items', 'daily_deal_id', id, nextItems);
+    }
     return this.getDailyDealRowById(id);
   }
 
@@ -160,7 +315,8 @@ class OffersService {
     if (!row) {
       throw new NotFoundException('Daily deal not found');
     }
-    return row as DailyDeal;
+    const items = await this.loadOfferItemRows('daily_deal_items', 'daily_deal_id', [id]);
+    return this.hydrateDailyDeal(row, items);
   }
 
   async getAllDailyDeals(): Promise<DailyDeal[]> {
@@ -170,10 +326,19 @@ class OffersService {
        INNER JOIN items i ON d.product_id = i.id 
        ORDER BY d.date DESC`,
     );
-    return (rows as DailyDeal[]) || [];
+    if (!rows.length) return [];
+    const ids = rows.map((r: any) => r.id);
+    const itemRows = await this.loadOfferItemRows('daily_deal_items', 'daily_deal_id', ids);
+    return rows.map((row: any) =>
+      this.hydrateDailyDeal(
+        row,
+        itemRows.filter((i: any) => i.daily_deal_id === row.id),
+      ),
+    );
   }
 
   async deleteDailyDeal(id: number): Promise<void> {
+    await this.db.run('DELETE FROM daily_deal_items WHERE daily_deal_id = ?', [id]);
     await this.db.run('DELETE FROM daily_deals WHERE id = ?', [id]);
   }
 
@@ -429,63 +594,97 @@ class OffersService {
   }
 
   // ========== Scheduled Offers ==========
+  private hydrateScheduledOffer(row: any, itemRows: any[]): ScheduledOffer {
+    const products = this.mapOfferProducts(itemRows);
+    return {
+      ...(row as ScheduledOffer),
+      pricing_mode: row.pricing_mode === 'sum' ? 'sum' : 'fixed',
+      product_ids: products.map((p) => p.id),
+      products,
+      product_name: products[0]?.name ?? row.product_name,
+    };
+  }
+
   async createScheduledOffer(data: {
     product_id?: number;
     combo_id?: number;
-    special_price: number;
+    special_price?: number;
     start_datetime: string;
     end_datetime: string;
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
   }): Promise<ScheduledOffer> {
-    if (!data.product_id && !data.combo_id) {
-      throw new BadRequestException('Either product_id or combo_id must be provided');
+    const items = this.normalizeComboItems(data);
+    const hasItems = items.length > 0;
+
+    if (!hasItems && !data.product_id && !data.combo_id) {
+      throw new BadRequestException('Provide products, product_id, or combo_id');
     }
-    if (data.product_id && data.combo_id) {
+    if (!hasItems && data.product_id && data.combo_id) {
       throw new BadRequestException('Cannot provide both product_id and combo_id');
     }
+    if (!data.start_datetime || !data.end_datetime) {
+      throw new BadRequestException('Start and end datetime are required');
+    }
 
-    // Verify product or combo exists
+    if (hasItems) {
+      const productIds = [...new Set(items.map((i) => i.product_id))];
+      const products = await this.db.all(
+        `SELECT id, name, price, kitchen_id FROM items WHERE id IN (${productIds.join(',')})`,
+      );
+      if (products.length !== productIds.length) {
+        throw new NotFoundException('One or more products not found');
+      }
+      const pricing_mode: ComboPricingMode = data.pricing_mode === 'sum' ? 'sum' : 'fixed';
+      const special_price = await this.resolveComboPrice({
+        pricing_mode,
+        combo_price: data.special_price,
+        items,
+        productRows: products as Array<{ id: number; price: number }>,
+      });
+      const primaryId = items[0].product_id;
+      await this.db.run(
+        'INSERT INTO scheduled_offers (product_id, combo_id, special_price, start_datetime, end_datetime, pricing_mode) VALUES (?, NULL, ?, ?, ?, ?)',
+        [primaryId, special_price, data.start_datetime, data.end_datetime, pricing_mode],
+      );
+      const id = await this.db.getLastInsertRowId();
+      await this.replaceOfferItems('scheduled_offer_items', 'scheduled_offer_id', id, items);
+      return this.getScheduledOffer(id);
+    }
+
     if (data.product_id) {
       const product = await this.db.get('SELECT id, name FROM items WHERE id = ?', [data.product_id]);
-      if (!product) {
-        throw new NotFoundException('Product not found');
+      if (!product) throw new NotFoundException('Product not found');
+      const special_price = Number(data.special_price);
+      if (!Number.isFinite(special_price) || special_price < 0) {
+        throw new BadRequestException('Special price must be a non-negative number');
       }
-
       await this.db.run(
-        'INSERT INTO scheduled_offers (product_id, special_price, start_datetime, end_datetime) VALUES (?, ?, ?, ?)',
-        [data.product_id, data.special_price, data.start_datetime, data.end_datetime],
+        'INSERT INTO scheduled_offers (product_id, special_price, start_datetime, end_datetime, pricing_mode) VALUES (?, ?, ?, ?, ?)',
+        [data.product_id, special_price, data.start_datetime, data.end_datetime, 'fixed'],
       );
       const id = await this.db.getLastInsertRowId();
-      return {
-        id: id,
-        product_id: data.product_id!,
-        combo_id: null,
-        special_price: data.special_price,
-        start_datetime: data.start_datetime,
-        end_datetime: data.end_datetime,
-        is_active: 1,
-        created_at: new Date().toISOString(),
-        product_name: product.name,
-      };
-    } else {
-      const combo = await this.getCombo(data.combo_id!);
-
-      await this.db.run(
-        'INSERT INTO scheduled_offers (combo_id, special_price, start_datetime, end_datetime) VALUES (?, ?, ?, ?)',
-        [data.combo_id, data.special_price, data.start_datetime, data.end_datetime],
-      );
-      const id = await this.db.getLastInsertRowId();
-      return {
-        id: id,
-        product_id: null,
-        combo_id: data.combo_id!,
-        special_price: data.special_price,
-        start_datetime: data.start_datetime,
-        end_datetime: data.end_datetime,
-        is_active: 1,
-        created_at: new Date().toISOString(),
-        combo_name: combo.combo_name,
-      };
+      await this.replaceOfferItems('scheduled_offer_items', 'scheduled_offer_id', id, [
+        { product_id: data.product_id, quantity: 1 },
+      ]);
+      return this.getScheduledOffer(id);
     }
+
+    const combo = await this.getCombo(data.combo_id!);
+    const special_price = Number(data.special_price);
+    if (!Number.isFinite(special_price) || special_price < 0) {
+      throw new BadRequestException('Special price must be a non-negative number');
+    }
+    await this.db.run(
+      'INSERT INTO scheduled_offers (combo_id, special_price, start_datetime, end_datetime, pricing_mode) VALUES (?, ?, ?, ?, ?)',
+      [data.combo_id, special_price, data.start_datetime, data.end_datetime, 'fixed'],
+    );
+    const id = await this.db.getLastInsertRowId();
+    return {
+      ...(await this.getScheduledOffer(id)),
+      combo_name: combo.combo_name,
+    };
   }
 
   async getAllScheduledOffers(): Promise<ScheduledOffer[]> {
@@ -498,7 +697,19 @@ class OffersService {
        LEFT JOIN combos c ON s.combo_id = c.id
        ORDER BY s.start_datetime DESC`,
     );
-    return (rows as ScheduledOffer[]) || [];
+    if (!rows.length) return [];
+    const ids = rows.map((r: any) => r.id);
+    const itemRows = await this.loadOfferItemRows(
+      'scheduled_offer_items',
+      'scheduled_offer_id',
+      ids,
+    );
+    return rows.map((row: any) =>
+      this.hydrateScheduledOffer(
+        row,
+        itemRows.filter((i: any) => i.scheduled_offer_id === row.id),
+      ),
+    );
   }
 
   async getActiveScheduledOffers(): Promise<ScheduledOffer[]> {
@@ -516,7 +727,19 @@ class OffersService {
        AND s.end_datetime >= ?`,
       [now, now],
     );
-    return (rows as ScheduledOffer[]) || [];
+    if (!rows.length) return [];
+    const ids = rows.map((r: any) => r.id);
+    const itemRows = await this.loadOfferItemRows(
+      'scheduled_offer_items',
+      'scheduled_offer_id',
+      ids,
+    );
+    return rows.map((row: any) =>
+      this.hydrateScheduledOffer(
+        row,
+        itemRows.filter((i: any) => i.scheduled_offer_id === row.id),
+      ),
+    );
   }
 
   async getScheduledOffer(id: number): Promise<ScheduledOffer> {
@@ -533,21 +756,74 @@ class OffersService {
     if (!row) {
       throw new NotFoundException('Scheduled offer not found');
     }
-    return row as ScheduledOffer;
+    const items = await this.loadOfferItemRows('scheduled_offer_items', 'scheduled_offer_id', [id]);
+    return this.hydrateScheduledOffer(row, items);
   }
 
   async updateScheduledOffer(
     id: number,
-    data: { special_price?: number; start_datetime?: string; end_datetime?: string; is_active?: number },
+    data: {
+      special_price?: number;
+      start_datetime?: string;
+      end_datetime?: string;
+      is_active?: number;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
+    },
   ): Promise<ScheduledOffer> {
-    await this.getScheduledOffer(id);
+    const existing = await this.getScheduledOffer(id);
+    const hasItemsUpdate = data.items !== undefined || data.product_ids !== undefined;
+    const nextItems = hasItemsUpdate
+      ? this.normalizeComboItems(data)
+      : (existing.products || []).map((p) => ({ product_id: p.id, quantity: p.quantity }));
+
+    if (hasItemsUpdate && nextItems.length === 0 && !existing.combo_id) {
+      throw new BadRequestException('Scheduled offer must have at least one product');
+    }
+
+    let special_price = existing.special_price;
+    let pricing_mode: ComboPricingMode = existing.pricing_mode || 'fixed';
+
+    if (nextItems.length > 0 && (hasItemsUpdate || data.special_price !== undefined || data.pricing_mode !== undefined)) {
+      const productIds = [...new Set(nextItems.map((i) => i.product_id))];
+      const products = await this.db.all(
+        `SELECT id, name, price, kitchen_id FROM items WHERE id IN (${productIds.join(',')})`,
+      );
+      if (products.length !== productIds.length) {
+        throw new NotFoundException('One or more products not found');
+      }
+      pricing_mode =
+        data.pricing_mode === 'sum' || data.pricing_mode === 'fixed'
+          ? data.pricing_mode
+          : existing.pricing_mode || 'fixed';
+      special_price = await this.resolveComboPrice({
+        pricing_mode,
+        combo_price: data.special_price !== undefined ? data.special_price : existing.special_price,
+        items: nextItems,
+        productRows: products as Array<{ id: number; price: number }>,
+      });
+    } else if (data.special_price !== undefined) {
+      special_price = data.special_price;
+    }
 
     const updates: string[] = [];
     const values: any[] = [];
 
-    if (data.special_price !== undefined) {
+    if (
+      hasItemsUpdate ||
+      data.special_price !== undefined ||
+      data.pricing_mode !== undefined
+    ) {
       updates.push('special_price = ?');
-      values.push(data.special_price);
+      values.push(special_price);
+      updates.push('pricing_mode = ?');
+      values.push(pricing_mode);
+      if (nextItems.length > 0) {
+        updates.push('product_id = ?');
+        values.push(nextItems[0].product_id);
+        updates.push('combo_id = NULL');
+      }
     }
     if (data.start_datetime !== undefined) {
       updates.push('start_datetime = ?');
@@ -562,21 +838,19 @@ class OffersService {
       values.push(data.is_active);
     }
 
-    if (updates.length === 0) {
-      return this.getScheduledOffer(id);
+    if (updates.length > 0) {
+      values.push(id);
+      await this.db.run(`UPDATE scheduled_offers SET ${updates.join(', ')} WHERE id = ?`, values);
     }
-
-    values.push(id);
-
-    await this.db.run(
-      `UPDATE scheduled_offers SET ${updates.join(', ')} WHERE id = ?`,
-      values,
-    );
+    if (hasItemsUpdate && nextItems.length > 0) {
+      await this.replaceOfferItems('scheduled_offer_items', 'scheduled_offer_id', id, nextItems);
+    }
     return this.getScheduledOffer(id);
   }
 
   async deleteScheduledOffer(id: number): Promise<void> {
     await this.getScheduledOffer(id);
+    await this.db.run('DELETE FROM scheduled_offer_items WHERE scheduled_offer_id = ?', [id]);
     await this.db.run('DELETE FROM scheduled_offers WHERE id = ?', [id]);
   }
 
@@ -636,37 +910,67 @@ class OffersService {
   }
 
   // ========== Happy Hour ==========
+  private hydrateHappyHour(row: any, itemRows: any[]): HappyHour {
+    const products = this.mapOfferProducts(itemRows);
+    return {
+      ...(row as object),
+      weekdays: parseWeekdaysJson(row.weekdays),
+      pricing_mode: row.pricing_mode === 'sum' ? 'sum' : 'fixed',
+      product_ids: products.map((p) => p.id),
+      products,
+      product_name: products[0]?.name ?? row.product_name,
+    } as HappyHour;
+  }
+
   async createHappyHour(data: {
-    product_id: number;
-    happy_hour_price: number;
+    product_id?: number;
+    happy_hour_price?: number;
     time_start: string;
     time_end: string;
     weekdays?: number[] | null;
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
   }): Promise<HappyHour> {
-    // Check if product exists
-    const product = await this.db.get('SELECT id, name FROM items WHERE id = ?', [data.product_id]);
-    if (!product) {
-      throw new NotFoundException('Product not found');
+    const items = this.normalizeComboItems({
+      items: data.items,
+      product_ids:
+        data.product_ids ??
+        (data.product_id != null ? [data.product_id] : undefined),
+    });
+    if (items.length === 0) {
+      throw new BadRequestException('Happy hour must have at least one product');
+    }
+    if (!data.time_start || !data.time_end) {
+      throw new BadRequestException('Time start and end are required');
     }
 
+    const productIds = [...new Set(items.map((i) => i.product_id))];
+    const products = await this.db.all(
+      `SELECT id, name, price, kitchen_id FROM items WHERE id IN (${productIds.join(',')})`,
+    );
+    if (products.length !== productIds.length) {
+      throw new NotFoundException('One or more products not found');
+    }
+
+    const pricing_mode: ComboPricingMode = data.pricing_mode === 'sum' ? 'sum' : 'fixed';
+    const happy_hour_price = await this.resolveComboPrice({
+      pricing_mode,
+      combo_price: data.happy_hour_price,
+      items,
+      productRows: products as Array<{ id: number; price: number }>,
+    });
+    const primaryId = items[0].product_id;
     const wdJson =
       data.weekdays && data.weekdays.length > 0 ? JSON.stringify(data.weekdays) : null;
+
     await this.db.run(
-      'INSERT INTO happy_hour (product_id, happy_hour_price, time_start, time_end, weekdays) VALUES (?, ?, ?, ?, ?)',
-      [data.product_id, data.happy_hour_price, data.time_start, data.time_end, wdJson],
+      'INSERT INTO happy_hour (product_id, happy_hour_price, time_start, time_end, weekdays, pricing_mode) VALUES (?, ?, ?, ?, ?, ?)',
+      [primaryId, happy_hour_price, data.time_start, data.time_end, wdJson, pricing_mode],
     );
     const id = await this.db.getLastInsertRowId();
-    return {
-      id: id,
-      product_id: data.product_id,
-      happy_hour_price: data.happy_hour_price,
-      time_start: data.time_start,
-      time_end: data.time_end,
-      is_active: 1,
-      created_at: new Date().toISOString(),
-      product_name: product.name,
-      weekdays: data.weekdays && data.weekdays.length > 0 ? data.weekdays : undefined,
-    };
+    await this.replaceOfferItems('happy_hour_items', 'happy_hour_id', id, items);
+    return this.getHappyHour(id);
   }
 
   async getAllHappyHours(): Promise<HappyHour[]> {
@@ -676,11 +980,14 @@ class OffersService {
        INNER JOIN items i ON h.product_id = i.id 
        ORDER BY h.created_at DESC`,
     );
-    return (
-      (rows as any[]).map((row) => ({
-        ...row,
-        weekdays: parseWeekdaysJson(row.weekdays),
-      })) as HappyHour[]
+    if (!rows.length) return [];
+    const ids = rows.map((r: any) => r.id);
+    const itemRows = await this.loadOfferItemRows('happy_hour_items', 'happy_hour_id', ids);
+    return rows.map((row: any) =>
+      this.hydrateHappyHour(
+        row,
+        itemRows.filter((i: any) => i.happy_hour_id === row.id),
+      ),
     );
   }
 
@@ -695,10 +1002,8 @@ class OffersService {
     if (!row) {
       throw new NotFoundException('Happy hour not found');
     }
-    return {
-      ...(row as object),
-      weekdays: parseWeekdaysJson((row as any).weekdays),
-    } as HappyHour;
+    const items = await this.loadOfferItemRows('happy_hour_items', 'happy_hour_id', [id]);
+    return this.hydrateHappyHour(row, items);
   }
 
   async updateHappyHour(
@@ -709,16 +1014,57 @@ class OffersService {
       time_end?: string;
       is_active?: number;
       weekdays?: number[] | null;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
     },
   ): Promise<HappyHour> {
-    await this.getHappyHour(id);
+    const existing = await this.getHappyHour(id);
+    const hasItemsUpdate = data.items !== undefined || data.product_ids !== undefined;
+    const nextItems = hasItemsUpdate
+      ? this.normalizeComboItems(data)
+      : (existing.products || []).map((p) => ({ product_id: p.id, quantity: p.quantity }));
+
+    if (hasItemsUpdate && nextItems.length === 0) {
+      throw new BadRequestException('Happy hour must have at least one product');
+    }
+
+    const productIds = [...new Set(nextItems.map((i) => i.product_id))];
+    const products = await this.db.all(
+      `SELECT id, name, price, kitchen_id FROM items WHERE id IN (${productIds.join(',')})`,
+    );
+    if (products.length !== productIds.length) {
+      throw new NotFoundException('One or more products not found');
+    }
+
+    const pricing_mode: ComboPricingMode =
+      data.pricing_mode === 'sum' || data.pricing_mode === 'fixed'
+        ? data.pricing_mode
+        : existing.pricing_mode || 'fixed';
+
+    const shouldResolvePrice =
+      data.happy_hour_price !== undefined || data.pricing_mode !== undefined || hasItemsUpdate;
+
+    const happy_hour_price = shouldResolvePrice
+      ? await this.resolveComboPrice({
+          pricing_mode,
+          combo_price:
+            data.happy_hour_price !== undefined ? data.happy_hour_price : existing.happy_hour_price,
+          items: nextItems,
+          productRows: products as Array<{ id: number; price: number }>,
+        })
+      : existing.happy_hour_price;
 
     const updates: string[] = [];
     const values: any[] = [];
 
-    if (data.happy_hour_price !== undefined) {
+    if (shouldResolvePrice || hasItemsUpdate) {
       updates.push('happy_hour_price = ?');
-      values.push(data.happy_hour_price);
+      values.push(happy_hour_price);
+      updates.push('pricing_mode = ?');
+      values.push(pricing_mode);
+      updates.push('product_id = ?');
+      values.push(nextItems[0].product_id);
     }
     if (data.time_start !== undefined) {
       updates.push('time_start = ?');
@@ -739,34 +1085,39 @@ class OffersService {
       );
     }
 
-    if (updates.length === 0) {
-      return this.getHappyHour(id);
+    if (updates.length > 0) {
+      values.push(id);
+      await this.db.run(`UPDATE happy_hour SET ${updates.join(', ')} WHERE id = ?`, values);
     }
-
-    values.push(id);
-
-    await this.db.run(
-      `UPDATE happy_hour SET ${updates.join(', ')} WHERE id = ?`,
-      values,
-    );
+    if (hasItemsUpdate) {
+      await this.replaceOfferItems('happy_hour_items', 'happy_hour_id', id, nextItems);
+    }
     return this.getHappyHour(id);
   }
 
   async deleteHappyHour(id: number): Promise<void> {
     await this.getHappyHour(id);
+    await this.db.run('DELETE FROM happy_hour_items WHERE happy_hour_id = ?', [id]);
     await this.db.run('DELETE FROM happy_hour WHERE id = ?', [id]);
   }
 
   async getActiveHappyHourPrice(product_id: number): Promise<number | null> {
-    const rows = await this.db.all(
-      `SELECT time_start, time_end, weekdays, happy_hour_price 
-       FROM happy_hour 
-       WHERE product_id = ? AND is_active = 1`,
-      [product_id],
-    );
+    const all = await this.getAllHappyHours();
     const now = new Date();
-    for (const row of rows as any[]) {
-      if (happyHourRowMatchesNow(row, now)) {
+    for (const row of all) {
+      if (row.is_active !== 1 || (row as any).archived_at) continue;
+      if (!isSingleUnitOffer(row.products)) continue;
+      if (row.product_id !== product_id) continue;
+      if (
+        happyHourRowMatchesNow(
+          {
+            time_start: row.time_start,
+            time_end: row.time_end,
+            weekdays: row.weekdays,
+          },
+          now,
+        )
+      ) {
         return row.happy_hour_price;
       }
     }
@@ -776,8 +1127,14 @@ class OffersService {
   // ========== Helper: Get effective price for a product ==========
   async getEffectivePrice(product_id: number): Promise<number | null> {
     // Priority (unified with FE): Daily → Happy Hour → Scheduled → catalog
+    // Multi-product trays are not applied as single-product price overrides.
     const dailyDeal = await this.getActiveDailyDeal();
-    if (dailyDeal && dailyDeal.product_id === product_id && !(dailyDeal as any).archived_at) {
+    if (
+      dailyDeal &&
+      dailyDeal.product_id === product_id &&
+      !(dailyDeal as any).archived_at &&
+      isSingleUnitOffer(dailyDeal.products)
+    ) {
       return dailyDeal.special_price;
     }
 
@@ -787,7 +1144,9 @@ class OffersService {
     }
 
     const activeScheduledOffers = await this.getActiveScheduledOffers();
-    const scheduledOffer = activeScheduledOffers.find((so) => so.product_id === product_id);
+    const scheduledOffer = activeScheduledOffers.find(
+      (so) => so.product_id === product_id && isSingleUnitOffer(so.products),
+    );
     if (scheduledOffer) {
       return scheduledOffer.special_price;
     }
@@ -931,9 +1290,10 @@ class OffersService {
   ): Promise<DailyDeal> {
     const src = await this.getDailyDealRowById(id);
     const created = await this.createDailyDeal({
-      product_id: src.product_id,
       special_price: src.special_price,
       date: src.date,
+      pricing_mode: src.pricing_mode || 'fixed',
+      items: (src.products || []).map((p) => ({ product_id: p.id, quantity: p.quantity || 1 })),
     });
     await this.db.run('UPDATE daily_deals SET is_active = 0 WHERE id = ?', [created.id]);
     const row = await this.getDailyDealRowById(created.id);
@@ -953,11 +1313,12 @@ class OffersService {
   ): Promise<HappyHour> {
     const src = await this.getHappyHour(id);
     const created = await this.createHappyHour({
-      product_id: src.product_id,
       happy_hour_price: src.happy_hour_price,
       time_start: src.time_start,
       time_end: src.time_end,
       weekdays: src.weekdays ?? null,
+      pricing_mode: src.pricing_mode || 'fixed',
+      items: (src.products || []).map((p) => ({ product_id: p.id, quantity: p.quantity || 1 })),
     });
     await this.db.run('UPDATE happy_hour SET is_active = 0 WHERE id = ?', [created.id]);
     const row = await this.getHappyHour(created.id);
@@ -977,11 +1338,13 @@ class OffersService {
   ): Promise<ScheduledOffer> {
     const src = await this.getScheduledOffer(id);
     const created = await this.createScheduledOffer({
-      product_id: src.product_id ?? undefined,
-      combo_id: src.combo_id ?? undefined,
+      product_id: src.products?.length ? undefined : src.product_id ?? undefined,
+      combo_id: src.products?.length ? undefined : src.combo_id ?? undefined,
       special_price: src.special_price,
       start_datetime: src.start_datetime,
       end_datetime: src.end_datetime,
+      pricing_mode: src.pricing_mode || 'fixed',
+      items: (src.products || []).map((p) => ({ product_id: p.id, quantity: p.quantity || 1 })),
     });
     await this.db.run('UPDATE scheduled_offers SET is_active = 0 WHERE id = ?', [created.id]);
     const row = await this.getScheduledOffer(created.id);
@@ -995,7 +1358,7 @@ class OffersService {
     return row;
   }
 
-  // ========== Helper: Enrich items with offer prices and featured status ==========
+  // ========== Helper: Enrich items with offer prices ==========
   async enrichItemsWithOffers(items: Array<{ id: number; name: string; price: number; categoryId?: number | null; kitchen_id?: number | null }>): Promise<Array<{
     id: number;
     name: string;
@@ -1005,47 +1368,50 @@ class OffersService {
     kitchen_id?: number | null;
     is_featured: boolean;
   }>> {
-    const [dailyDeal, activeScheduledOffers, featuredItems, activeHappyHours] = await Promise.all([
+    const [dailyDeal, activeScheduledOffers, activeHappyHours] = await Promise.all([
       this.getActiveDailyDeal(),
       this.getActiveScheduledOffers(),
-      this.getAllFeaturedItems(),
       this.getAllHappyHours().then((hh) => hh.filter((h) => h.is_active === 1 && !(h as any).archived_at)),
     ]);
 
-    const featuredSet = new Set(
-      featuredItems.filter((fi) => !(fi as any).archived_at).map((fi) => fi.product_id),
-    );
     const now = new Date();
 
     return items.map((item) => {
-      let effectivePrice: number | null = null;
-      const originalPrice = item.price;
+      let price = item.price;
+      let original_price = item.price;
 
-      if (dailyDeal && dailyDeal.product_id === item.id && !(dailyDeal as any).archived_at) {
-        effectivePrice = dailyDeal.special_price;
+      if (
+        dailyDeal &&
+        dailyDeal.product_id === item.id &&
+        !(dailyDeal as any).archived_at &&
+        isSingleUnitOffer(dailyDeal.products)
+      ) {
+        price = dailyDeal.special_price;
       } else {
-        const happyHour = activeHappyHours.find((hh) => {
-          if (hh.product_id !== item.id) return false;
-          return happyHourRowMatchesNow(
-            { time_start: hh.time_start, time_end: hh.time_end, weekdays: hh.weekdays ?? null },
-            now,
-          );
-        });
-        if (happyHour) {
-          effectivePrice = happyHour.happy_hour_price;
+        const hh = activeHappyHours.find(
+          (h) =>
+            h.product_id === item.id &&
+            isSingleUnitOffer(h.products) &&
+            happyHourRowMatchesNow(
+              { time_start: h.time_start, time_end: h.time_end, weekdays: h.weekdays },
+              now,
+            ),
+        );
+        if (hh) {
+          price = hh.happy_hour_price;
         } else {
-          const scheduledOffer = activeScheduledOffers.find((so) => so.product_id === item.id);
-          if (scheduledOffer) {
-            effectivePrice = scheduledOffer.special_price;
-          }
+          const scheduled = activeScheduledOffers.find(
+            (so) => so.product_id === item.id && isSingleUnitOffer(so.products),
+          );
+          if (scheduled) price = scheduled.special_price;
         }
       }
 
       return {
         ...item,
-        original_price: originalPrice,
-        price: effectivePrice !== null ? effectivePrice : originalPrice,
-        is_featured: featuredSet.has(item.id),
+        price,
+        original_price,
+        is_featured: false,
       };
     });
   }

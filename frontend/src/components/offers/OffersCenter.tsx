@@ -12,7 +12,6 @@ import { ComboContentsPicker } from './ComboContentsPicker';
 import {
   comboToViewModel,
   dailyDealToViewModel,
-  featuredToViewModel,
   happyHourToViewModel,
   scheduledToViewModel,
   savingsFromPrices,
@@ -75,7 +74,6 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
   // Shared form state (simplified multi-type)
   const [formName, setFormName] = useState('');
   const [formPrice, setFormPrice] = useState('');
-  const [formProductId, setFormProductId] = useState('');
   const [formDate, setFormDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [formWeekdays, setFormWeekdays] = useState<number[]>([]);
   const [formPricingMode, setFormPricingMode] = useState<'fixed' | 'sum'>('fixed');
@@ -84,10 +82,7 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
   const [formEnd, setFormEnd] = useState('');
   const [formTimeStart, setFormTimeStart] = useState('17:00');
   const [formTimeEnd, setFormTimeEnd] = useState('20:00');
-  const [formTargetKind, setFormTargetKind] = useState<'product' | 'combo'>('product');
-  const [formComboId, setFormComboId] = useState('');
   const [formActive, setFormActive] = useState(true);
-  const [productSearch, setProductSearch] = useState('');
 
   const priceField = useGlobalNumericField(formPrice, (next) => {
     setFormPrice(next);
@@ -130,18 +125,6 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
             ...s,
             catalog_price: catalog,
             archived_at: (s as { archived_at?: string | null }).archived_at,
-          },
-          now,
-        ),
-      );
-    }
-    for (const f of offers.featuredItems) {
-      list.push(
-        featuredToViewModel(
-          {
-            ...f,
-            catalog_price: catalogById.get(f.product_id)?.price,
-            archived_at: (f as { archived_at?: string | null }).archived_at,
           },
           now,
         ),
@@ -217,16 +200,32 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
     );
   }, [formItems, catalogById]);
 
-  const selectedProduct = catalogById.get(Number(formProductId));
-  const dailySavings =
-    selectedProduct && formPrice
-      ? savingsFromPrices(selectedProduct.price, Number(formPrice) || 0)
-      : null;
+  const mapProductsToFormItems = (
+    products?: Array<{ id: number; quantity?: number }>,
+  ): Array<{ product_id: number; quantity: number }> =>
+    (products || []).map((p) => ({
+      product_id: p.id,
+      quantity: Math.max(1, Number(p.quantity) || 1),
+    }));
+
+  const onFormItemsChange = (next: Array<{ product_id: number; quantity: number }>) => {
+    setFormItems(next);
+    setDirty(true);
+    if (formPricingMode === 'sum') {
+      const total = sumComboContentsPrice(
+        next.map((row) => ({
+          product_id: row.product_id,
+          quantity: row.quantity,
+          unit_price: catalogById.get(row.product_id)?.price ?? 0,
+        })),
+      );
+      setFormPrice(String(total));
+    }
+  };
 
   const resetForm = () => {
     setFormName('');
     setFormPrice('');
-    setFormProductId('');
     setFormDate(new Date().toISOString().slice(0, 10));
     setFormWeekdays([]);
     setFormPricingMode('fixed');
@@ -235,10 +234,7 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
     setFormEnd('');
     setFormTimeStart('17:00');
     setFormTimeEnd('20:00');
-    setFormTargetKind('product');
-    setFormComboId('');
     setFormActive(true);
-    setProductSearch('');
     setDirty(false);
     setEditingId(null);
   };
@@ -257,8 +253,19 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
     setEditingId(vm.id);
     setFormActive(vm.isActive);
     if (vm.type === 'daily_deal') {
-      const raw = vm.raw as { product_id: number; special_price: number; date: string };
-      setFormProductId(String(raw.product_id));
+      const raw = vm.raw as {
+        product_id?: number;
+        products?: Array<{ id: number; quantity?: number }>;
+        pricing_mode?: string;
+        special_price: number;
+        date: string;
+      };
+      if (raw.products && raw.products.length > 0) {
+        setFormItems(mapProductsToFormItems(raw.products));
+      } else if (raw.product_id != null) {
+        setFormItems([{ product_id: raw.product_id, quantity: 1 }]);
+      }
+      setFormPricingMode(raw.pricing_mode === 'sum' ? 'sum' : 'fixed');
       setFormPrice(String(raw.special_price));
       setFormDate(raw.date);
     } else if (vm.type === 'combo') {
@@ -267,12 +274,7 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
       setFormPrice(String(raw.combo_price));
       setFormPricingMode(raw.pricing_mode === 'sum' ? 'sum' : 'fixed');
       setFormWeekdays(raw.weekdays?.length ? [...raw.weekdays] : []);
-      setFormItems(
-        (raw.products || []).map((p) => ({
-          product_id: p.id,
-          quantity: Math.max(1, Number(p.quantity) || 1),
-        })),
-      );
+      setFormItems(mapProductsToFormItems(raw.products));
     } else if (vm.type === 'scheduled') {
       const raw = vm.raw as {
         product_id: number | null;
@@ -280,29 +282,41 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
         special_price: number;
         start_datetime: string;
         end_datetime: string;
+        pricing_mode?: string;
+        products?: Array<{ id: number; quantity?: number }>;
       };
-      setFormTargetKind(raw.combo_id != null ? 'combo' : 'product');
-      setFormProductId(raw.product_id != null ? String(raw.product_id) : '');
-      setFormComboId(raw.combo_id != null ? String(raw.combo_id) : '');
+      if (raw.products && raw.products.length > 0) {
+        setFormItems(mapProductsToFormItems(raw.products));
+      } else if (raw.product_id != null) {
+        setFormItems([{ product_id: raw.product_id, quantity: 1 }]);
+      } else if (raw.combo_id != null) {
+        const combo = offers.combos.find((c) => c.id === raw.combo_id);
+        setFormItems(mapProductsToFormItems(combo?.products));
+      }
+      setFormPricingMode(raw.pricing_mode === 'sum' ? 'sum' : 'fixed');
       setFormPrice(String(raw.special_price));
       setFormStart(raw.start_datetime.replace(' ', 'T').slice(0, 16));
       setFormEnd(raw.end_datetime.replace(' ', 'T').slice(0, 16));
     } else if (vm.type === 'happy_hour') {
       const raw = vm.raw as {
-        product_id: number;
+        product_id?: number;
         happy_hour_price: number;
         time_start: string;
         time_end: string;
         weekdays?: number[];
+        pricing_mode?: string;
+        products?: Array<{ id: number; quantity?: number }>;
       };
-      setFormProductId(String(raw.product_id));
+      if (raw.products && raw.products.length > 0) {
+        setFormItems(mapProductsToFormItems(raw.products));
+      } else if (raw.product_id != null) {
+        setFormItems([{ product_id: raw.product_id, quantity: 1 }]);
+      }
+      setFormPricingMode(raw.pricing_mode === 'sum' ? 'sum' : 'fixed');
       setFormPrice(String(raw.happy_hour_price));
       setFormTimeStart(raw.time_start.slice(0, 5));
       setFormTimeEnd(raw.time_end.slice(0, 5));
       setFormWeekdays(raw.weekdays?.length ? [...raw.weekdays] : []);
-    } else if (vm.type === 'featured') {
-      const raw = vm.raw as { product_id: number };
-      setFormProductId(String(raw.product_id));
     }
     setEditorOpen(true);
     setDirty(false);
@@ -359,7 +373,6 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
       else if (vm.type === 'combo') await offers.deleteCombo(vm.id);
       else if (vm.type === 'scheduled') await offers.deleteScheduledOffer(vm.id);
       else if (vm.type === 'happy_hour') await offers.deleteHappyHour(vm.id);
-      else if (vm.type === 'featured') await offers.setFeatured(vm.targetId!, false);
       setDetails(null);
     } catch {
       /* toast in hook */
@@ -383,26 +396,33 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
     setSaving(true);
     try {
       if (editorType === 'daily_deal') {
-        if (!formProductId) {
-          showToast(t('offers.validationPickProduct', { defaultValue: 'اختر منتجاً' }), 'error');
-          return;
-        }
-        if (!formPrice || Number(formPrice) < 0) {
-          showToast(t('offers.validationOfferPrice', { defaultValue: 'أدخل سعر العرض' }), 'error');
+        const itemsPayload = mergeComboItems(formItems);
+        if (itemsPayload.length === 0) {
+          showToast(t('offers.validationComboItems', { defaultValue: 'أضف منتجاً واحداً على الأقل للصينية' }), 'error');
           return;
         }
         if (!formDate) {
           showToast(t('offers.validationDate', { defaultValue: 'أدخل التاريخ' }), 'error');
           return;
         }
+        if (formPricingMode === 'fixed') {
+          const priceNum = Number(formPrice);
+          if (!Number.isFinite(priceNum) || formPrice.trim() === '' || priceNum < 0) {
+            showToast(t('offers.validationOfferPrice', { defaultValue: 'أدخل سعر العرض' }), 'error');
+            return;
+          }
+        }
+        const payload = {
+          date: formDate,
+          pricing_mode: formPricingMode,
+          special_price: formPricingMode === 'fixed' ? Number(formPrice) : contentsTotal,
+          items: itemsPayload,
+          is_active: formActive ? 1 : 0,
+        };
         if (editorMode === 'edit' && editingId) {
-          await offers.updateDailyDeal(editingId, { is_active: formActive ? 1 : 0 });
+          await offers.updateDailyDeal(editingId, payload);
         } else {
-          await offers.createDailyDeal({
-            product_id: Number(formProductId),
-            special_price: Number(formPrice),
-            date: formDate,
-          });
+          await offers.createDailyDeal(payload);
         }
       } else if (editorType === 'combo') {
         const itemsPayload = mergeComboItems(formItems);
@@ -436,26 +456,26 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
           await offers.createCombo(payload as any);
         }
       } else if (editorType === 'scheduled') {
-        if (!formPrice || Number(formPrice) < 0) {
-          showToast(t('offers.validationOfferPrice', { defaultValue: 'أدخل سعر العرض' }), 'error');
+        const itemsPayload = mergeComboItems(formItems);
+        if (itemsPayload.length === 0) {
+          showToast(t('offers.validationComboItems', { defaultValue: 'أضف منتجاً واحداً على الأقل للصينية' }), 'error');
           return;
+        }
+        if (formPricingMode === 'fixed') {
+          const priceNum = Number(formPrice);
+          if (!Number.isFinite(priceNum) || formPrice.trim() === '' || priceNum < 0) {
+            showToast(t('offers.validationOfferPrice', { defaultValue: 'أدخل سعر العرض' }), 'error');
+            return;
+          }
         }
         if (!formStart || !formEnd) {
           showToast(t('offers.validationScheduleDates', { defaultValue: 'أدخل تاريخ البداية والنهاية' }), 'error');
           return;
         }
-        if (formTargetKind === 'product' && !formProductId) {
-          showToast(t('offers.validationPickProduct', { defaultValue: 'اختر منتجاً' }), 'error');
-          return;
-        }
-        if (formTargetKind === 'combo' && !formComboId) {
-          showToast(t('offers.validationPickCombo', { defaultValue: 'اختر عرضاً مجمعاً' }), 'error');
-          return;
-        }
         const body = {
-          product_id: formTargetKind === 'product' ? Number(formProductId) : undefined,
-          combo_id: formTargetKind === 'combo' ? Number(formComboId) : undefined,
-          special_price: Number(formPrice),
+          pricing_mode: formPricingMode,
+          special_price: formPricingMode === 'fixed' ? Number(formPrice) : contentsTotal,
+          items: itemsPayload,
           start_datetime: formStart.replace('T', ' '),
           end_datetime: formEnd.replace('T', ' '),
           is_active: formActive ? 1 : 0,
@@ -466,21 +486,26 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
           await offers.createScheduledOffer(body);
         }
       } else if (editorType === 'happy_hour') {
-        if (!formProductId) {
-          showToast(t('offers.validationPickProduct', { defaultValue: 'اختر منتجاً' }), 'error');
+        const itemsPayload = mergeComboItems(formItems);
+        if (itemsPayload.length === 0) {
+          showToast(t('offers.validationComboItems', { defaultValue: 'أضف منتجاً واحداً على الأقل للصينية' }), 'error');
           return;
         }
-        if (!formPrice || Number(formPrice) < 0) {
-          showToast(t('offers.validationOfferPrice', { defaultValue: 'أدخل سعر العرض' }), 'error');
-          return;
+        if (formPricingMode === 'fixed') {
+          const priceNum = Number(formPrice);
+          if (!Number.isFinite(priceNum) || formPrice.trim() === '' || priceNum < 0) {
+            showToast(t('offers.validationOfferPrice', { defaultValue: 'أدخل سعر العرض' }), 'error');
+            return;
+          }
         }
         if (!formTimeStart || !formTimeEnd) {
           showToast(t('offers.validationHappyTimes', { defaultValue: 'أدخل وقت البداية والنهاية' }), 'error');
           return;
         }
         const body = {
-          product_id: Number(formProductId),
-          happy_hour_price: Number(formPrice),
+          pricing_mode: formPricingMode,
+          happy_hour_price: formPricingMode === 'fixed' ? Number(formPrice) : contentsTotal,
+          items: itemsPayload,
           time_start: formTimeStart,
           time_end: formTimeEnd,
           weekdays: formWeekdays.length ? formWeekdays : undefined,
@@ -493,16 +518,12 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
             time_end: body.time_end,
             weekdays: body.weekdays ?? null,
             is_active: body.is_active,
+            pricing_mode: body.pricing_mode,
+            items: body.items,
           });
         } else {
           await offers.createHappyHour(body);
         }
-      } else if (editorType === 'featured') {
-        if (!formProductId) {
-          showToast(t('offers.validationPickProduct', { defaultValue: 'اختر منتجاً' }), 'error');
-          return;
-        }
-        await offers.setFeatured(Number(formProductId), true);
       }
       setDirty(false);
       setEditorOpen(false);
@@ -515,18 +536,11 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
     }
   };
 
-  const filteredProducts = items.filter((i) =>
-    !productSearch.trim()
-      ? true
-      : i.name.toLowerCase().includes(productSearch.trim().toLowerCase()),
-  );
-
   const typeLabel = (type: OfferType) => {
     const map: Record<OfferType, string> = {
       daily_deal: t('offers.typeDailyDeal', { defaultValue: 'عرض اليوم' }),
       combo: t('offers.typeCombo'),
       scheduled: t('offers.typeScheduled', { defaultValue: 'عرض مجدول' }),
-      featured: t('offers.typeFeatured', { defaultValue: 'منتج مميز' }),
       happy_hour: t('offers.typeHappyHour', { defaultValue: 'ساعة سعيدة' }),
     };
     return map[type];
@@ -635,7 +649,6 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
             <option value="daily_deal">{typeLabel('daily_deal')}</option>
             <option value="combo">{typeLabel('combo')}</option>
             <option value="scheduled">{typeLabel('scheduled')}</option>
-            <option value="featured">{typeLabel('featured')}</option>
             <option value="happy_hour">{typeLabel('happy_hour')}</option>
           </select>
           <label className="flex items-center gap-2 rounded-lg border border-black/10 px-3 py-2 text-[12px] text-obsidian/70">
@@ -730,24 +743,20 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
                     >
                       {t('halls.edit')}
                     </button>
-                    {vm.type !== 'featured' ? (
-                      <button
-                        type="button"
-                        className="rounded-lg border border-black/10 px-2.5 py-1.5 text-[12px] font-semibold hover:bg-black/[0.03]"
-                        onClick={() => void invokeDuplicate(vm)}
-                      >
-                        {t('offers.duplicate', { defaultValue: 'نسخ' })}
-                      </button>
-                    ) : null}
-                    {vm.type !== 'featured' ? (
-                      <button
-                        type="button"
-                        className="rounded-lg border border-black/10 px-2.5 py-1.5 text-[12px] font-semibold hover:bg-black/[0.03]"
-                        onClick={() => void toggleActive(vm)}
-                      >
-                        {vm.isActive ? t('offers.deactivate') : t('offers.activate')}
-                      </button>
-                    ) : null}
+                    <button
+                      type="button"
+                      className="rounded-lg border border-black/10 px-2.5 py-1.5 text-[12px] font-semibold hover:bg-black/[0.03]"
+                      onClick={() => void invokeDuplicate(vm)}
+                    >
+                      {t('offers.duplicate', { defaultValue: 'نسخ' })}
+                    </button>
+                    <button
+                      type="button"
+                      className="rounded-lg border border-black/10 px-2.5 py-1.5 text-[12px] font-semibold hover:bg-black/[0.03]"
+                      onClick={() => void toggleActive(vm)}
+                    >
+                      {vm.isActive ? t('offers.deactivate') : t('offers.activate')}
+                    </button>
                     <button
                       type="button"
                       className="rounded-lg border border-red-200 bg-red-50 px-2.5 py-1.5 text-[12px] font-semibold text-red-700 hover:bg-red-100"
@@ -766,7 +775,14 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
       {/* Editor drawer */}
       <OfferSideDrawer
         open={editorOpen}
-        widthClassName={editorType === 'combo' ? 'w-full max-w-2xl' : 'w-full max-w-xl'}
+        widthClassName={
+          editorType === 'combo' ||
+          editorType === 'daily_deal' ||
+          editorType === 'scheduled' ||
+          editorType === 'happy_hour'
+            ? 'w-full max-w-2xl'
+            : 'w-full max-w-xl'
+        }
         title={
           editorMode === 'edit'
             ? t('offers.editOffer', { defaultValue: 'تعديل عرض' })
@@ -803,13 +819,7 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
               {t('offers.pickOfferType', { defaultValue: 'اختر نوع العرض' })}
             </p>
             {(
-              [
-                'daily_deal',
-                'combo',
-                'scheduled',
-                'featured',
-                'happy_hour',
-              ] as OfferType[]
+              ['daily_deal', 'combo', 'scheduled', 'happy_hour'] as OfferType[]
             ).map((ty) => (
               <button
                 key={ty}
@@ -827,49 +837,80 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
         ) : (
           <div className="space-y-4" onChange={() => setDirty(true)}>
             {editorType === 'daily_deal' && (
-              <>
-                <label className="block text-[13px] font-bold">{t('offers.product')}</label>
-                <select
-                  className="w-full rounded-lg border border-black/10 px-3 py-2"
-                  value={formProductId}
-                  onChange={(e) => {
-                    setFormProductId(e.target.value);
-                    setDirty(true);
-                  }}
-                  disabled={editorMode === 'edit'}
-                >
-                  <option value="">{t('offers.selectProduct')}</option>
-                  {items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} — {fmt(i.price)}
-                    </option>
-                  ))}
-                </select>
-                {selectedProduct ? (
-                  <p className="text-[13px] text-obsidian/60">
-                    {t('offers.currentPrice', { defaultValue: 'السعر الحالي' })}: {fmt(selectedProduct.price)}
-                  </p>
-                ) : null}
-                <label className="block text-[13px] font-bold">{t('offers.offerPrice', { defaultValue: 'سعر العرض' })}</label>
-                <input
-                  className="w-full rounded-lg border border-black/10 px-3 py-2"
-                  value={formPrice}
-                  onChange={(e) => {
-                    setFormPrice(e.target.value);
-                    setDirty(true);
-                  }}
-                  onFocus={priceField.onFocus}
-                  disabled={editorMode === 'edit'}
-                />
-                {dailySavings && dailySavings.discountAmount > 0 ? (
-                  <div className="rounded-lg bg-emerald-50 px-3 py-2 text-[13px] text-emerald-800">
-                    {t('offers.savingsPreview', {
-                      defaultValue: 'التوفير: {{amount}} ({{percent}}%)',
-                      amount: dailySavings.discountAmount,
-                      percent: dailySavings.discountPercent,
-                    })}
+              <div className="space-y-4">
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-bold">
+                    {t('offers.comboPricingModeLabel')}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={`rounded-soft-lg border px-3 py-2.5 text-[13px] font-bold transition ${
+                        formPricingMode === 'fixed'
+                          ? 'border-cyber-aqua bg-cyber-aqua text-white shadow-sm'
+                          : 'border-black/10 bg-white text-obsidian/70 hover:bg-black/[0.03]'
+                      }`}
+                      onClick={() => {
+                        setFormPricingMode('fixed');
+                        setDirty(true);
+                      }}
+                    >
+                      {t('offers.comboPricingFixed')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-soft-lg border px-3 py-2.5 text-[13px] font-bold transition ${
+                        formPricingMode === 'sum'
+                          ? 'border-cyber-aqua bg-cyber-aqua text-white shadow-sm'
+                          : 'border-black/10 bg-white text-obsidian/70 hover:bg-black/[0.03]'
+                      }`}
+                      onClick={() => {
+                        setFormPricingMode('sum');
+                        setFormPrice(String(contentsTotal));
+                        setDirty(true);
+                      }}
+                    >
+                      {t('offers.comboPricingSum')}
+                    </button>
                   </div>
-                ) : null}
+                </div>
+
+                {formPricingMode === 'fixed' ? (
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-bold">
+                      {t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
+                      <span className="mr-1 text-red-500">*</span>
+                    </label>
+                    <input
+                      className="w-full rounded-soft-lg border border-black/10 px-3 py-2.5 outline-none ring-cyber-aqua/30 focus:ring-2"
+                      value={formPrice}
+                      onChange={(e) => {
+                        setFormPrice(e.target.value);
+                        setDirty(true);
+                      }}
+                      onFocus={priceField.onFocus}
+                      placeholder={t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
+                    />
+                    {Number(formPrice) > 0 && contentsTotal > 0 ? (
+                      <div className="mt-1.5 text-[12px] font-semibold text-emerald-700">
+                        {(() => {
+                          const s = savingsFromPrices(contentsTotal, Number(formPrice));
+                          return t('offers.savingsPreview', {
+                            defaultValue: 'التوفير: {{amount}} ({{percent}}%)',
+                            amount: s.discountAmount,
+                            percent: s.discountPercent,
+                          });
+                        })()}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="rounded-soft-lg border border-black/8 bg-slate-50 px-3 py-2">
+                    <p className="text-[12px] text-obsidian/50">{t('offers.comboPricingSumHint')}</p>
+                    <p className="mt-0.5 text-[16px] font-bold text-obsidian">{fmt(contentsTotal)}</p>
+                  </div>
+                )}
+
                 <label className="block text-[13px] font-bold">{t('offers.date')}</label>
                 <input
                   type="date"
@@ -879,9 +920,15 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
                     setFormDate(e.target.value);
                     setDirty(true);
                   }}
-                  disabled={editorMode === 'edit'}
                 />
-              </>
+
+                <ComboContentsPicker
+                  items={items}
+                  value={formItems}
+                  onChange={onFormItemsChange}
+                  formatPrice={fmt}
+                />
+              </div>
             )}
 
             {editorType === 'combo' && (
@@ -1018,78 +1065,80 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
             )}
 
             {editorType === 'scheduled' && (
-              <>
-                <div className="flex gap-2">
-                  <button
-                    type="button"
-                    className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-bold ${
-                      formTargetKind === 'product' ? 'border-cyber-aqua bg-cyber-aqua/10' : ''
-                    }`}
-                    onClick={() => {
-                      setFormTargetKind('product');
-                      setDirty(true);
-                    }}
-                  >
-                    {t('offers.product')}
-                  </button>
-                  <button
-                    type="button"
-                    className={`flex-1 rounded-lg border px-3 py-2 text-[13px] font-bold ${
-                      formTargetKind === 'combo' ? 'border-cyber-aqua bg-cyber-aqua/10' : ''
-                    }`}
-                    onClick={() => {
-                      setFormTargetKind('combo');
-                      setDirty(true);
-                    }}
-                  >
-                    {t('offers.typeCombo')}
-                  </button>
+              <div className="space-y-4">
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-bold">
+                    {t('offers.comboPricingModeLabel')}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={`rounded-soft-lg border px-3 py-2.5 text-[13px] font-bold transition ${
+                        formPricingMode === 'fixed'
+                          ? 'border-cyber-aqua bg-cyber-aqua text-white shadow-sm'
+                          : 'border-black/10 bg-white text-obsidian/70 hover:bg-black/[0.03]'
+                      }`}
+                      onClick={() => {
+                        setFormPricingMode('fixed');
+                        setDirty(true);
+                      }}
+                    >
+                      {t('offers.comboPricingFixed')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-soft-lg border px-3 py-2.5 text-[13px] font-bold transition ${
+                        formPricingMode === 'sum'
+                          ? 'border-cyber-aqua bg-cyber-aqua text-white shadow-sm'
+                          : 'border-black/10 bg-white text-obsidian/70 hover:bg-black/[0.03]'
+                      }`}
+                      onClick={() => {
+                        setFormPricingMode('sum');
+                        setFormPrice(String(contentsTotal));
+                        setDirty(true);
+                      }}
+                    >
+                      {t('offers.comboPricingSum')}
+                    </button>
+                  </div>
                 </div>
-                {formTargetKind === 'product' ? (
-                  <select
-                    className="w-full rounded-lg border border-black/10 px-3 py-2"
-                    value={formProductId}
-                    onChange={(e) => {
-                      setFormProductId(e.target.value);
-                      setDirty(true);
-                    }}
-                  >
-                    <option value="">{t('offers.selectProduct')}</option>
-                    {items.map((i) => (
-                      <option key={i.id} value={i.id}>
-                        {i.name}
-                      </option>
-                    ))}
-                  </select>
+
+                {formPricingMode === 'fixed' ? (
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-bold">
+                      {t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
+                      <span className="mr-1 text-red-500">*</span>
+                    </label>
+                    <input
+                      className="w-full rounded-soft-lg border border-black/10 px-3 py-2.5 outline-none ring-cyber-aqua/30 focus:ring-2"
+                      value={formPrice}
+                      onChange={(e) => {
+                        setFormPrice(e.target.value);
+                        setDirty(true);
+                      }}
+                      onFocus={priceField.onFocus}
+                      placeholder={t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
+                    />
+                    {Number(formPrice) > 0 && contentsTotal > 0 ? (
+                      <div className="mt-1.5 text-[12px] font-semibold text-emerald-700">
+                        {(() => {
+                          const s = savingsFromPrices(contentsTotal, Number(formPrice));
+                          return t('offers.savingsPreview', {
+                            defaultValue: 'التوفير: {{amount}} ({{percent}}%)',
+                            amount: s.discountAmount,
+                            percent: s.discountPercent,
+                          });
+                        })()}
+                      </div>
+                    ) : null}
+                  </div>
                 ) : (
-                  <select
-                    className="w-full rounded-lg border border-black/10 px-3 py-2"
-                    value={formComboId}
-                    onChange={(e) => {
-                      setFormComboId(e.target.value);
-                      setDirty(true);
-                    }}
-                  >
-                    <option value="">{t('offers.selectCombo')}</option>
-                    {offers.combos
-                      .filter((c) => !(c as any).archived_at)
-                      .map((c) => (
-                        <option key={c.id} value={c.id}>
-                          {c.combo_name}
-                        </option>
-                      ))}
-                  </select>
+                  <div className="rounded-soft-lg border border-black/8 bg-slate-50 px-3 py-2">
+                    <p className="text-[12px] text-obsidian/50">{t('offers.comboPricingSumHint')}</p>
+                    <p className="mt-0.5 text-[16px] font-bold text-obsidian">{fmt(contentsTotal)}</p>
+                  </div>
                 )}
-                <input
-                  className="w-full rounded-lg border border-black/10 px-3 py-2"
-                  value={formPrice}
-                  onChange={(e) => {
-                    setFormPrice(e.target.value);
-                    setDirty(true);
-                  }}
-                  onFocus={priceField.onFocus}
-                  placeholder={t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
-                />
+
                 <label className="block text-[12px] font-bold">{t('offers.start')}</label>
                 <input
                   type="datetime-local"
@@ -1110,37 +1159,91 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
                     setDirty(true);
                   }}
                 />
-              </>
+
+                <ComboContentsPicker
+                  items={items}
+                  value={formItems}
+                  onChange={onFormItemsChange}
+                  formatPrice={fmt}
+                />
+              </div>
             )}
 
             {editorType === 'happy_hour' && (
-              <>
-                <select
-                  className="w-full rounded-lg border border-black/10 px-3 py-2"
-                  value={formProductId}
-                  onChange={(e) => {
-                    setFormProductId(e.target.value);
-                    setDirty(true);
-                  }}
-                  disabled={editorMode === 'edit'}
-                >
-                  <option value="">{t('offers.selectProduct')}</option>
-                  {items.map((i) => (
-                    <option key={i.id} value={i.id}>
-                      {i.name} — {fmt(i.price)}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  className="w-full rounded-lg border border-black/10 px-3 py-2"
-                  value={formPrice}
-                  onChange={(e) => {
-                    setFormPrice(e.target.value);
-                    setDirty(true);
-                  }}
-                  onFocus={priceField.onFocus}
-                  placeholder={t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
-                />
+              <div className="space-y-4">
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-bold">
+                    {t('offers.comboPricingModeLabel')}
+                  </span>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      className={`rounded-soft-lg border px-3 py-2.5 text-[13px] font-bold transition ${
+                        formPricingMode === 'fixed'
+                          ? 'border-cyber-aqua bg-cyber-aqua text-white shadow-sm'
+                          : 'border-black/10 bg-white text-obsidian/70 hover:bg-black/[0.03]'
+                      }`}
+                      onClick={() => {
+                        setFormPricingMode('fixed');
+                        setDirty(true);
+                      }}
+                    >
+                      {t('offers.comboPricingFixed')}
+                    </button>
+                    <button
+                      type="button"
+                      className={`rounded-soft-lg border px-3 py-2.5 text-[13px] font-bold transition ${
+                        formPricingMode === 'sum'
+                          ? 'border-cyber-aqua bg-cyber-aqua text-white shadow-sm'
+                          : 'border-black/10 bg-white text-obsidian/70 hover:bg-black/[0.03]'
+                      }`}
+                      onClick={() => {
+                        setFormPricingMode('sum');
+                        setFormPrice(String(contentsTotal));
+                        setDirty(true);
+                      }}
+                    >
+                      {t('offers.comboPricingSum')}
+                    </button>
+                  </div>
+                </div>
+
+                {formPricingMode === 'fixed' ? (
+                  <div>
+                    <label className="mb-1.5 block text-[13px] font-bold">
+                      {t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
+                      <span className="mr-1 text-red-500">*</span>
+                    </label>
+                    <input
+                      className="w-full rounded-soft-lg border border-black/10 px-3 py-2.5 outline-none ring-cyber-aqua/30 focus:ring-2"
+                      value={formPrice}
+                      onChange={(e) => {
+                        setFormPrice(e.target.value);
+                        setDirty(true);
+                      }}
+                      onFocus={priceField.onFocus}
+                      placeholder={t('offers.offerPrice', { defaultValue: 'سعر العرض' })}
+                    />
+                    {Number(formPrice) > 0 && contentsTotal > 0 ? (
+                      <div className="mt-1.5 text-[12px] font-semibold text-emerald-700">
+                        {(() => {
+                          const s = savingsFromPrices(contentsTotal, Number(formPrice));
+                          return t('offers.savingsPreview', {
+                            defaultValue: 'التوفير: {{amount}} ({{percent}}%)',
+                            amount: s.discountAmount,
+                            percent: s.discountPercent,
+                          });
+                        })()}
+                      </div>
+                    ) : null}
+                  </div>
+                ) : (
+                  <div className="rounded-soft-lg border border-black/8 bg-slate-50 px-3 py-2">
+                    <p className="text-[12px] text-obsidian/50">{t('offers.comboPricingSumHint')}</p>
+                    <p className="mt-0.5 text-[16px] font-bold text-obsidian">{fmt(contentsTotal)}</p>
+                  </div>
+                )}
+
                 <div className="grid grid-cols-2 gap-2">
                   <div>
                     <label className="text-[12px] font-bold">{t('offers.timeStart')}</label>
@@ -1180,57 +1283,17 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
                     setDirty(true);
                   }}
                 />
-              </>
-            )}
 
-            {editorType === 'featured' && (
-              <>
-                <p className="text-[13px] text-obsidian/60">
-                  {t('offers.featuredCurrent', { defaultValue: 'المنتجات المميزة حالياً' })}
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {offers.featuredItems.map((f) => (
-                    <button
-                      key={f.id}
-                      type="button"
-                      className="rounded-full bg-amber-100 px-3 py-1 text-[12px] font-bold text-amber-900"
-                      onClick={() => void offers.setFeatured(f.product_id, false)}
-                    >
-                      {f.product_name || `#${f.product_id}`} ×
-                    </button>
-                  ))}
-                </div>
-                <input
-                  className="w-full rounded-lg border border-black/10 px-3 py-2 text-[13px]"
-                  placeholder={t('offers.searchProduct', { defaultValue: 'بحث منتج...' })}
-                  value={productSearch}
-                  onChange={(e) => setProductSearch(e.target.value)}
+                <ComboContentsPicker
+                  items={items}
+                  value={formItems}
+                  onChange={onFormItemsChange}
+                  formatPrice={fmt}
                 />
-                <div className="max-h-64 space-y-1 overflow-y-auto">
-                  {filteredProducts.map((item) => {
-                    const on = offers.featuredItems.some((f) => f.product_id === item.id);
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        disabled={on}
-                        className="flex w-full items-center justify-between rounded-lg border border-black/5 px-3 py-2 text-right text-[13px] hover:bg-black/[0.02] disabled:opacity-40"
-                        onClick={() => {
-                          setFormProductId(String(item.id));
-                          setDirty(true);
-                          void offers.setFeatured(item.id, true);
-                        }}
-                      >
-                        <span>{item.name}</span>
-                        <span className="text-obsidian/45">{fmt(item.price)}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </>
+              </div>
             )}
 
-            {editorType !== 'featured' && editorMode === 'edit' ? (
+            {editorMode === 'edit' ? (
               <label className="flex items-center gap-2 text-[13px]">
                 <input
                   type="checkbox"
@@ -1266,15 +1329,13 @@ export default function OffersCenter({ offers, items, isManager }: OffersCenterP
               >
                 {t('halls.edit')}
               </button>
-              {details.type !== 'featured' ? (
-                <button
-                  type="button"
-                  className="rounded-lg border px-3 py-2 text-[13px] font-bold"
-                  onClick={() => void invokeDuplicate(details)}
-                >
-                  {t('offers.duplicate', { defaultValue: 'نسخ' })}
-                </button>
-              ) : null}
+              <button
+                type="button"
+                className="rounded-lg border px-3 py-2 text-[13px] font-bold"
+                onClick={() => void invokeDuplicate(details)}
+              >
+                {t('offers.duplicate', { defaultValue: 'نسخ' })}
+              </button>
               <button
                 type="button"
                 className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-[13px] font-bold text-red-700"
