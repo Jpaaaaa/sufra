@@ -31,7 +31,7 @@ import {
   requireOffersManager,
   stripActorArgs,
   type SufraActor,
-} from '../../backend/src/modules/offers/offers-rbac';
+} from '../../shared/offers/offers-rbac';
 
 type EventWithActor = IpcMainInvokeEvent & { __sufraActor?: SufraActor | null };
 

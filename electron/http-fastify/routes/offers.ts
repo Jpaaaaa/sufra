@@ -25,7 +25,7 @@ import {
   offersGetAllFeaturedItems,
   offersSetFeatured,
 } from '../../init/backend-loader';
-import { requireOffersManager } from '../../backend/src/modules/offers/offers-rbac';
+import { requireOffersManager } from '../../shared/offers/offers-rbac';
 import { extractActorFromAuthHeader } from '../../http-shared/extract-user-token';
 import type { FastifyRouteContext } from '../types';
 import { sendRouteError } from '../errors';

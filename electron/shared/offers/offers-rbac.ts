@@ -1,4 +1,7 @@
-import { UnauthorizedException } from '../../utils/exceptions';
+/**
+ * Offers mutate RBAC helpers for Electron IPC / HTTP layers.
+ * Lives under shared/ so it compiles into dist (not backend/src).
+ */
 
 export type SufraActor = {
   __sufraActor?: true;
@@ -6,6 +9,15 @@ export type SufraActor = {
   username?: string;
   role?: string;
 };
+
+class OffersUnauthorizedError extends Error {
+  readonly status = 401;
+
+  constructor(message: string) {
+    super(message);
+    this.name = 'UnauthorizedException';
+  }
+}
 
 export function stripActorArgs<T extends unknown[]>(args: T): {
   clean: unknown[];
@@ -24,7 +36,7 @@ export function requireOffersManager(actor: SufraActor | null | undefined): Sufr
   if (role === 'admin' || role === 'manager') {
     return actor!;
   }
-  throw new UnauthorizedException('Only admin or manager can modify offers');
+  throw new OffersUnauthorizedError('Only admin or manager can modify offers');
 }
 
 export function isOffersManager(actor: SufraActor | null | undefined): boolean {
