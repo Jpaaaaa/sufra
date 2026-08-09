@@ -19,6 +19,8 @@ export interface OrderLineItemInput {
   price: number;
   shelf_item_id?: number | null;
   options_json?: unknown[] | null;
+  offer_source_type?: string | null;
+  offer_source_id?: number | null;
 }
 
 export function parseStoredGlobalDiscount(raw: unknown): TableGlobalDiscount | null {
@@ -114,8 +116,52 @@ export async function validateOrderItemPrice(
   }
 
   if (item.price !== expectedPrice) {
-    throw new BadRequestException(
-      `Price mismatch for item ${item.item_id}: expected ${expectedPrice}, got ${item.price}`,
-    );
+    const allowed = await isActiveOfferPrice(db, item.item_id, item.price);
+    if (!allowed) {
+      throw new BadRequestException(
+        `Price mismatch for item ${item.item_id}: expected ${expectedPrice}, got ${item.price}`,
+      );
+    }
   }
+}
+
+/** True if price matches an active (non-archived) offer for this product right now. */
+async function isActiveOfferPrice(
+  db: DatabaseService,
+  productId: number,
+  price: number,
+): Promise<boolean> {
+  const today = new Date().toISOString().slice(0, 10);
+  const daily = await db.get(
+    `SELECT id FROM daily_deals
+     WHERE product_id = ? AND date = ? AND special_price = ?
+       AND COALESCE(is_active, 1) = 1 AND archived_at IS NULL
+     LIMIT 1`,
+    [productId, today, price],
+  );
+  if (daily) return true;
+
+  const scheduled = await db.get(
+    `SELECT id FROM scheduled_offers
+     WHERE product_id = ? AND special_price = ?
+       AND COALESCE(is_active, 1) = 1 AND archived_at IS NULL
+       AND datetime(start_datetime) <= datetime('now', 'localtime')
+       AND datetime(end_datetime) >= datetime('now', 'localtime')
+     LIMIT 1`,
+    [productId, price],
+  );
+  if (scheduled) return true;
+
+  const hhRows = await db.all(
+    `SELECT happy_hour_price, time_start, time_end, weekdays FROM happy_hour
+     WHERE product_id = ? AND happy_hour_price = ?
+       AND COALESCE(is_active, 1) = 1 AND archived_at IS NULL`,
+    [productId, price],
+  );
+  if (!hhRows?.length) return false;
+
+  // Import lazily to avoid circular deps at module load
+  const { happyHourRowMatchesNow } = await import('../modules/offers/happy-hour-match');
+  const now = new Date();
+  return (hhRows as any[]).some((row) => happyHourRowMatchesNow(row, now));
 }

@@ -135,6 +135,11 @@ export default function OfferDetailModal({ open, onClose, detail }: OfferDetailM
               <Row label={t('offers.rowId')}>{detail.combo.id}</Row>
               <Row label={t('offers.rowName')}>{detail.combo.combo_name}</Row>
               <Row label={t('offers.rowPrice')}>{priceWith(detail.combo.combo_price)}</Row>
+              <Row label={t('offers.comboPricingModeLabel')}>
+                {detail.combo.pricing_mode === 'sum'
+                  ? t('offers.comboPricingSum')
+                  : t('offers.comboPricingFixed')}
+              </Row>
               <Row label={t('offers.rowOfferDays')}>{formatWeekdaysOffer(detail.combo.weekdays)}</Row>
               <Row label={t('offers.rowStatus')}>
                 {detail.combo.is_active === 1 ? t('offers.statusOn') : t('offers.statusOff')}

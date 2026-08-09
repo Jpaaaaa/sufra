@@ -46,6 +46,76 @@ export function trayUnitPrice(children: CartItem[]): number {
   return children.reduce((sum, c) => sum + c.linePrice * c.quantity, 0);
 }
 
+/** Effective sale unit price for a tray line (locked combos use header linePrice). */
+export function traySaleUnitPrice(tray: CartItem): number {
+  if (tray.trayLocked) return tray.linePrice;
+  return trayUnitPrice(tray.children ?? []);
+}
+
+export function isComboMenuItem(item: Item): boolean {
+  return Boolean((item as Item & { _isCombo?: boolean })._isCombo) || item.id < 0;
+}
+
+/** Build a locked tray cart line from a combo menu tile (negative id / _comboProducts). */
+export function buildLockedComboTrayCartItem(
+  item: Item,
+  orderType: 'dine-in' | 'pickup' = 'dine-in',
+  extras: AddItemExtras = {},
+): CartItem {
+  const comboId = Math.abs(item.id);
+  const products =
+    (item as Item & {
+      _comboProducts?: Array<{
+        id: number;
+        name: string;
+        price: number;
+        quantity?: number;
+        kitchen_id?: number | null;
+      }>;
+    })._comboProducts ?? [];
+
+  const children: CartItem[] = products.map((p) => {
+    const childItem: Item = {
+      id: p.id,
+      name: p.name,
+      price: p.price,
+      categoryId: null,
+      kitchen_id: p.kitchen_id ?? null,
+    };
+    return {
+      cartLineId: createCartLineId(),
+      lineKind: 'item' as const,
+      item: childItem,
+      quantity: Math.max(1, Math.floor(p.quantity ?? 1)),
+      selectedOptions: [],
+      // Catalog unit price kept for kitchen/validation; sale total is tray header only.
+      linePrice: p.price,
+      order_type: orderType,
+    };
+  });
+
+  return {
+    cartLineId: extras.cartLineId ?? createCartLineId(),
+    lineKind: 'tray',
+    trayName: item.name,
+    trayLocked: true,
+    comboId,
+    item: {
+      id: -comboId,
+      name: item.name,
+      price: item.price,
+      categoryId: null,
+      kitchen_id: null,
+    },
+    quantity: 1,
+    selectedOptions: [],
+    linePrice: item.price,
+    order_type: orderType,
+    children,
+    offerDisplayName: extras.offerDisplayName,
+  };
+}
+
 export function buildCartItem(
   item: Item,
   extras: AddItemExtras = {},
@@ -119,6 +189,10 @@ export function updateCartLine(
       return updated;
     }
     if (si.lineKind === 'tray' && Array.isArray(si.children)) {
+      if (si.trayLocked) {
+        // Locked combo trays: never mutate children or reprice from contents.
+        return si;
+      }
       const children = updateCartLine(si.children, cartLineId, patch);
       if (children !== si.children) {
         return { ...si, children, linePrice: trayUnitPrice(children) };
@@ -131,7 +205,7 @@ export function updateCartLine(
 export function cartSubtotal(items: CartItem[]): number {
   return items.reduce((sum, si) => {
     if (si.lineKind === 'tray') {
-      return sum + trayUnitPrice(si.children ?? []) * si.quantity;
+      return sum + traySaleUnitPrice(si) * si.quantity;
     }
     return sum + si.linePrice * si.quantity;
   }, 0);
@@ -144,12 +218,16 @@ export function mapCartItemToOrderPayload(si: CartItem): Record<string, unknown>
       item_id: null,
       item_name: si.trayName || si.item.name || 'مجموعة',
       quantity: si.quantity,
-      price: trayUnitPrice(children),
+      price: traySaleUnitPrice(si),
       line_kind: 'tray',
       kitchen_id: null,
       service_type: si.order_type || 'dine-in',
       shelf_item_id: null,
       options_json: null,
+      combo_id: si.comboId ?? null,
+      tray_locked: si.trayLocked ? 1 : 0,
+      offer_source_type: si.comboId ? 'combo' : null,
+      offer_source_id: si.comboId ?? null,
       items: children.map((c) =>
         mapCartItemToOrderPayload({ ...c, order_type: si.order_type || c.order_type }),
       ),

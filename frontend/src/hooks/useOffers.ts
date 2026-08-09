@@ -13,20 +13,35 @@ export interface DailyDeal {
   product_name?: string;
   /** 1 = مفعّل في نقطة البيع */
   is_active?: number;
+  archived_at?: string | null;
 }
+
+export interface ComboProductRef {
+  id: number;
+  name: string;
+  price: number;
+  quantity: number;
+  kitchen_id?: number | null;
+}
+
+export type ComboPricingMode = 'fixed' | 'sum';
 
 export interface Combo {
   id: number;
   combo_name: string;
   combo_price: number;
+  pricing_mode?: ComboPricingMode;
   is_active: number;
   created_at: string;
   updated_at: string;
   product_ids?: number[];
-  products?: Array<{ id: number; name: string; price: number }>;
+  products?: ComboProductRef[];
   /** مطابق لـ getDay()؛ غير مُعرّف أو فارغ = كل الأيام */
   weekdays?: number[];
+  archived_at?: string | null;
 }
+
+export type ComboItemInput = { product_id: number; quantity: number };
 
 export interface ScheduledOffer {
   id: number;
@@ -39,6 +54,7 @@ export interface ScheduledOffer {
   created_at: string;
   product_name?: string;
   combo_name?: string;
+  archived_at?: string | null;
 }
 
 export interface FeaturedItem {
@@ -47,6 +63,7 @@ export interface FeaturedItem {
   featured: number;
   created_at: string;
   product_name?: string;
+  archived_at?: string | null;
 }
 
 export interface HappyHour {
@@ -59,10 +76,20 @@ export interface HappyHour {
   created_at: string;
   product_name?: string;
   weekdays?: number[];
+  archived_at?: string | null;
 }
 
 function normalizeComboRow(raw: Combo): Combo {
-  return { ...raw, weekdays: parseWeekdaysJson((raw as unknown as { weekdays?: unknown }).weekdays) };
+  const products = (raw.products || []).map((p) => ({
+    ...p,
+    quantity: Math.max(1, Number((p as ComboProductRef).quantity) || 1),
+  }));
+  return {
+    ...raw,
+    pricing_mode: raw.pricing_mode === 'sum' ? 'sum' : 'fixed',
+    products,
+    weekdays: parseWeekdaysJson((raw as unknown as { weekdays?: unknown }).weekdays),
+  };
 }
 
 function normalizeHappyHourRow(raw: HappyHour): HappyHour {
@@ -191,9 +218,9 @@ export function useOffers() {
         method: 'DELETE',
       });
       await loadDailyDeals();
-      showToast('تم حذف عرض اليوم بنجاح', 'success');
+      showToast('تم أرشفة عرض اليوم', 'success');
     } catch (e: any) {
-      showToast(e.message || 'فشل حذف عرض اليوم', 'error');
+      showToast(e.message || 'فشل أرشفة عرض اليوم', 'error');
       throw e;
     }
   };
@@ -201,8 +228,10 @@ export function useOffers() {
   // Combos
   const createCombo = async (data: {
     combo_name: string;
-    combo_price: number;
-    product_ids: number[];
+    combo_price?: number;
+    pricing_mode?: ComboPricingMode;
+    product_ids?: number[];
+    items?: ComboItemInput[];
     weekdays?: number[];
   }) => {
     try {
@@ -229,7 +258,15 @@ export function useOffers() {
 
   const updateCombo = async (
     id: number,
-    data: { combo_name?: string; combo_price?: number; product_ids?: number[]; is_active?: number; weekdays?: number[] | null },
+    data: {
+      combo_name?: string;
+      combo_price?: number;
+      pricing_mode?: ComboPricingMode;
+      product_ids?: number[];
+      items?: ComboItemInput[];
+      is_active?: number;
+      weekdays?: number[] | null;
+    },
   ) => {
     try {
       const serverUrl = getServerUrl();
@@ -254,9 +291,9 @@ export function useOffers() {
         method: 'DELETE',
       });
       await loadCombos();
-      showToast('تم حذف العرض المجمع بنجاح', 'success');
+      showToast('تم أرشفة العرض المجمع', 'success');
     } catch (e: any) {
-      showToast(e.message || 'فشل حذف العرض المجمع', 'error');
+      showToast(e.message || 'فشل أرشفة العرض المجمع', 'error');
       throw e;
     }
   };
@@ -312,9 +349,9 @@ export function useOffers() {
         method: 'DELETE',
       });
       await loadScheduledOffers();
-      showToast('تم حذف العرض المجدول بنجاح', 'success');
+      showToast('تم أرشفة العرض المجدول', 'success');
     } catch (e: any) {
-      showToast(e.message || 'فشل حذف العرض المجدول', 'error');
+      showToast(e.message || 'فشل أرشفة العرض المجدول', 'error');
       throw e;
     }
   };
@@ -388,9 +425,9 @@ export function useOffers() {
         method: 'DELETE',
       });
       await loadHappyHours();
-      showToast('تم حذف الساعة السعيدة بنجاح', 'success');
+      showToast('تم أرشفة الساعة السعيدة', 'success');
     } catch (e: any) {
-      showToast(e.message || 'فشل حذف الساعة السعيدة', 'error');
+      showToast(e.message || 'فشل أرشفة الساعة السعيدة', 'error');
       throw e;
     }
   };

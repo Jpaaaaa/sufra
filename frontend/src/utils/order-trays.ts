@@ -86,7 +86,9 @@ export function mapCartTree(
       const mappedTray = mapper({ ...si, children });
       if (!mappedTray) continue;
       if (mappedTray.lineKind === 'tray') {
-        mappedTray.linePrice = trayUnitPrice(mappedTray.children ?? []);
+        if (!mappedTray.trayLocked) {
+          mappedTray.linePrice = trayUnitPrice(mappedTray.children ?? []);
+        }
       }
       result.push(mappedTray);
     } else {
@@ -109,6 +111,15 @@ export function findCartLine(items: CartItem[], cartLineId: string): CartItem | 
 }
 
 export function removeCartLine(items: CartItem[], cartLineId: string): CartItem[] {
+  for (const si of items) {
+    if (
+      si.lineKind === 'tray' &&
+      si.trayLocked &&
+      (si.children ?? []).some((c) => c.cartLineId === cartLineId)
+    ) {
+      return items;
+    }
+  }
   return mapCartTree(items, (si) => (si.cartLineId === cartLineId ? null : si)).filter(
     (si) => si.lineKind !== 'tray' || (si.children && si.children.length >= 0),
   );
@@ -143,6 +154,8 @@ export function orderItemsToCartLines(flatItems: any[], menuItems: Item[]): Cart
         cartLineId: createCartLineId(),
         lineKind: 'tray',
         trayName: row.item_name || 'مجموعة',
+        trayLocked: Boolean(row.tray_locked) || row.combo_id != null,
+        comboId: row.combo_id != null ? Number(row.combo_id) : undefined,
         item: { ...TRAY_PLACEHOLDER_ITEM, name: row.item_name || 'مجموعة' },
         quantity: row.quantity ?? 1,
         selectedOptions: [],

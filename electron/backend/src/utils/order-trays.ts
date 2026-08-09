@@ -18,12 +18,15 @@ export interface OrderItemInput {
   shelf_item_id?: number | null;
   options_json?: unknown[] | null;
   line_kind?: OrderLineKind;
-  /** Nested products inside a tray (API payload). */
   items?: OrderItemInput[];
+  combo_id?: number | null;
+  tray_locked?: boolean | number | null;
+  offer_source_type?: string | null;
+  offer_source_id?: number | null;
 }
 
 export const ORDER_ITEM_SELECT_COLS =
-  'id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json, line_kind, parent_order_item_id';
+  'id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json, line_kind, parent_order_item_id, combo_id, tray_locked, offer_source_type, offer_source_id';
 
 export function isTrayLine(item: { line_kind?: string | null; items?: unknown }): boolean {
   return item.line_kind === 'tray' || (Array.isArray(item.items) && item.items.length > 0);
@@ -33,12 +36,10 @@ export function isTopLevelRow(item: { parent_order_item_id?: number | null }): b
   return item.parent_order_item_id == null;
 }
 
-/** Unit price of one tray = sum(child.price × child.quantity). */
 export function trayUnitPrice(children: Array<{ price: number; quantity: number }>): number {
   return children.reduce((sum, c) => sum + c.price * c.quantity, 0);
 }
 
-/** Subtotal from top-level API items (trays + standalone). Does not double-count children. */
 export function topLevelSubtotal(items: OrderItemInput[]): number {
   return items.reduce((sum, item) => {
     if (isTrayLine(item)) {
@@ -46,13 +47,16 @@ export function topLevelSubtotal(items: OrderItemInput[]): number {
       if (children.length === 0) {
         throw new BadRequestException('Group must contain at least one product');
       }
-      return sum + trayUnitPrice(children) * item.quantity;
+      const unit =
+        typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0
+          ? item.price
+          : trayUnitPrice(children);
+      return sum + unit * item.quantity;
     }
     return sum + item.price * item.quantity;
   }, 0);
 }
 
-/** Product lines only (standalone + tray children) for catalog price validation. */
 export function productLinesForValidation(items: OrderItemInput[]): OrderLineItemInput[] {
   const lines: OrderLineItemInput[] = [];
   for (const item of items) {
@@ -71,7 +75,11 @@ export function productLinesForValidation(items: OrderItemInput[]): OrderLineIte
         price: item.price,
         shelf_item_id: item.shelf_item_id,
         options_json: item.options_json,
-      });
+        // hint for offer-tolerant validation
+        ...(item.offer_source_type
+          ? { offer_source_type: item.offer_source_type, offer_source_id: item.offer_source_id }
+          : {}),
+      } as OrderLineItemInput);
     }
   }
   return lines;
@@ -98,11 +106,19 @@ export interface InsertOrderItemsOptions {
   orderId: number;
   orderType: OrderItemsOrderType;
   items: OrderItemInput[];
-  /** Include service_type column (dine-in). */
   withServiceType?: boolean;
 }
 
-/** Insert top-level lines and tray children; returns nothing (uses lastInsertRowId). */
+function trayMeta(item: OrderItemInput) {
+  return {
+    combo_id: item.combo_id ?? null,
+    tray_locked: item.tray_locked ? 1 : 0,
+    offer_source_type: item.offer_source_type ?? (item.combo_id ? 'combo' : null),
+    offer_source_id: item.offer_source_id ?? item.combo_id ?? null,
+  };
+}
+
+/** Insert top-level lines and tray children. */
 export async function insertOrderItemsWithTrays(
   db: DatabaseService,
   opts: InsertOrderItemsOptions,
@@ -112,17 +128,23 @@ export async function insertOrderItemsWithTrays(
   for (const item of items) {
     if (isTrayLine(item)) {
       const children = item.items ?? [];
-      const unitPrice = trayUnitPrice(children);
+      const unitPrice =
+        typeof item.price === 'number' && Number.isFinite(item.price) && item.price >= 0
+          ? item.price
+          : trayUnitPrice(children);
+      const meta = trayMeta(item);
       await db.run(
         withServiceType
           ? `INSERT INTO order_items (
               order_id, item_id, item_name, quantity, price, kitchen_id, service_type,
-              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id,
+              combo_id, tray_locked, offer_source_type, offer_source_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           : `INSERT INTO order_items (
               order_id, item_id, item_name, quantity, price, kitchen_id,
-              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id,
+              combo_id, tray_locked, offer_source_type, offer_source_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         withServiceType
           ? [
               orderId,
@@ -137,6 +159,10 @@ export async function insertOrderItemsWithTrays(
               null,
               'tray',
               null,
+              meta.combo_id,
+              meta.tray_locked,
+              meta.offer_source_type,
+              meta.offer_source_id,
             ]
           : [
               orderId,
@@ -150,6 +176,10 @@ export async function insertOrderItemsWithTrays(
               null,
               'tray',
               null,
+              meta.combo_id,
+              meta.tray_locked,
+              meta.offer_source_type,
+              meta.offer_source_id,
             ],
       );
 
@@ -163,12 +193,14 @@ export async function insertOrderItemsWithTrays(
           withServiceType
             ? `INSERT INTO order_items (
                 order_id, item_id, item_name, quantity, price, kitchen_id, service_type,
-                shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                shelf_item_id, order_type, options_json, line_kind, parent_order_item_id,
+                combo_id, tray_locked, offer_source_type, offer_source_id
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
             : `INSERT INTO order_items (
                 order_id, item_id, item_name, quantity, price, kitchen_id,
-                shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+                shelf_item_id, order_type, options_json, line_kind, parent_order_item_id,
+                combo_id, tray_locked, offer_source_type, offer_source_id
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           withServiceType
             ? [
                 orderId,
@@ -183,6 +215,10 @@ export async function insertOrderItemsWithTrays(
                 serializeOptionsJson(child.options_json),
                 'item',
                 trayId,
+                null,
+                0,
+                null,
+                null,
               ]
             : [
                 orderId,
@@ -196,6 +232,10 @@ export async function insertOrderItemsWithTrays(
                 serializeOptionsJson(child.options_json),
                 'item',
                 trayId,
+                null,
+                0,
+                null,
+                null,
               ],
         );
       }
@@ -204,12 +244,14 @@ export async function insertOrderItemsWithTrays(
         withServiceType
           ? `INSERT INTO order_items (
               order_id, item_id, item_name, quantity, price, kitchen_id, service_type,
-              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id,
+              combo_id, tray_locked, offer_source_type, offer_source_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
           : `INSERT INTO order_items (
               order_id, item_id, item_name, quantity, price, kitchen_id,
-              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+              shelf_item_id, order_type, options_json, line_kind, parent_order_item_id,
+              combo_id, tray_locked, offer_source_type, offer_source_id
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         withServiceType
           ? [
               orderId,
@@ -224,6 +266,10 @@ export async function insertOrderItemsWithTrays(
               serializeOptionsJson(item.options_json),
               'item',
               null,
+              null,
+              0,
+              item.offer_source_type ?? null,
+              item.offer_source_id ?? null,
             ]
           : [
               orderId,
@@ -237,13 +283,16 @@ export async function insertOrderItemsWithTrays(
               serializeOptionsJson(item.options_json),
               'item',
               null,
+              null,
+              0,
+              item.offer_source_type ?? null,
+              item.offer_source_id ?? null,
             ],
       );
     }
   }
 }
 
-/** Shelf stock deltas: for tray children multiply by tray quantity. */
 export function shelfStockDecrements(
   items: OrderItemInput[],
 ): Array<{ shelf_item_id: number; quantity: number }> {
@@ -266,7 +315,6 @@ export function shelfStockDecrements(
   return out;
 }
 
-/** Subtotal from flat DB rows — only top-level lines (trays + standalone). */
 export function topLevelSubtotalFromRows(
   rows: Array<{ price: number; quantity: number; parent_order_item_id?: number | null }>,
 ): number {

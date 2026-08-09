@@ -120,6 +120,14 @@ export let offersUpdateHappyHour: (...args: any[]) => Promise<any>;
 export let offersDeleteHappyHour: (...args: any[]) => Promise<any>;
 export let offersGetEffectivePrice: (...args: any[]) => Promise<any>;
 export let offersEnrichItemsWithOffers: (...args: any[]) => Promise<any>;
+export let offersArchiveDailyDeal: (...args: any[]) => Promise<any>;
+export let offersArchiveCombo: (...args: any[]) => Promise<any>;
+export let offersArchiveScheduledOffer: (...args: any[]) => Promise<any>;
+export let offersArchiveHappyHour: (...args: any[]) => Promise<any>;
+export let offersDuplicateDailyDeal: (...args: any[]) => Promise<any>;
+export let offersDuplicateCombo: (...args: any[]) => Promise<any>;
+export let offersDuplicateScheduledOffer: (...args: any[]) => Promise<any>;
+export let offersDuplicateHappyHour: (...args: any[]) => Promise<any>;
 export let getReportsDailySummary: () => Promise<any>;
 export let getReportsReportData: (
   period: 'daily' | 'weekly' | 'monthly' | 'yearly',
@@ -289,6 +297,14 @@ function loadPackagedBackendModules(): void {
     offersDeleteHappyHour = b.offersService.deleteHappyHour;
     offersGetEffectivePrice = b.offersService.getEffectivePrice;
     offersEnrichItemsWithOffers = b.offersService.enrichItemsWithOffers;
+    offersArchiveDailyDeal = b.offersService.archiveDailyDeal;
+    offersArchiveCombo = b.offersService.archiveCombo;
+    offersArchiveScheduledOffer = b.offersService.archiveScheduledOffer;
+    offersArchiveHappyHour = b.offersService.archiveHappyHour;
+    offersDuplicateDailyDeal = b.offersService.duplicateDailyDeal;
+    offersDuplicateCombo = b.offersService.duplicateCombo;
+    offersDuplicateScheduledOffer = b.offersService.duplicateScheduledOffer;
+    offersDuplicateHappyHour = b.offersService.duplicateHappyHour;
     getReportsDailySummary = b.reportsService.getDailySummary;
     getReportsReportData = b.reportsService.getReportData;
     generateReportsExcel = b.reportsService.generateExcel;
@@ -475,6 +491,14 @@ export function loadBackendModules(): void {
     offersDeleteHappyHour = offersModule.deleteHappyHour;
     offersGetEffectivePrice = offersModule.getEffectivePrice;
     offersEnrichItemsWithOffers = offersModule.enrichItemsWithOffers;
+    offersArchiveDailyDeal = offersModule.archiveDailyDeal;
+    offersArchiveCombo = offersModule.archiveCombo;
+    offersArchiveScheduledOffer = offersModule.archiveScheduledOffer;
+    offersArchiveHappyHour = offersModule.archiveHappyHour;
+    offersDuplicateDailyDeal = offersModule.duplicateDailyDeal;
+    offersDuplicateCombo = offersModule.duplicateCombo;
+    offersDuplicateScheduledOffer = offersModule.duplicateScheduledOffer;
+    offersDuplicateHappyHour = offersModule.duplicateHappyHour;
     const reportsModule = requireBackendModule('modules/reports/reports.service');
     getReportsDailySummary = reportsModule.getDailySummary;
     getReportsReportData = reportsModule.getReportData;

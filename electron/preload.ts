@@ -2,7 +2,11 @@ import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 
 type IpcActorPayload = { __sufraActor: true; id: number; username: string; role: string };
 
+/** Set from renderer AuthContext — more reliable than preload localStorage under contextIsolation. */
+let cachedActor: IpcActorPayload | undefined;
+
 function readActor(): IpcActorPayload | undefined {
+  if (cachedActor) return cachedActor;
   try {
     const s = localStorage.getItem('sufra_auth_user');
     if (!s) return undefined;
@@ -42,6 +46,19 @@ contextBridge.exposeInMainWorld('sufra', {
       invoke('auth:verifyToken', token),
     verifyPassword: (userId: number, password: string) =>
       invoke('auth:verifyPassword', userId, password),
+    /** Keep IPC actor in sync with renderer session (admin/manager RBAC). */
+    setSessionUser: (user: { id: number; username: string; role: string } | null) => {
+      if (!user || typeof user.id !== 'number') {
+        cachedActor = undefined;
+        return;
+      }
+      cachedActor = {
+        __sufraActor: true,
+        id: user.id,
+        username: String(user.username ?? ''),
+        role: String(user.role ?? ''),
+      };
+    },
   },
   print: {
     order: (orderData: any, kitchenId?: number | null) =>
@@ -211,18 +228,26 @@ contextBridge.exposeInMainWorld('sufra', {
     createDailyDeal: (data: any) => invoke('offers:createDailyDeal', data),
     updateDailyDeal: (id: number, data: any) => invoke('offers:updateDailyDeal', id, data),
     deleteDailyDeal: (id: number) => invoke('offers:deleteDailyDeal', id),
+    archiveDailyDeal: (id: number) => invoke('offers:archiveDailyDeal', id),
+    duplicateDailyDeal: (id: number) => invoke('offers:duplicateDailyDeal', id),
     combos: () => invoke('offers:combos'),
     createCombo: (data: any) => invoke('offers:createCombo', data),
     updateCombo: (id: number, data: any) => invoke('offers:updateCombo', id, data),
     deleteCombo: (id: number) => invoke('offers:deleteCombo', id),
+    archiveCombo: (id: number) => invoke('offers:archiveCombo', id),
+    duplicateCombo: (id: number) => invoke('offers:duplicateCombo', id),
     scheduledOffers: () => invoke('offers:scheduledOffers'),
     createScheduledOffer: (data: any) => invoke('offers:createScheduledOffer', data),
     updateScheduledOffer: (id: number, data: any) => invoke('offers:updateScheduledOffer', id, data),
     deleteScheduledOffer: (id: number) => invoke('offers:deleteScheduledOffer', id),
+    archiveScheduledOffer: (id: number) => invoke('offers:archiveScheduledOffer', id),
+    duplicateScheduledOffer: (id: number) => invoke('offers:duplicateScheduledOffer', id),
     happyHour: () => invoke('offers:happyHour'),
     createHappyHour: (data: any) => invoke('offers:createHappyHour', data),
     updateHappyHour: (id: number, data: any) => invoke('offers:updateHappyHour', id, data),
     deleteHappyHour: (id: number) => invoke('offers:deleteHappyHour', id),
+    archiveHappyHour: (id: number) => invoke('offers:archiveHappyHour', id),
+    duplicateHappyHour: (id: number) => invoke('offers:duplicateHappyHour', id),
     featuredItems: () => invoke('offers:featuredItems'),
     createFeaturedItem: (data: any) => invoke('offers:createFeaturedItem', data),
     setFeatured: (productId: number, featured: boolean) => invoke('offers:setFeatured', productId, featured),
@@ -366,6 +391,7 @@ declare global {
         me: (userId: number) => Promise<any>;
         verifyToken: (token: string) => Promise<any>;
         verifyPassword: (userId: number, password: string) => Promise<{ valid: boolean }>;
+        setSessionUser?: (user: { id: number; username: string; role: string } | null) => void;
       };
       print: {
         order: (orderData: any, kitchenId?: number | null) => Promise<{ success: boolean; error?: string }>;

@@ -11,8 +11,10 @@ import { createOrderModalHandlers } from './useOrderModalHandlers';
 import {
   type AddItemExtras,
   buildCartItem,
+  buildLockedComboTrayCartItem,
   cartSubtotal,
   getCartLineKey,
+  isComboMenuItem,
   mergeIntoTrayChildren,
   trayUnitPrice,
   updateCartLine,
@@ -147,12 +149,27 @@ export function useOrderModal(
   const addItemToOrder = useCallback((item: Item, extras?: AddItemExtras) => {
     const s = extras?.shelfItem;
     setSelectedItems((prev) => {
+      if (isComboMenuItem(item)) {
+        const comboId = Math.abs(item.id);
+        const existingCombo = prev.find(
+          (si) => si.lineKind === 'tray' && si.trayLocked && si.comboId === comboId,
+        );
+        if (existingCombo) {
+          return prev.map((si) =>
+            si.cartLineId === existingCombo.cartLineId
+              ? { ...si, quantity: si.quantity + 1 }
+              : si,
+          );
+        }
+        return [...prev, buildLockedComboTrayCartItem(item, 'dine-in', extras ?? {})];
+      }
+
       const next = buildCartItem(item, extras ?? {}, 'dine-in');
       const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
 
       if (activeTrayId) {
         const tray = prev.find((si) => si.cartLineId === activeTrayId && si.lineKind === 'tray');
-        if (!tray) {
+        if (!tray || tray.trayLocked) {
           // fall through to top-level add
         } else {
           const children = tray.children ?? [];
@@ -209,8 +226,14 @@ export function useOrderModal(
   }, [ordersExpanded, existingOrders.length]);
 
   const selectTray = useCallback((cartLineId: string | null) => {
+    if (cartLineId == null) {
+      setActiveTrayId(null);
+      return;
+    }
+    const tray = selectedItems.find((si) => si.cartLineId === cartLineId && si.lineKind === 'tray');
+    if (tray?.trayLocked) return;
     setActiveTrayId((prev) => (prev === cartLineId ? null : cartLineId));
-  }, []);
+  }, [selectedItems]);
 
   const updateCartLineOptions = useCallback(
     (cartLineId: string, selectedOptions: import('../lib/item-options').SelectedItemOptions, linePrice: number) => {

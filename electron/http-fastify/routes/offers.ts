@@ -1,31 +1,46 @@
 /**
- * Offers routes — migrated from electron/http/routes/offers.ts
+ * Offers routes — Fastify. Reads open; mutate requires admin|manager via Bearer JWT.
  */
 import {
   offersGetAllDailyDeals,
   offersCreateDailyDeal,
   offersUpdateDailyDeal,
-  offersDeleteDailyDeal,
+  offersArchiveDailyDeal,
+  offersDuplicateDailyDeal,
   offersGetAllCombos,
   offersCreateCombo,
   offersUpdateCombo,
-  offersDeleteCombo,
+  offersArchiveCombo,
+  offersDuplicateCombo,
   offersGetAllScheduledOffers,
   offersCreateScheduledOffer,
   offersUpdateScheduledOffer,
-  offersDeleteScheduledOffer,
+  offersArchiveScheduledOffer,
+  offersDuplicateScheduledOffer,
   offersGetAllHappyHours,
   offersCreateHappyHour,
   offersUpdateHappyHour,
-  offersDeleteHappyHour,
+  offersArchiveHappyHour,
+  offersDuplicateHappyHour,
   offersGetAllFeaturedItems,
   offersSetFeatured,
 } from '../../init/backend-loader';
+import { requireOffersManager } from '../../backend/src/modules/offers/offers-rbac';
+import { extractActorFromAuthHeader } from '../../http-shared/extract-user-token';
 import type { FastifyRouteContext } from '../types';
 import { sendRouteError } from '../errors';
+import type { FastifyRequest } from 'fastify';
 
 function parseId(value: string): number {
   return parseInt(value, 10);
+}
+
+function requireMutateActor(request: FastifyRequest) {
+  const auth = request.headers.authorization;
+  const actor = extractActorFromAuthHeader(
+    Array.isArray(auth) ? auth[0] : auth,
+  );
+  return requireOffersManager(actor);
 }
 
 export function registerOffersRoutes(ctx: FastifyRouteContext): void {
@@ -81,6 +96,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
 
   app.post('/api/offers/daily-deals', async (request, reply) => {
     try {
+      requireMutateActor(request);
       return await offersCreateDailyDeal(request.body);
     } catch (error) {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -91,6 +107,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/daily-deals/:id',
     async (request, reply) => {
       try {
+        requireMutateActor(request);
         return await offersUpdateDailyDeal(parseId(request.params.id), request.body);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -102,6 +119,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/offers/daily-deals/:id',
     async (request, reply) => {
       try {
+        requireMutateActor(request);
         return await offersUpdateDailyDeal(parseId(request.params.id), request.body);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -113,8 +131,33 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/daily-deals/:id',
     async (request, reply) => {
       try {
-        await offersDeleteDailyDeal(parseId(request.params.id));
+        const actor = requireMutateActor(request);
+        await offersArchiveDailyDeal(parseId(request.params.id), actor);
         return { success: true };
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/daily-deals/:id/archive',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersArchiveDailyDeal(parseId(request.params.id), actor);
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/daily-deals/:id/duplicate',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersDuplicateDailyDeal(parseId(request.params.id), actor);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
       }
@@ -131,6 +174,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
 
   app.post('/api/offers/combos', async (request, reply) => {
     try {
+      requireMutateActor(request);
       return await offersCreateCombo(request.body);
     } catch (error) {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -139,6 +183,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
 
   app.put<{ Params: { id: string } }>('/api/offers/combos/:id', async (request, reply) => {
     try {
+      requireMutateActor(request);
       return await offersUpdateCombo(parseId(request.params.id), request.body);
     } catch (error) {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -149,8 +194,33 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/combos/:id',
     async (request, reply) => {
       try {
-        await offersDeleteCombo(parseId(request.params.id));
+        const actor = requireMutateActor(request);
+        await offersArchiveCombo(parseId(request.params.id), actor);
         return { success: true };
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/combos/:id/archive',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersArchiveCombo(parseId(request.params.id), actor);
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/combos/:id/duplicate',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersDuplicateCombo(parseId(request.params.id), actor);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
       }
@@ -167,6 +237,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
 
   app.post('/api/offers/scheduled', async (request, reply) => {
     try {
+      requireMutateActor(request);
       return await offersCreateScheduledOffer(request.body);
     } catch (error) {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -177,6 +248,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/scheduled/:id',
     async (request, reply) => {
       try {
+        requireMutateActor(request);
         return await offersUpdateScheduledOffer(parseId(request.params.id), request.body);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -188,8 +260,33 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/scheduled/:id',
     async (request, reply) => {
       try {
-        await offersDeleteScheduledOffer(parseId(request.params.id));
+        const actor = requireMutateActor(request);
+        await offersArchiveScheduledOffer(parseId(request.params.id), actor);
         return { success: true };
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/scheduled/:id/archive',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersArchiveScheduledOffer(parseId(request.params.id), actor);
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/scheduled/:id/duplicate',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersDuplicateScheduledOffer(parseId(request.params.id), actor);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
       }
@@ -206,6 +303,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
 
   app.post('/api/offers/happy-hour', async (request, reply) => {
     try {
+      requireMutateActor(request);
       return await offersCreateHappyHour(request.body);
     } catch (error) {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -216,6 +314,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/happy-hour/:id',
     async (request, reply) => {
       try {
+        requireMutateActor(request);
         return await offersUpdateHappyHour(parseId(request.params.id), request.body);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
@@ -227,8 +326,33 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/happy-hour/:id',
     async (request, reply) => {
       try {
-        await offersDeleteHappyHour(parseId(request.params.id));
+        const actor = requireMutateActor(request);
+        await offersArchiveHappyHour(parseId(request.params.id), actor);
         return { success: true };
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/happy-hour/:id/archive',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersArchiveHappyHour(parseId(request.params.id), actor);
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.post<{ Params: { id: string } }>(
+    '/api/offers/happy-hour/:id/duplicate',
+    async (request, reply) => {
+      try {
+        const actor = requireMutateActor(request);
+        return await offersDuplicateHappyHour(parseId(request.params.id), actor);
       } catch (error) {
         sendRouteError(reply, error, `${request.method} ${request.url}`);
       }
@@ -247,6 +371,7 @@ export function registerOffersRoutes(ctx: FastifyRouteContext): void {
     '/api/offers/featured',
     async (request, reply) => {
       try {
+        requireMutateActor(request);
         const productId = request.body?.product_id ?? request.body?.productId;
         return await offersSetFeatured(productId!, true);
       } catch (error) {

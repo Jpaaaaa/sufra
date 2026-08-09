@@ -319,7 +319,9 @@ function OrderModalCartComponent({
                   key={si.cartLineId}
                   cartItem={si}
                   isDelivery={isDelivery}
-                  isActiveTray={si.lineKind === 'tray' && si.cartLineId === activeTrayId}
+                  isActiveTray={
+                    si.lineKind === 'tray' && !si.trayLocked && si.cartLineId === activeTrayId
+                  }
                   onSelectTray={onSelectTray}
                   onUpdateQuantity={onUpdateQuantity}
                   onRemove={onRemoveItem}

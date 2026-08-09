@@ -115,8 +115,14 @@ const ItemButton = memo(function ItemButton({
     }
     if (isCombo) {
       const combo = offers?.combos?.find((c) => c.id === Math.abs(enrichedItem.id));
+      const formatComboProductLabel = (p: { name?: string; quantity?: number } | string) => {
+        if (typeof p === 'string') return p;
+        const qty = Math.max(1, Number(p.quantity) || 1);
+        const name = p.name || '?';
+        return qty > 1 ? `${qty}× ${name}` : name;
+      };
       if ((enrichedItem as any)._comboProducts && (enrichedItem as any)._comboProducts.length > 0) {
-        comboDetails = (enrichedItem as any)._comboProducts.map((p: any) => p.name || p);
+        comboDetails = (enrichedItem as any)._comboProducts.map(formatComboProductLabel);
         if (combo)
           comboData = {
             combo_name: combo.combo_name,
@@ -124,7 +130,7 @@ const ItemButton = memo(function ItemButton({
             products: (enrichedItem as any)._comboProducts,
           };
       } else if (combo?.products?.length) {
-        comboDetails = combo.products.map((p) => p.name);
+        comboDetails = combo.products.map(formatComboProductLabel);
         comboData = { combo_name: combo.combo_name, combo_price: combo.combo_price, products: combo.products };
       } else if (combo && (combo.product_ids?.length ?? 0) > 0 && allMenuItems.length > 0) {
         comboDetails = (combo.product_ids || [])
