@@ -36,13 +36,13 @@ export function normalizePlatformLicenseBaseUrl(raw: string): string | null {
 
 export function resolvePlatformUrl(app: App): string | undefined {
   const env = process.env.AMAAN_PLATFORM_URL?.trim()
-  if (env) return env
+  if (env) return normalizePlatformLicenseBaseUrl(env) ?? env
 
   const fromFile = readStoredPlatformLicenseUrl(app)
-  if (fromFile) return fromFile
+  if (fromFile) return normalizePlatformLicenseBaseUrl(fromFile) ?? fromFile
 
   const embedded = AMAAN_PLATFORM_URL_EMBEDDED.trim()
-  if (embedded) return embedded
+  if (embedded) return normalizePlatformLicenseBaseUrl(embedded) ?? embedded
 
   return undefined
 }
