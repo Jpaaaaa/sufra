@@ -130,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('[AUTH] Ensuring business day exists...');
 
-      if (window.sufra?.['business-day']?.ensure) {
+      if (window.sufra?.['business-day']) {
         const businessDay = await window.sufra['business-day'].ensure();
         console.log('[AUTH] Business day ensured, ID:', businessDay?.id);
         return;

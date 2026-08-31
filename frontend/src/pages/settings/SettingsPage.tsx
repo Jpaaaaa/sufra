@@ -502,7 +502,7 @@ export default function SettingsPage() {
   };
 
   const handleScanPrinters = async (target: 'customer' | number) => {
-    if (!window.sufra?.printers?.scan) {
+    if (!window.sufra?.printers) {
       showToast(t('settings.toastScanDesktopOnly'), 'warning');
       return;
     }
@@ -615,7 +615,7 @@ export default function SettingsPage() {
             placeholder="192.168.1.50"
             className={`flex-1 ${inputClass(accent)}`}
           />
-          {window.sufra?.printers?.scan && (
+          {window.sufra?.printers && (
             <button
               type="button"
               onClick={() => handleScanPrinters(target)}
