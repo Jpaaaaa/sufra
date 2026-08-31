@@ -371,11 +371,11 @@ const ItemButton = memo(function ItemButton({
       
       {/* Content */}
       <div className="w-full pt-1.5 md:pt-0 xl:pt-1.5">
-        <div className="text-[15px] sm:text-[16px] md:text-[11px] xl:text-[16px] leading-snug font-semibold text-obsidian mb-1 line-clamp-2 break-words">
+        <div className="text-[15px] sm:text-[16px] xl:text-[16px] leading-snug font-semibold text-obsidian mb-1 line-clamp-2 break-words">
           {enrichedItem.name}
         </div>
         {kitchenName ? (
-          <div className="text-[11px] sm:text-[11px] md:text-[11px] xl:text-[11px] leading-tight text-slate-500 line-clamp-1 mb-0.5">
+          <div className="text-[11px] sm:text-[11px] xl:text-[11px] leading-tight text-slate-500 line-clamp-1 mb-0.5">
             مطبخ {kitchenName}
           </div>
         ) : null}
@@ -405,7 +405,7 @@ const ItemButton = memo(function ItemButton({
             </span>
           )}
           <div className="flex flex-wrap items-baseline gap-1.5">
-            <span className="text-[17px] sm:text-[18px] md:text-[11px] xl:text-[18px] leading-tight font-bold text-obsidian whitespace-nowrap">
+            <span className="text-[17px] sm:text-[18px] xl:text-[18px] leading-tight font-bold text-obsidian whitespace-nowrap">
               {minReplacePrice != null
                 ? t('orders.optionsFromPrice', { price: minReplacePrice.toLocaleString() })
                 : `${enrichedItem.price} د.ع`}
@@ -492,7 +492,7 @@ export const ItemSelector = memo(function ItemSelector({
   const itemsGrid = useMemo(() => {
     if (loading) {
       return (
-        <div className="flex h-full items-center justify-center text-[19px] sm:text-[20px] md:text-[11px] xl:text-[20px] leading-normal font-light text-obsidian/60">
+        <div className="flex h-full items-center justify-center text-[19px] sm:text-[20px] xl:text-[20px] leading-normal font-light text-obsidian/60">
           {t('orders.itemLoading')}
         </div>
       );
@@ -500,7 +500,7 @@ export const ItemSelector = memo(function ItemSelector({
 
     if (items.length === 0) {
       return (
-        <div className="flex h-full items-center justify-center rounded-soft-xl border border-dashed border-black/5 text-[19px] sm:text-[20px] md:text-[11px] xl:text-[20px] leading-normal font-light text-obsidian/60 bg-white/50">
+        <div className="flex h-full items-center justify-center rounded-soft-xl border border-dashed border-black/5 text-[19px] sm:text-[20px] xl:text-[20px] leading-normal font-light text-obsidian/60 bg-white/50">
           {t('orders.itemNoResults')}
         </div>
       );

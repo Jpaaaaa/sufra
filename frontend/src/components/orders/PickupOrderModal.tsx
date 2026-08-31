@@ -256,7 +256,7 @@ function PickupOrderModal({ onClose, orderToEdit }: PickupOrderModalProps) {
       `}</style>
       <div 
         ref={backdropRef}
-        className="fixed z-50 bg-obsidian/70 md:p-0.5 xl:p-4"
+        className="fixed z-50 bg-obsidian/70 xl:p-4"
         style={{ 
           position: 'fixed',
           top: '0',
@@ -299,20 +299,20 @@ function PickupOrderModal({ onClose, orderToEdit }: PickupOrderModalProps) {
           onClick={(e) => e.stopPropagation()}
         >
           {/* Header */}
-          <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-black/5 bg-cloud-soft-white flex-shrink-0 md:px-1 md:py-0 xl:px-6 xl:py-4">
+          <div className="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-black/5 bg-cloud-soft-white flex-shrink-0 xl:px-6 xl:py-4">
             <div className="flex items-center gap-3 md:gap-0.5 xl:gap-3">
               <div className="flex h-10 w-10 items-center justify-center rounded-soft-lg bg-cyber-aqua text-white md:h-5 md:w-5 xl:h-10 xl:w-10">
                 <PackageIcon className="w-6 h-6 md:w-3 md:h-3 xl:w-6 xl:h-6" />
               </div>
               <div>
-                <h2 className="text-[18px] sm:text-[20px] md:text-[11px] xl:text-[20px] leading-tight font-bold text-obsidian">{t('orders.pickupTitle')}</h2>
-                <p className="text-[12px] sm:text-[13px] md:text-[11px] xl:text-[13px] leading-relaxed text-obsidian/70">{t('orders.newPickupCta')}</p>
+                <h2 className="text-[18px] sm:text-[20px] xl:text-[20px] leading-tight font-bold text-obsidian">{t('orders.pickupTitle')}</h2>
+                <p className="text-[12px] sm:text-[13px] xl:text-[13px] leading-relaxed text-obsidian/70">{t('orders.newPickupCta')}</p>
               </div>
             </div>
             <button
               type="button"
               onClick={onClose}
-              className="rounded-soft-lg border border-black/5 bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-[12px] sm:text-[13px] md:rounded-md md:px-1 md:py-0 md:text-[11px] xl:px-4 xl:py-2 xl:text-[13px] leading-normal font-bold text-obsidian hover:bg-cloud-soft-white shadow-soft whitespace-nowrap"
+              className="rounded-soft-lg border border-black/5 bg-white px-3 sm:px-4 py-1.5 sm:py-2 text-[12px] sm:text-[13px] xl:px-4 xl:py-2 xl:text-[13px] leading-normal font-bold text-obsidian hover:bg-cloud-soft-white shadow-soft whitespace-nowrap"
             >
               {t('orders.btnClose')}
             </button>

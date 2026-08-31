@@ -314,31 +314,31 @@ function OrderModal({ hall, table, onClose }: OrderModalProps) {
         >
           {/* Total Display */}
           {combinedTotal && (
-            <div className="relative bg-gradient-to-r from-cyber-aqua/8 via-cyber-aqua/12 to-cyber-aqua/8 border-b border-cyber-aqua/20 flex-shrink-0 md:py-0 xl:py-3.5">
-              <div className="flex items-center justify-center px-5 py-3.5 md:px-1 md:py-0 xl:px-5 xl:py-3.5">
+            <div className="relative bg-gradient-to-r from-cyber-aqua/8 via-cyber-aqua/12 to-cyber-aqua/8 border-b border-cyber-aqua/20 flex-shrink-0 xl:py-3.5">
+              <div className="flex items-center justify-center px-5 py-3.5 xl:px-5 xl:py-3.5">
                 <div className="flex flex-col sm:flex-row items-center gap-2 sm:gap-6 md:gap-3 lg:gap-6">
                   {combinedTotal.subtotal > combinedTotal.total ? (
                     <>
                       <div className="flex items-center gap-2">
-                        <span className="text-[15px] leading-normal font-medium text-obsidian/60 md:text-[11px] xl:text-[15px]">
+                        <span className="text-[15px] leading-normal font-medium text-obsidian/60 xl:text-[15px]">
                           {t('orders.totalBeforeDiscount')}
                         </span>
-                        <span className="text-[18px] leading-normal font-semibold text-obsidian/80 line-through md:text-[11px] xl:text-[18px]">
+                        <span className="text-[18px] leading-normal font-semibold text-obsidian/80 line-through xl:text-[18px]">
                           {fmt(combinedTotal.subtotal)}
                         </span>
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-[17px] leading-normal font-medium text-obsidian/70 md:text-[11px] xl:text-[17px]">
+                        <span className="text-[17px] leading-normal font-medium text-obsidian/70 xl:text-[17px]">
                           {t('orders.totalAfterDiscount')}
                         </span>
-                        <span className="text-[24px] sm:text-[26px] md:text-[11px] xl:text-[26px] leading-none font-black text-cyber-aqua">
+                        <span className="text-[24px] sm:text-[26px] xl:text-[26px] leading-none font-black text-cyber-aqua">
                           {fmt(combinedTotal.total)}
                         </span>
                       </div>
                     </>
                   ) : (
                     <div className="flex items-center gap-4">
-                      <span className="text-[17px] leading-normal font-medium text-obsidian/70 md:text-[11px] xl:text-[17px]">
+                      <span className="text-[17px] leading-normal font-medium text-obsidian/70 xl:text-[17px]">
                         {t('orders.totalGrand')}
                       </span>
                       <span className="text-[24px] sm:text-[26px] md:text-[10px] xl:text-[26px] leading-none font-black text-cyber-aqua">

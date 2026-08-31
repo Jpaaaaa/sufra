@@ -143,10 +143,18 @@ export function registerPrintHandlers() {
   warmupWindowsSpooler();
 
   ipcMain.handle('backend:health', async () => {
+    const electron = {
+      packaged: app.isPackaged,
+      runtime: app.isPackaged ? ('packaged' as const) : ('development' as const),
+      version: app.getVersion(),
+      uploadReady: true,
+      appPath: app.getAppPath(),
+    };
     try {
-      return await healthGetHealth();
+      const health = await healthGetHealth();
+      return { ...health, backendReady: true, electron };
     } catch (err: any) {
-      return { status: 'error', message: err.message };
+      return { status: 'error', message: err.message, backendReady: false, electron };
     }
   });
 

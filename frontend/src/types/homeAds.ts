@@ -14,9 +14,9 @@ export interface HomeAd {
 
 /** Default home banner when activation panel returns no ads. */
 export const DEFAULT_HOME_AD: HomeAd = {
-  id: 'default-bazar-boss',
+  id: 'default-bazar-one',
   title: '',
-  imageUrl: './ads/default-home-ad.jpg',
+  imageUrl: './ads/bazar-one-hero.png',
   linkUrl: 'https://amaantechnology.com/products/trade-retail/bazaar-one-pos',
   linkTarget: 'external',
   imageOnly: true,

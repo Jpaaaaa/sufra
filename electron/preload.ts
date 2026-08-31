@@ -37,6 +37,7 @@ function invoke(channel: string, ...args: unknown[]) {
 }
 
 contextBridge.exposeInMainWorld('sufra', {
+  health: () => invoke('backend:health'),
   auth: {
     login: (username: string, password: string) =>
       invoke('auth:login', username, password),
@@ -299,6 +300,7 @@ contextBridge.exposeInMainWorld('sufra', {
     getReport: (period: string, date: string) => invoke('reports:getReport', period, date),
   },
   settings: {
+    getLanAddresses: () => invoke('settings:getLanAddresses'),
     getShiftHours: () => invoke('settings:getShiftHours'),
     updateShiftHours: (data: {
       shift_mode?: 'single' | 'multi';
@@ -386,6 +388,7 @@ contextBridge.exposeInMainWorld('amaan', {
 declare global {
   interface Window {
     sufra: {
+      health: () => Promise<any>;
       auth: {
         login: (username: string, password: string) => Promise<{ access_token: string; user: any }>;
         me: (userId: number) => Promise<any>;
@@ -586,6 +589,11 @@ declare global {
         getReport: (period: string, date: string) => Promise<any>;
       };
       settings: {
+        getLanAddresses?: () => Promise<{
+          wifi: { kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string } | null;
+          ethernet: { kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string } | null;
+          other: Array<{ kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string }>;
+        }>;
         getShiftHours: () => Promise<{
           shift_mode: 'single' | 'multi';
           business_day_start_time: string;

@@ -6,11 +6,12 @@
 
 - **Electron hub** (Windows) — SQLite, printing, license, updates, backup
 - **LAN clients** — browser / PWA / Android connect to hub API (port 3333)
-- **Roles** — admin, manager, cashier, waiter, kitchen, customer
+- Roles — admin, manager, cashier, waiter, kitchen, customer
+- Language — English, Arabic, Kurdish (Sorani); login, header, and POS session sheet; persisted
 
 ## Modules
 
-- Dashboard, orders (dine-in, pickup, delivery), halls & tables
+- Dashboard, **Orders** (desktop workbench: hall chips + table map; pickup/delivery lists), halls & tables
 - Items, categories, shelves, offers, finance, reports
 - **Item options** — per-item sizes, flavors, and paid extras (admin templates; POS picker with defaults and quick-add)
 - Settings: printers, recipe print branding, shifts, server/LAN, users
@@ -26,5 +27,5 @@
 
 ## Sidebar utilities
 
-- Zoom out / zoom in (UI scale via root `fontSize`, persisted)
+- Zoom out / zoom in (UI scale via CSS `zoom` on `#root` with inverse viewport size, persisted)
 - Reload page

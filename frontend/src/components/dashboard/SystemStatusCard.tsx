@@ -3,8 +3,9 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAuth } from '../../contexts/AuthContext';
-import { getServerConfig, extractIPFromHost, LAN_API_PORT } from '../../lib/server-config';
-import { getServerUrl, fetchJson } from '../../utils';
+import { getServerConfig, extractIPFromHost, LAN_API_PORT, getServerUrl, getLanAddresses, preferredLanAddress } from '../../lib/server-config';
+import { fetchJson } from '../../utils';
+import { getBuildAppVersion } from '../../lib/brand';
 import { MonitorSmartphone, Printer, User, Server, Globe } from 'lucide-react';
 import Card from '../ui/Card';
 import { getEmployeeDisplayName, roleLabelAr } from '../../lib/userDisplay';
@@ -44,7 +45,7 @@ export default function SystemStatusCard({ embedded = false }: SystemStatusCardP
     if (typeof window === 'undefined') return;
 
     const detectDevice = () => {
-      const isElectron = typeof navigator !== 'undefined' && navigator.userAgent.includes('Electron');
+      const isElectron = typeof window.sufra !== 'undefined';
       if (isElectron) {
         setDeviceType(t('home.systemDeviceDesktop'));
         return;
@@ -71,67 +72,106 @@ export default function SystemStatusCard({ embedded = false }: SystemStatusCardP
         // ignore
       }
 
-      setDeviceType(t('home.systemDeviceDesktop'));
+      setDeviceType(t('home.systemDeviceBrowser'));
     };
 
     detectDevice();
 
-    try {
-      const config = getServerConfig();
-      const ip = extractIPFromHost(config.serverUrl);
-      setServerIP(ip || config.serverUrl.replace(/^https?:\/\//, '').split(':')[0] || '—');
-    } catch (error) {
-      console.error('Failed to get server config:', error);
-      setServerIP('—');
-    }
+    const loadServerAddress = async () => {
+      try {
+        const lan = await getLanAddresses();
+        const preferred = lan ? preferredLanAddress(lan) : null;
+        if (preferred?.ipv4) {
+          setServerIP(`${preferred.ipv4}:${LAN_API_PORT}`);
+          return;
+        }
+        const url = getServerUrl();
+        const ip = extractIPFromHost(url);
+        if (ip) {
+          setServerIP(`${ip}:${LAN_API_PORT}`);
+          return;
+        }
+        const host = url.replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+        setServerIP(host || '—');
+      } catch {
+        setServerIP('—');
+      }
+    };
+    void loadServerAddress();
 
     const loadPrinterStatus = async () => {
       try {
         const serverUrl = getServerUrl();
-        const printers = await fetchJson<PrinterDevice[]>(`${serverUrl}/printers/available`);
-        const usbPrinter = printers.length > 0 ? printers[0] : null;
-        if (usbPrinter) {
+        type Setting = {
+          printer_type?: string;
+          is_active?: boolean | number;
+          printer_name?: string | null;
+          printer_ip?: string | null;
+          printer_port?: number;
+        };
+        const settings = await fetchJson<Setting[]>(`${serverUrl}/printers/settings`);
+        const list = Array.isArray(settings) ? settings : [];
+        const customer = list.find(
+          (s) => s.printer_type === 'customer' && (s.is_active === true || s.is_active === 1),
+        );
+        if (customer?.printer_name?.trim()) {
+          setPrinterStatus({ connected: true, name: customer.printer_name.trim() });
+          return;
+        }
+        if (customer?.printer_ip?.trim()) {
           setPrinterStatus({
             connected: true,
-            name: usbPrinter.name,
+            name: `${customer.printer_ip}:${customer.printer_port || 9100}`,
           });
-        } else {
-          setPrinterStatus({
-            connected: false,
-            name: t('home.systemPrinterUnavailable'),
-          });
+          return;
         }
-      } catch (error) {
-        console.error('Failed to load printer status:', error);
+        const printers = await fetchJson<PrinterDevice[]>(`${serverUrl}/printers/available`);
+        const usbPrinter = Array.isArray(printers) && printers.length > 0 ? printers[0] : null;
+        if (usbPrinter?.name) {
+          setPrinterStatus({ connected: true, name: usbPrinter.name });
+          return;
+        }
+        setPrinterStatus({ connected: false, name: t('home.systemPrinterUnavailable') });
+      } catch {
         setPrinterStatus({ connected: false, name: t('home.systemPrinterUnavailable') });
       }
     };
 
-    loadPrinterStatus();
+    void loadPrinterStatus();
 
     const loadServerHealth = async () => {
       try {
         const serverUrl = getServerUrl();
-        const data = await fetchJson<{ electron?: HealthElectronMeta }>(`${serverUrl}/health`);
+        const data = await fetchJson<{
+          status?: string;
+          database?: string;
+          backendReady?: boolean;
+          mode?: string;
+          electron?: HealthElectronMeta;
+        }>(`${serverUrl}/health`);
         const e = data.electron;
-        if (!e) {
-          setApiRuntimeLine('—');
+        const online =
+          data.status === 'ok' || data.backendReady === true || data.mode === 'electron' || Boolean(e);
+        if (e && (e.version || e.packaged !== undefined)) {
+          const mode = e.packaged ? t('home.systemApiPackaged') : t('home.systemApiDev');
+          let line = `${mode} · v${e.version || getBuildAppVersion()}`;
+          if (data.database === 'ready') line += ` · ${t('home.systemApiDbReady')}`;
+          if (e.uploadReady === false) line += ` · ${t('home.systemUploadWarn')}`;
+          setApiRuntimeLine(line);
           return;
         }
-        const mode = e.packaged ? t('home.systemApiPackaged') : t('home.systemApiDev');
-        let line = `${mode} · v${e.version}`;
-        if (!e.uploadReady && !e.multerResolvable) {
-          line += ` · ${t('home.systemUploadWarn')}`;
+        if (online) {
+          const config = getServerConfig();
+          const role = config.mode === 'host' ? t('home.systemApiHost') : t('home.systemApiClient');
+          setApiRuntimeLine(`${t('home.systemApiOnline')} · ${role} · v${getBuildAppVersion()}`);
+          return;
         }
-        setApiRuntimeLine(line);
-        if (import.meta.env.DEV && e.appPath) {
-          console.info('[Sufra] API appPath:', e.appPath);
-        }
+        setApiRuntimeLine(t('home.systemApiUnreachable'));
       } catch {
         setApiRuntimeLine(t('home.systemApiUnreachable'));
       }
     };
-    loadServerHealth();
+    void loadServerHealth();
 
     return () => {};
   }, [t]);

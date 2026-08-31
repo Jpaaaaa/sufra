@@ -901,7 +901,9 @@ async function callIPC(endpoint: string, method: string = 'GET', body?: any): Pr
 
     // Health endpoint
     if (resource === 'health' && method === 'GET') {
-      // Health check handled by backend:health IPC handler
+      if (typeof sufra.health === 'function') {
+        return await sufra.health();
+      }
       return { status: 'ok', mode: 'electron' };
     }
 

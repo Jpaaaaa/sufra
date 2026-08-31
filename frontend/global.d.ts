@@ -29,7 +29,18 @@ declare global {
       updateInstallNow: () => Promise<{ ok: true } | { ok: false; error: string }>;
       updateOnStateChange?: (cb: (state: unknown) => void) => () => void;
     };
-    sufra?: {
+    sufra: {
+      health?: () => Promise<{
+        status?: string;
+        backendReady?: boolean;
+        database?: string;
+        electron?: {
+          packaged?: boolean;
+          runtime?: string;
+          version?: string;
+          uploadReady?: boolean;
+        };
+      }>;
       license?: {
         getStatus: () => Promise<{
           valid: boolean;
@@ -380,6 +391,11 @@ declare global {
         getReport: (period: string, date: string) => Promise<any>;
       };
       settings: {
+        getLanAddresses?: () => Promise<{
+          wifi: { kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string } | null;
+          ethernet: { kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string } | null;
+          other: Array<{ kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string }>;
+        }>;
         getShiftHours: () => Promise<{
           shift_mode: 'single' | 'multi';
           business_day_start_time: string;

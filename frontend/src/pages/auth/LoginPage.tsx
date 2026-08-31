@@ -31,7 +31,14 @@ export default function LoginPage() {
 
     try {
       await login(username, password);
-      navigate('/');
+      let role: string | undefined;
+      try {
+        const raw = localStorage.getItem('sufra_auth_user');
+        role = raw ? (JSON.parse(raw) as { role?: string }).role : undefined;
+      } catch {
+        role = undefined;
+      }
+      navigate(role === 'waiter' ? '/pos/floor' : '/');
     } catch (err: any) {
       setError(err.message || 'فشل تسجيل الدخول. يرجى التحقق من اسم الموظف (اسم الدخول) وكلمة المرور.');
     } finally {

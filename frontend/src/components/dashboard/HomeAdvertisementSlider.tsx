@@ -111,7 +111,7 @@ function HomeAdvertisementSlider() {
       >
         <div className="flex w-full flex-col items-stretch gap-3 px-3 md:px-4 lg:px-5">
           <BrandPanel />
-          <div className="h-[210px] min-w-0 flex-1 rounded-2xl border-2 border-[#0066FF]/35 bg-white/40 sm:h-[230px] md:h-[260px]" />
+          <div className="h-[200px] min-h-0 min-w-0 flex-1 rounded-2xl border-2 border-[#0066FF]/35 bg-[#0066FF]/10 sm:h-[220px] lg:h-[240px]" />
         </div>
       </section>
     );
@@ -131,16 +131,16 @@ function HomeAdvertisementSlider() {
       aria-label={t('home.adsCarouselLabel')}
     >
       {/* Wide band: brand near sidebar → slider with matching rounded corners */}
-      <div className="flex w-full flex-col items-stretch gap-3 px-3 sm:flex-row sm:gap-3 md:px-4 lg:px-5">
+      <div className="flex w-full flex-col items-stretch gap-3 px-3 sm:flex-row sm:items-start sm:gap-3 md:px-4 lg:px-5">
         <BrandPanel />
 
         <div
-          className="relative min-w-0 flex-1 overflow-hidden rounded-2xl border-2 border-[#0066FF]/40 bg-white shadow-[0_8px_28px_rgba(0,102,255,0.16)]"
+          className="relative h-[200px] min-h-0 min-w-0 flex-1 overflow-hidden rounded-2xl border-2 border-[#0066FF]/40 shadow-[0_8px_28px_rgba(0,102,255,0.16)] sm:h-[220px] lg:h-[240px]"
           onMouseEnter={() => setPaused(true)}
           onMouseLeave={() => setPaused(false)}
           aria-roledescription="carousel"
         >
-          <div className="relative h-[210px] w-full bg-[#f3f6f8] sm:h-[230px] md:h-[260px]">
+          <div className="absolute inset-0 overflow-hidden">
             {ads.map((ad, i) => (
               <div
                 key={ad.id}
@@ -219,9 +219,8 @@ function HomeAdvertisementSlider() {
                       key={key}
                       type="button"
                       onClick={() => setIndex(i)}
-                      className={`h-1.5 rounded-full transition-all ${
-                        i === index ? 'w-5 bg-[#0066FF]' : 'w-1.5 bg-white/50 hover:bg-white/80'
-                      }`}
+                      className={`h-1.5 rounded-full transition-all ${i === index ? 'w-5 bg-[#0066FF]' : 'w-1.5 bg-white/50 hover:bg-white/80'
+                        }`}
                       aria-label={t('home.adsGoTo', { n: i + 1 })}
                       aria-current={i === index}
                     />

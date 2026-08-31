@@ -3,7 +3,16 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import Header from '../../components/layout/Header';
 import Footer from '../../components/layout/Footer';
 import SettingsTabs from '../../components/tabs/SettingsTabs';
-import { getServerConfig, setServerConfig, testServerConnection, detectLocalIP, LAN_API_PORT } from '../../lib/server-config';
+import {
+  getServerConfig,
+  setServerConfig,
+  testServerConnection,
+  detectLocalIP,
+  getLanAddresses,
+  LAN_API_PORT,
+  type LanAddressInfo,
+  type LanAddressesResult,
+} from '../../lib/server-config';
 import { showToast } from '../../components/ui/Toast';
 import { showConfirm } from '../../components/ui/ConfirmDialog';
 
@@ -15,11 +24,18 @@ export default function ServerSettingsPage() {
   const [testing, setTesting] = useState(false);
   const [detecting, setDetecting] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [lanAddresses, setLanAddresses] = useState<LanAddressesResult | null>(null);
   const isSetupMode = location.pathname.startsWith('/setup');
 
   useEffect(() => {
     loadCurrentConfig();
+    void loadLanAddresses();
   }, []);
+
+  const loadLanAddresses = async () => {
+    const addrs = await getLanAddresses();
+    setLanAddresses(addrs);
+  };
 
   const loadCurrentConfig = () => {
     const config = getServerConfig();
@@ -45,7 +61,13 @@ export default function ServerSettingsPage() {
       showToast('فشل اكتشاف العنوان', 'error');
     } finally {
       setDetecting(false);
+      void loadLanAddresses();
     }
+  };
+
+  const applyLanUrl = (addr: LanAddressInfo) => {
+    setServerUrl(addr.url);
+    showToast(`تم اختيار العنوان: ${addr.url}`, 'success');
   };
 
   const handleTestConnection = async () => {
@@ -211,8 +233,31 @@ export default function ServerSettingsPage() {
                 </div>
                 <p className="mt-2 text-[12px] leading-relaxed text-graphite">
                   {serverMode === 'host' 
-                    ? 'الخادم يعمل على هذا الجهاز (localhost)' 
+                    ? 'الخادم يعمل على هذا الجهاز ويستمع على الواي فاي والإيثرنت معاً' 
                     : 'الاتصال بخادم خارجي على شبكة محلية'}
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-[14px] leading-relaxed font-medium text-obsidian mb-2">
+                  عناوين هذا الجهاز للأجهزة الأخرى
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <LanAddressCard
+                    title="عبر الواي فاي"
+                    emptyLabel="غير متصل"
+                    addr={lanAddresses?.wifi ?? null}
+                    onUse={applyLanUrl}
+                  />
+                  <LanAddressCard
+                    title="عبر الإيثرنت"
+                    emptyLabel="غير متصل"
+                    addr={lanAddresses?.ethernet ?? null}
+                    onUse={applyLanUrl}
+                  />
+                </div>
+                <p className="mt-2 text-[12px] leading-relaxed text-graphite">
+                  بطاقات Docker و Hyper-V و WSL لا تُعرض. الأجهزة الأخرى تستخدم عنوان الشبكة المشتركة معها.
                 </p>
               </div>
 
@@ -277,11 +322,12 @@ export default function ServerSettingsPage() {
                   💡 معلومات مهمة
                 </h3>
                 <ul className="space-y-1.5 text-[13px] leading-relaxed text-graphite">
-                  <li>• <strong>لفتح التطبيق عبر المتصفح:</strong> استخدم المنفذ 3000 (مثال: http://127.0.0.1:3000 أو http://192.168.1.100:3000) — منفذ الواجهة مختلف عن منفذ API ({LAN_API_PORT})</li>
-                  <li>• عنوان الخادم أعلاه ({LAN_API_PORT}) للمواجهة البرمجية (API) و Socket.IO فقط، وليس لفتح التطبيق في المتصفح</li>
-                  <li>• في وضع الخادم (Host): استخدم http://127.0.0.1:{LAN_API_PORT} أو العنوان المحلي المكتشف</li>
-                  <li>• في وضع العميل (Client): أدخل عنوان IP الخادم على الشبكة المحلية</li>
-                  <li>• تأكد من أن الخادم والعميل على نفس الشبكة المحلية</li>
+                  <li>• الخادم يستمع على كل البطاقات الفيزيائية (واي فاي وإيثرنت) في المنفذ {LAN_API_PORT}</li>
+                  <li>• <strong>لفتح التطبيق عبر المتصفح في التطوير:</strong> استخدم المنفذ 3000 — منفذ الواجهة مختلف عن منفذ API ({LAN_API_PORT})</li>
+                  <li>• للتحقق من الاتصال استخدم /health (مثال: http://192.168.1.100:{LAN_API_PORT}/health)</li>
+                  <li>• في وضع الخادم (Host) على هذا الجهاز: http://127.0.0.1:{LAN_API_PORT}</li>
+                  <li>• الأجهزة الأخرى: استخدم عنوان الواي فاي أو الإيثرنت المعروض أعلاه</li>
+                  <li>• تأكد من فتح المنفذ {LAN_API_PORT} في جدار حماية ويندوز</li>
                   <li>• بعد تغيير الإعدادات، قد تحتاج إلى إعادة تحميل الصفحة</li>
                 </ul>
               </div>
@@ -290,6 +336,43 @@ export default function ServerSettingsPage() {
         </section>
       </main>
       <Footer />
+    </div>
+  );
+}
+
+function LanAddressCard({
+  title,
+  emptyLabel,
+  addr,
+  onUse,
+}: {
+  title: string;
+  emptyLabel: string;
+  addr: LanAddressInfo | null;
+  onUse: (addr: LanAddressInfo) => void;
+}) {
+  return (
+    <div className="rounded-soft-lg border border-black/10 bg-cloud-soft-white/80 p-4">
+      <p className="text-[13px] font-semibold text-obsidian">{title}</p>
+      {addr ? (
+        <>
+          <p className="mt-1 break-all font-mono text-[14px] text-obsidian" dir="ltr">
+            {addr.url}
+          </p>
+          <p className="mt-0.5 text-[11px] text-graphite" dir="ltr">
+            {addr.name}
+          </p>
+          <button
+            type="button"
+            onClick={() => onUse(addr)}
+            className="mt-3 rounded-soft-lg bg-cyber-aqua/15 px-3 py-1.5 text-[13px] font-medium text-obsidian hover:bg-cyber-aqua/25"
+          >
+            استخدام هذا العنوان
+          </button>
+        </>
+      ) : (
+        <p className="mt-1 text-[14px] text-graphite">{emptyLabel}</p>
+      )}
     </div>
   );
 }

@@ -282,7 +282,45 @@ export interface DetectIPResult {
   warning?: 'NOT_LAN' | 'DETECTION_FAILED';
 }
 
+export interface LanAddressInfo {
+  kind: 'wifi' | 'ethernet' | 'other';
+  name: string;
+  ipv4: string;
+  url: string;
+}
+
+export interface LanAddressesResult {
+  wifi: LanAddressInfo | null;
+  ethernet: LanAddressInfo | null;
+  other: LanAddressInfo[];
+}
+
+export async function getLanAddresses(): Promise<LanAddressesResult | null> {
+  if (typeof window === 'undefined' || !window.sufra?.settings?.getLanAddresses) {
+    return null;
+  }
+  try {
+    return await window.sufra.settings.getLanAddresses();
+  } catch (error) {
+    console.error('Failed to list LAN addresses:', error);
+    return null;
+  }
+}
+
+export function preferredLanAddress(addrs: LanAddressesResult): LanAddressInfo | null {
+  return addrs.ethernet ?? addrs.wifi ?? addrs.other[0] ?? null;
+}
+
 export async function detectLocalIP(): Promise<DetectIPResult> {
+  const lan = await getLanAddresses();
+  if (lan) {
+    const preferred = preferredLanAddress(lan);
+    if (preferred) {
+      return { ip: preferred.ipv4 };
+    }
+    return { ip: null, warning: 'DETECTION_FAILED' };
+  }
+
   return new Promise((resolve) => {
     const RTCPeerConnection =
       (window as any).RTCPeerConnection ||

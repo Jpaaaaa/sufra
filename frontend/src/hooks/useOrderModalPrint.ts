@@ -83,7 +83,14 @@ export function createOrderModalPrintHandlers(
 ) {
   const executePrintOrder = async (orderId: number) => {
     try {
-      const order = existingOrders.find((o) => o.id === orderId);
+      let order = existingOrders.find((o) => o.id === orderId);
+      if (!order) {
+        const serverUrl = getServerUrl();
+        const ordersData = window.sufra?.orders?.findByTable
+          ? await window.sufra.orders.findByTable(table.id)
+          : await fetchJson<any[]>(`${serverUrl}/orders/dine-in/table/${table.id}`);
+        order = ordersData.find((o: { id: number }) => o.id === orderId);
+      }
       if (!order) {
         showToast('الطلب غير موجود', 'error');
         return;

@@ -22,6 +22,7 @@ export interface NavItem {
 export const navItems: NavItem[] = [
   { href: '/', labelKey: 'nav.home', icon: ReceiptIcon, roles: ['admin'] as UserRole[] },
   { href: '/halls', labelKey: 'nav.restaurantStructure', icon: ChairIcon, roles: ['admin', 'manager'] as UserRole[] },
+  { href: '/pos/floor', labelKey: 'nav.pos', icon: ClipboardIcon, roles: ['admin', 'manager'] as UserRole[] },
   { href: '/orders', labelKey: 'nav.orders', icon: ClipboardIcon, roles: ['admin', 'manager', 'cashier', 'waiter', 'customer'] as UserRole[] },
   { href: '/items', labelKey: 'nav.items', icon: UtensilsIcon, roles: ['admin', 'manager'] as UserRole[] },
   { href: '/shelves', labelKey: 'nav.shelves', icon: ShelfIcon, roles: ['admin', 'manager'] as UserRole[] },

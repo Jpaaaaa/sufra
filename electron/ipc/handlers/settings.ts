@@ -2,6 +2,7 @@
  * IPC handlers: app settings (shift mode, definitions).
  */
 import { ipcMain } from 'electron';
+import { listLanAddresses } from '../../http-shared/lan-addresses';
 import {
   settingsGetShiftHours,
   settingsUpdateShiftHours,
@@ -13,6 +14,7 @@ import {
 } from '../../init/backend-loader';
 
 export function registerSettingsHandlers(): void {
+  ipcMain.handle('settings:getLanAddresses', async () => listLanAddresses());
   ipcMain.handle('settings:getShiftHours', async () => settingsGetShiftHours());
   ipcMain.handle('settings:updateShiftHours', async (_, data: Record<string, unknown>) =>
     settingsUpdateShiftHours(data),

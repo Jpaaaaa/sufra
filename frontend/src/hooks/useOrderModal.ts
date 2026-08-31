@@ -306,8 +306,8 @@ export function useOrderModal(
   }, []);
 
   const handleApplyDiscount = useCallback(
-    () => orderHandlers.handleApplyDiscount(tableDiscount),
-    [orderHandlers, tableDiscount]
+    (override?: number) => orderHandlers.handleApplyDiscount(override ?? tableDiscount),
+    [orderHandlers, tableDiscount],
   );
 
   const toggleOrderSelect = useCallback((orderId: number) => {
