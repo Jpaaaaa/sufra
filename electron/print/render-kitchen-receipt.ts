@@ -1,12 +1,19 @@
-import type { OrderPrintData, PrintItemOption } from './receipt-utils';
-import { PRINT_TOKENS, canvasWidthFor, kitchenColumnLayout, type PaperWidthMm } from './tokens';
+import type { OrderPrintData, PrintItemOption, KitchenPrintItem } from './receipt-utils';
+import {
+  PRINT_TOKENS,
+  KITCHEN_TYPE,
+  canvasWidthFor,
+  kitchenColumnLayout,
+  type PaperWidthMm,
+} from './tokens';
 import { registerArabicFontIfAvailable, printFont } from './canvas/fonts';
-import { formatTimeAr, serviceTypeLabel, wrapText } from './canvas/text';
+import { formatTimeAr, wrapText } from './canvas/text';
 import {
   ReceiptPainter,
   createPrintCanvas,
   generateMinimalFallbackPng,
 } from './canvas/primitives';
+import { getTrayPrintName, parseTrayNumberFromPrintName } from './tray-print-name';
 
 function parseOptions(raw: unknown): PrintItemOption[] {
   if (Array.isArray(raw)) return raw as PrintItemOption[];
@@ -21,7 +28,7 @@ function parseOptions(raw: unknown): PrintItemOption[] {
   return [];
 }
 
-function modifierLines(item: OrderPrintData['items'][number]): string[] {
+function modifierLines(item: KitchenPrintItem): string[] {
   const fromField = item.modifiers?.filter(Boolean) ?? [];
   if (fromField.length) return fromField;
   return parseOptions(item.options_json)
@@ -33,7 +40,73 @@ function modifierLines(item: OrderPrintData['items'][number]): string[] {
     .filter(Boolean);
 }
 
-function serviceTypeArabic(serviceType: string): string {
+function isTrayHeader(item: KitchenPrintItem): boolean {
+  return Boolean(item.is_tray_header);
+}
+
+function isTrayChild(item: KitchenPrintItem): boolean {
+  return Boolean(item.is_tray_child);
+}
+
+function resolveTrayNumber(item: KitchenPrintItem, fallback?: number | null): number | null {
+  if (item.tray_number != null && item.tray_number > 0) return item.tray_number;
+  const fromName = parseTrayNumberFromPrintName(item.item_name);
+  if (fromName != null) return fromName;
+  return fallback ?? null;
+}
+
+function normalizeKitchenItems(items: KitchenPrintItem[]): KitchenPrintItem[] {
+  let seq = 0;
+  let currentTray: number | null = null;
+  return items.map((item) => {
+    if (isTrayHeader(item)) {
+      const n = resolveTrayNumber(item) ?? ++seq;
+      currentTray = n;
+      return {
+        ...item,
+        tray_number: n,
+        item_name: getTrayPrintName(n, item.item_name),
+      };
+    }
+    if (isTrayChild(item)) {
+      const n = resolveTrayNumber(item, currentTray) ?? currentTray ?? ++seq;
+      currentTray = n;
+      return { ...item, tray_number: n };
+    }
+    currentTray = null;
+    return { ...item, tray_number: null };
+  });
+}
+
+type TrayBlock = { header: KitchenPrintItem; children: KitchenPrintItem[] };
+
+function buildKitchenBlocks(items: KitchenPrintItem[]): {
+  trays: TrayBlock[];
+  singles: KitchenPrintItem[];
+} {
+  const trays: TrayBlock[] = [];
+  const singles: KitchenPrintItem[] = [];
+  let current: TrayBlock | null = null;
+
+  for (const item of items) {
+    if (isTrayHeader(item)) {
+      current = { header: item, children: [] };
+      trays.push(current);
+      continue;
+    }
+    if (isTrayChild(item)) {
+      if (current) current.children.push(item);
+      else singles.push(item);
+      continue;
+    }
+    current = null;
+    singles.push(item);
+  }
+
+  return { trays, singles };
+}
+
+function serviceTypeTitle(serviceType: string): string {
   switch (serviceType) {
     case 'pickup':
       return 'سفري';
@@ -44,8 +117,36 @@ function serviceTypeArabic(serviceType: string): string {
   }
 }
 
+function kitchenTypeFor(paper: PaperWidthMm) {
+  if (paper !== 58) return KITCHEN_TYPE;
+  const scale = 0.88;
+  return {
+    ...KITCHEN_TYPE,
+    kitchenName: Math.round(KITCHEN_TYPE.kitchenName * scale),
+    orderNumber: Math.round(KITCHEN_TYPE.orderNumber * scale),
+    orderType: Math.round(KITCHEN_TYPE.orderType * scale),
+    tableNumber: Math.round(KITCHEN_TYPE.tableNumber * scale),
+    location: Math.round(KITCHEN_TYPE.location * scale),
+    time: Math.round(KITCHEN_TYPE.time * scale),
+    trayHeader: Math.round(KITCHEN_TYPE.trayHeader * scale),
+    trayChild: Math.round(KITCHEN_TYPE.trayChild * scale),
+    singleSection: Math.round(KITCHEN_TYPE.singleSection * scale),
+    singleItem: Math.round(KITCHEN_TYPE.singleItem * scale),
+    secondary: Math.round(KITCHEN_TYPE.secondary * scale),
+  };
+}
+
+type TableRow = {
+  kind: 'tray' | 'child' | 'single' | 'section' | 'meta' | 'empty';
+  label: string;
+  qty: string | null;
+  font: number;
+  bold: boolean;
+  indent: number;
+};
+
 /**
- * Kitchen ticket — no logo, dense, high-contrast, thermal-optimized.
+ * Kitchen ticket — large header hierarchy + items as الصنف | الكمية table.
  */
 export async function renderOrderToPng(data: OrderPrintData | null | undefined): Promise<Buffer> {
   console.log('[KITCHEN] Starting PNG generation...');
@@ -70,196 +171,411 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
     const paper: PaperWidthMm = data.paperWidth === 58 ? 58 : 80;
     const width = canvasWidthFor(paper);
     const T = PRINT_TOKENS;
-    const k = T.kitchen;
-    const items = data.items;
+    const K = kitchenTypeFor(paper);
+    const layout = kitchenColumnLayout(paper);
+    const items = normalizeKitchenItems(data.items);
+    const { trays, singles } = buildKitchenBlocks(items);
     const serviceType = data.service_type || items[0]?.service_type || 'dine-in';
-    const printTime = data.printTime || new Date().toISOString();
-    const cols = kitchenColumnLayout(paper);
-    const infoFields = buildInfoFields(data, serviceType);
+    const orderTime = formatTimeAr(data.timestamp || data.printTime);
+    const serviceTitle = serviceTypeTitle(serviceType);
+    const hasTable =
+      serviceType === 'dine-in' &&
+      data.table != null &&
+      String(data.table).trim() !== '' &&
+      String(data.table) !== '0';
+
+    const childIndent = K.indentChild;
+    const rows: TableRow[] = [];
+
+    for (const block of trays) {
+      rows.push({
+        kind: 'tray',
+        label: getTrayPrintName(block.header.tray_number, block.header.item_name),
+        qty: String(block.header.quantity || 1),
+        font: K.trayHeader,
+        bold: true,
+        indent: 0,
+      });
+      if (block.children.length === 0) {
+        rows.push({
+          kind: 'empty',
+          label: '— فارغة —',
+          qty: null,
+          font: K.secondary,
+          bold: false,
+          indent: childIndent,
+        });
+      } else {
+        for (const child of block.children) {
+          rows.push({
+            kind: 'child',
+            label: `• ${child.item_name || 'صنف'}`,
+            qty: String(child.quantity || 1),
+            font: K.trayChild,
+            bold: true,
+            indent: childIndent,
+          });
+          for (const mod of modifierLines(child)) {
+            rows.push({
+              kind: 'meta',
+              label: `• ${mod}`,
+              qty: null,
+              font: K.secondary,
+              bold: false,
+              indent: childIndent + 10,
+            });
+          }
+          if (child.note) {
+            rows.push({
+              kind: 'meta',
+              label: `※ ${child.note}`,
+              qty: null,
+              font: K.secondary,
+              bold: true,
+              indent: childIndent + 10,
+            });
+          }
+        }
+      }
+    }
+
+    if (singles.length) {
+      rows.push({
+        kind: 'section',
+        label: 'مفرد',
+        qty: null,
+        font: K.singleSection,
+        bold: true,
+        indent: 0,
+      });
+      for (const item of singles) {
+        rows.push({
+          kind: 'single',
+          label: item.item_name || 'صنف',
+          qty: String(item.quantity || 1),
+          font: K.singleItem,
+          bold: true,
+          indent: 0,
+        });
+        for (const mod of modifierLines(item)) {
+          rows.push({
+            kind: 'meta',
+            label: `• ${mod}`,
+            qty: null,
+            font: K.secondary,
+            bold: false,
+            indent: childIndent,
+          });
+        }
+        if (item.note) {
+          rows.push({
+            kind: 'meta',
+            label: `※ ${item.note}`,
+            qty: null,
+            font: K.secondary,
+            bold: true,
+            indent: childIndent,
+          });
+        }
+      }
+    }
 
     // —— Measure ——
     const { ctx: tempCtx } = await createPrintCanvas(width, 80);
     const measure = new ReceiptPainter(tempCtx, paper);
     let est = measure.pad;
 
-    est += k.fontXl + 8; // kitchen name
-    est += T.font.sm + 6; // subtitle
-    est += 10;
-    est += k.fontXl + 24; // order band
-    est += k.fontMd + 16; // service type
-    if (data.priority) est += 36;
-    est += T.font.sm + 12; // print time
-    est += Math.ceil(Math.max(1, infoFields.length) / 2) * 34 + 16;
+    const cellPadY = 5;
+    const headerPadY = 7;
+    const tableHeaderH = K.secondary + headerPadY * 2;
 
-    const nameInnerW = cols.name.w - 16;
-    const cellPadY = 10;
-    const headerH = T.font.sm + 16;
-
-    const rowHeights = items.map((item) => {
-      tempCtx.font = printFont(k.fontMd, true);
-      let h = wrapText(tempCtx, item.item_name || 'صنف', nameInnerW).length * (k.fontMd + 6);
-      for (const mod of modifierLines(item)) {
-        tempCtx.font = printFont(T.font.sm, false);
-        h += wrapText(tempCtx, `• ${mod}`, nameInnerW - 6).length * (T.font.sm + 4) + 2;
-      }
-      if (item.note) {
-        tempCtx.font = printFont(T.font.sm, true);
-        h += wrapText(tempCtx, `※ ${item.note}`, nameInnerW - 6).length * (T.font.sm + 4) + 8;
-      }
-      return Math.max(k.lineHeight + 4, h) + cellPadY * 2;
-    });
-
-    est += headerH + (rowHeights.length ? rowHeights.reduce((a, b) => a + b, 0) : 40) + 16;
-    if (data.note) {
-      tempCtx.font = printFont(T.font.sm, false);
-      est += wrapText(tempCtx, data.note, measure.contentW - 20).length * (T.font.sm + 6) + 28;
+    est += K.kitchenName + 6;
+    est += K.orderNumber + K.orderBandPadY * 2 + K.gapAfterOrder;
+    if (hasTable) {
+      est += K.tableNumber + K.gapAfterPrimary;
+      if (data.floor || data.hall) est += K.location + K.gapAfterPrimary;
+    } else {
+      est += K.orderType + K.gapAfterPrimary;
     }
-    est += 50 + T.bottomBuffer;
-    const height = Math.max(360, est);
+    if (orderTime) est += K.time + K.gapAfterMeta;
+    if (data.priority) est += 28;
+    if (serviceType === 'pickup' || serviceType === 'delivery') {
+      const hasCust =
+        Boolean(data.customer_name) ||
+        Boolean(data.customer_phone) ||
+        (serviceType === 'delivery' && Boolean(data.customer_address));
+      if (hasCust) {
+        est += K.secondary + 14; // header band
+        est += 12;
+        if (data.customer_name) est += K.tableNumber + 8;
+        if (data.customer_phone) est += K.location + 8;
+        if (serviceType === 'delivery' && data.customer_address) {
+          tempCtx.font = printFont(K.singleItem, true);
+          est +=
+            wrapText(tempCtx, `العنوان: ${data.customer_address}`, measure.contentW - 24).length *
+              (K.singleItem + 4) +
+            6;
+        }
+        est += 12 + 8;
+      }
+    }
+    est += 10;
+    est += tableHeaderH;
+
+    for (const row of rows) {
+      const nameW = layout.name.w - row.indent - 10;
+      tempCtx.font = printFont(row.font, row.bold);
+      const n = wrapText(tempCtx, row.label, Math.max(40, nameW)).length;
+      const lh = row.font + 4;
+      est += Math.max(lh, n * lh) + cellPadY * 2;
+    }
+    if (!rows.length) est += K.trayChild + cellPadY * 2;
+
+    if (data.note) {
+      tempCtx.font = printFont(K.secondary + 4, true);
+      est +=
+        K.secondary +
+        10 +
+        wrapText(tempCtx, data.note, measure.contentW - 16).length * (K.secondary + 5) +
+        10;
+    }
+    if (data.reprintCount != null && data.reprintCount > 0) est += K.secondary + 6;
+    est += T.bottomBuffer;
+    const height = Math.max(280, est);
 
     // —— Draw ——
     const { canvas, ctx } = await createPrintCanvas(width, height);
     const p = new ReceiptPainter(ctx, paper);
 
-    // Header: kitchen name first (no logo)
-    const kitchenTitle = data.kitchenName || 'المطبخ';
-    let lines = p.text(kitchenTitle, p.centerX, p.y, k.fontXl, 'center', true, p.contentW, k.fontXl + 2);
-    p.advance(lines * (k.fontXl + 2) + 2);
+    let lines = p.text(
+      data.kitchenName || 'المطبخ',
+      p.centerX,
+      p.y,
+      K.kitchenName,
+      'center',
+      true,
+      p.contentW,
+      K.kitchenName + 2,
+    );
+    p.advance(lines * (K.kitchenName + 2) + 4);
 
-    lines = p.text('تذكرة مطبخ', p.centerX, p.y, T.font.sm, 'center', false, p.contentW, T.font.sm + 2);
-    p.advance(lines * (T.font.sm + 2) + 8);
-
-    p.doubleHLine(p.y);
-    p.advance(12);
-
-    // Order band — full-width inverted bar
-    const orderLabel = `#${data.orderId ?? '—'}`;
-    const bandH = k.fontXl + 20;
-    p.fillBox(p.pad, p.y, p.contentW, bandH);
+    const ticketNo =
+      data.displayNumber != null && Number(data.displayNumber) > 0
+        ? Number(data.displayNumber)
+        : data.orderId;
+    const orderLabel = `#${ticketNo ?? '—'}`;
+    const orderBandH = K.orderNumber + K.orderBandPadY * 2;
+    p.fillBox(p.pad, p.y, p.contentW, orderBandH);
     ctx.fillStyle = T.paper;
-    ctx.font = printFont(k.fontXl, true);
+    ctx.font = printFont(K.orderNumber, true);
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText(orderLabel, p.centerX, p.y + bandH / 2);
+    ctx.fillText(orderLabel, p.centerX, p.y + orderBandH / 2);
     ctx.fillStyle = T.ink;
     ctx.textBaseline = 'top';
-    p.advance(bandH + 8);
+    p.advance(orderBandH + K.gapAfterOrder);
 
-    // Service type — clean outline strip
-    const typeLabel = serviceTypeLabel(serviceType, true);
-    const typeH = k.fontMd + 14;
-    p.box(p.pad, p.y, p.contentW, typeH, T.line.thick);
-    p.text(typeLabel, p.centerX, p.y + 7, k.fontMd, 'center', true, p.contentW - 8, k.fontMd + 2);
-    p.advance(typeH + 6);
+    if (hasTable) {
+      lines = p.text(
+        `طاولة ${data.table}`,
+        p.centerX,
+        p.y,
+        K.tableNumber,
+        'center',
+        true,
+        p.contentW,
+        K.tableNumber + 2,
+      );
+      p.advance(lines * (K.tableNumber + 2) + K.gapAfterPrimary);
 
-    if (data.priority) {
-      const pr = p.badge('★ مستعجل ★', p.centerX, p.y, T.font.md, 'center', 16, 6);
-      p.advance(pr.height + 6);
-    }
-
-    // Print time under service
-    const timeStr = formatTimeAr(printTime);
-    if (timeStr) {
-      lines = p.text(`طباعة: ${timeStr}`, p.centerX, p.y, T.font.xs, 'center', false, p.contentW, T.font.xs + 2);
-      p.advance(lines * (T.font.xs + 2) + 8);
-    }
-
-    // Meta — compact borderless pairs
-    if (infoFields.length) {
-      p.hLine(T.line.hair);
-      p.advance(8);
-      const gridH = p.infoGrid(infoFields, p.y, 2, T.font.sm);
-      p.advance(gridH + 6);
-    }
-
-    // Items table
-    p.hLine(T.line.thick);
-    p.advance(0);
-
-    const tableX = cols.tableLeft;
-    const tableW = cols.tableRight - cols.tableLeft;
-    const bodyH = items.length === 0 ? 40 : rowHeights.reduce((a, b) => a + b, 0);
-    const tableH = headerH + bodyH;
-    const tableTop = p.y;
-
-    // Filled header bar for table
-    p.fillBox(tableX, tableTop, tableW, headerH);
-    ctx.fillStyle = T.paper;
-    ctx.font = printFont(T.font.sm, true);
-    ctx.textBaseline = 'middle';
-    const headerMid = tableTop + headerH / 2;
-    ctx.textAlign = 'right';
-    ctx.fillText('الكمية', cols.qty.x, headerMid);
-    ctx.fillText('الصنف', cols.name.x, headerMid);
-    ctx.fillStyle = T.ink;
-    ctx.textBaseline = 'top';
-
-    const rowYs: number[] = [];
-    let rowY = tableTop + headerH;
-
-    if (items.length === 0) {
-      p.text('لا توجد أصناف', p.centerX, rowY + 12, T.font.md, 'center', false);
+      const locParts: string[] = [];
+      if (data.floor) {
+        const floor = String(data.floor).trim();
+        locParts.push(
+          /^(الطابق|طابق)\b/.test(floor) ? floor.replace(/^طابق\b/, 'الطابق') : `الطابق ${floor}`,
+        );
+      }
+      if (data.hall) {
+        const hall = String(data.hall).trim();
+        locParts.push(/^(الصالة|صالة|القاعة|قاعة)\b/.test(hall) ? hall : `الصالة ${hall}`);
+      }
+      if (locParts.length) {
+        lines = p.text(
+          locParts.join(' • '),
+          p.centerX,
+          p.y,
+          K.location,
+          'center',
+          true,
+          p.contentW,
+          K.location + 2,
+        );
+        p.advance(lines * (K.location + 2) + K.gapAfterPrimary);
+      }
     } else {
-      for (let i = 0; i < items.length; i++) {
-        const item = items[i];
-        const qty = item.quantity || 1;
-        const name = item.item_name || 'صنف';
-        const textY = rowY + cellPadY;
-        let cursorY = textY;
+      lines = p.text(serviceTitle, p.centerX, p.y, K.orderType, 'center', true, p.contentW, K.orderType + 2);
+      p.advance(lines * (K.orderType + 2) + K.gapAfterPrimary);
+    }
 
-        // Qty emphasized
-        p.text(`${qty}×`, cols.qty.x, textY, k.fontXl, 'right', true, cols.qty.w - 8, k.fontXl + 2);
+    // Larger order time
+    if (orderTime) {
+      lines = p.text(orderTime, p.centerX, p.y, K.time, 'center', true, p.contentW, K.time + 2);
+      p.advance(lines * (K.time + 2) + K.gapAfterMeta);
+    }
 
-        const nameLines = p.text(name, cols.name.x, cursorY, k.fontMd, 'right', true, nameInnerW, k.fontMd + 6);
-        cursorY += nameLines * (k.fontMd + 6) + 2;
+    if (serviceType === 'pickup' || serviceType === 'delivery') {
+      const hasCust =
+        Boolean(data.customer_name) ||
+        Boolean(data.customer_phone) ||
+        (serviceType === 'delivery' && Boolean(data.customer_address));
+      if (hasCust) {
+        const custHeaderH = K.secondary + 12;
+        p.fillBox(p.pad, p.y, p.contentW, custHeaderH);
+        ctx.fillStyle = T.paper;
+        ctx.font = printFont(K.secondary, true);
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText('بيانات العميل', p.centerX, p.y + custHeaderH / 2);
+        ctx.fillStyle = T.ink;
+        ctx.textBaseline = 'top';
+        p.advance(custHeaderH);
 
-        for (const mod of modifierLines(item)) {
-          const ml = p.text(`• ${mod}`, cols.name.x, cursorY, T.font.sm, 'right', false, nameInnerW - 6, T.font.sm + 4);
-          cursorY += ml * (T.font.sm + 4) + 2;
+        const boxPad = 10;
+        const boxTop = p.y;
+        let cy = boxTop + boxPad;
+        const innerW = p.contentW - boxPad * 2;
+
+        if (data.customer_name) {
+          lines = p.text(
+            String(data.customer_name),
+            p.centerX,
+            cy,
+            K.tableNumber,
+            'center',
+            true,
+            innerW,
+            K.tableNumber + 2,
+          );
+          cy += lines * (K.tableNumber + 2) + 6;
+        }
+        if (data.customer_phone) {
+          lines = p.text(
+            `هاتف: ${data.customer_phone}`,
+            p.centerX,
+            cy,
+            K.location,
+            'center',
+            true,
+            innerW,
+            K.location + 2,
+          );
+          cy += lines * (K.location + 2) + 6;
+        }
+        if (serviceType === 'delivery' && data.customer_address) {
+          lines = p.text(
+            `العنوان: ${data.customer_address}`,
+            p.centerX,
+            cy,
+            K.singleItem,
+            'center',
+            true,
+            innerW,
+            K.singleItem + 2,
+          );
+          cy += lines * (K.singleItem + 2);
         }
 
-        if (item.note) {
-          // Bold note line — no nested box clutter
-          const noteText = `※ ${item.note}`;
-          const nl = p.text(noteText, cols.name.x, cursorY + 2, T.font.sm, 'right', true, nameInnerW - 6, T.font.sm + 4);
-          cursorY += nl * (T.font.sm + 4) + 4;
-        }
-
-        rowY += rowHeights[i];
-        if (i < items.length - 1) rowYs.push(rowY);
+        const boxH = Math.max(K.tableNumber + boxPad * 2, cy + boxPad - boxTop);
+        p.box(p.pad, boxTop, p.contentW, boxH, T.line.heavy);
+        p.advance(boxH + 8);
       }
     }
 
-    p.tableFrame(tableX, tableTop, tableW, tableH, headerH, cols.dividers, rowYs, T.line.thick);
-    p.y = tableTop + tableH;
-    p.advance(10);
-
-    // Order note
-    if (data.note) {
-      const noteH = (() => {
-        ctx.font = printFont(T.font.sm, true);
-        const nLines = wrapText(ctx, data.note!, p.contentW - 20);
-        return nLines.length * (T.font.sm + 6) + 16;
-      })();
-      p.box(p.pad, p.y, p.contentW, noteH, T.line.thick);
-      p.text('ملاحظة الطلب', p.right - 8, p.y + 6, T.font.xs, 'right', true, p.contentW - 16, T.font.xs + 2);
-      p.text(data.note, p.right - 8, p.y + 6 + T.font.xs + 4, T.font.sm, 'right', true, p.contentW - 16, T.font.sm + 4);
-      p.advance(noteH + 10);
+    if (data.priority) {
+      const pr = p.badge('★ مستعجل ★', p.centerX, p.y, K.secondary, 'center', 12, 4);
+      p.advance(pr.height + 4);
     }
 
-    // Footer
-    p.doubleHLine(p.y);
-    p.advance(10);
+    p.advance(4);
 
-    const totalQty = items.reduce((s, it) => s + (it.quantity || 0), 0);
-    const typeShort = serviceTypeArabic(serviceType);
-    const footer = `إجمالي الأصناف: ${totalQty}  ·  ${typeShort}`;
-    p.text(footer, p.centerX, p.y, T.font.md, 'center', true, p.contentW, T.font.md + 4);
-    p.advance(T.font.md + 8);
+    // —— Items table: الصنف | الكمية ——
+    const cols = layout;
+    const tableX = cols.tableLeft;
+    const tableW = cols.tableRight - cols.tableLeft;
+
+    type RowMeasure = { height: number; nameLines: number; nameW: number };
+    const rowMeasures: RowMeasure[] = rows.map((row) => {
+      const nameW = Math.max(40, cols.name.w - row.indent - 10);
+      ctx.font = printFont(row.font, row.bold);
+      const nameLines = wrapText(ctx, row.label, nameW).length;
+      const lh = row.font + 4;
+      return {
+        nameW,
+        nameLines,
+        height: Math.max(lh, nameLines * lh) + cellPadY * 2,
+      };
+    });
+
+    const bodyH =
+      rows.length === 0
+        ? K.trayChild + cellPadY * 2
+        : rowMeasures.reduce((s, m) => s + m.height, 0);
+    const tableH = tableHeaderH + bodyH;
+    const tableTop = p.y;
+
+    p.text('الصنف', cols.name.x, tableTop + headerPadY, K.secondary, 'right', true, cols.name.w - 10);
+    p.text('الكمية', cols.qty.x, tableTop + headerPadY, K.secondary, 'center', true, cols.qty.w - 4);
+
+    const rowYs: number[] = [];
+    let rowY = tableTop + tableHeaderH;
+
+    if (rows.length === 0) {
+      p.text('لا توجد أصناف', p.centerX, rowY + cellPadY, K.trayChild, 'center', false);
+    } else {
+      rows.forEach((row, index) => {
+        const m = rowMeasures[index];
+        const textY = rowY + cellPadY;
+        const lh = row.font + 4;
+        p.text(
+          row.label,
+          cols.name.x - row.indent,
+          textY,
+          row.font,
+          'right',
+          row.bold,
+          m.nameW,
+          lh,
+        );
+        if (row.qty != null) {
+          p.singleLine(row.qty, cols.qty.x, textY, row.font, 'center', row.bold, cols.qty.w - 4);
+        }
+        rowY += m.height;
+        if (index < rows.length - 1) rowYs.push(rowY);
+      });
+    }
+
+    p.tableFrame(
+      tableX,
+      tableTop,
+      tableW,
+      tableH,
+      tableHeaderH,
+      cols.dividers,
+      rowYs,
+      T.line.heavy,
+      T.line.thick,
+    );
+    p.y = tableTop + tableH;
+    p.advance(8);
+
+    if (data.note) {
+      const noteH = p.orderNoteBlock('ملاحظات', data.note, p.y, K.secondary + 4);
+      p.advance(noteH + 4);
+    }
 
     if (data.reprintCount != null && data.reprintCount > 0) {
-      p.text(`إعادة طباعة #${data.reprintCount}`, p.centerX, p.y, T.font.sm, 'center', false);
-      p.advance(T.font.sm + 4);
+      p.text(`إعادة طباعة #${data.reprintCount}`, p.centerX, p.y, K.secondary, 'center', false);
+      p.advance(K.secondary + 4);
     }
 
     p.track(p.y);
@@ -274,25 +590,4 @@ export async function renderOrderToPng(data: OrderPrintData | null | undefined):
     console.error('[KITCHEN] ✕ Error generating PNG:', error);
     return await generateMinimalFallbackPng('Kitchen receipt working');
   }
-}
-
-function buildInfoFields(data: OrderPrintData, serviceType: string) {
-  const fields: Array<{ label: string; value?: string | number | null }> = [];
-  if (data.floor) fields.push({ label: 'الطابق', value: data.floor });
-  if (data.hall) fields.push({ label: 'القاعة', value: data.hall });
-  if (serviceType === 'dine-in' && data.table) {
-    fields.push({ label: 'الطاولة', value: data.table });
-  }
-  if (data.seat) fields.push({ label: 'المقعد', value: data.seat });
-  if (data.waiter) fields.push({ label: 'النادل', value: data.waiter });
-  if (data.cashier) fields.push({ label: 'الكاشير', value: data.cashier });
-  // guests intentionally omitted — not used in kitchen workflow
-  if (data.timestamp) {
-    fields.push({ label: 'وقت الطلب', value: formatTimeAr(data.timestamp) });
-  }
-  if (serviceType === 'delivery') {
-    if (data.customer_name) fields.push({ label: 'العميل', value: data.customer_name });
-    if (data.customer_phone) fields.push({ label: 'الهاتف', value: data.customer_phone });
-  }
-  return fields;
 }

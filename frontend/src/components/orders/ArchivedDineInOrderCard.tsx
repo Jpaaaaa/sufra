@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { ExistingOrder } from '../../hooks/useOrderModal';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
 import { ReceiptIcon } from '../icons';
+import { orderDisplayNumber } from '../../utils/order-display-number';
 
 interface ArchivedDineInOrder extends ExistingOrder {
   table_id?: number;
@@ -41,7 +42,7 @@ export const ArchivedDineInOrderCard = memo(function ArchivedDineInOrderCard({
     <div className={`rounded-soft-xl border-2 bg-white p-5 shadow-soft ${statusColors}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-black/10">
-        <span className="text-[18px] leading-tight font-bold text-obsidian">{t('orders.orderNumber', { id: order.id })}</span>
+        <span className="text-[18px] leading-tight font-bold text-obsidian">{t('orders.orderNumber', { id: orderDisplayNumber(order) })}</span>
         <span className="text-[18px] leading-tight font-bold text-obsidian bg-obsidian/5 px-3 py-1 rounded-soft-lg">
           {(order.total ?? 0).toLocaleString(numberLocale)} {t('orders.currency')}
         </span>

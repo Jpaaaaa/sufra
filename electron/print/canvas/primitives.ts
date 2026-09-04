@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { PRINT_TOKENS, canvasWidthFor, type PaperWidthMm } from '../tokens';
 import { printFont } from './fonts';
-import { drawWrappedText, wrapText, type TextAlign } from './text';
+import { drawWrappedText, drawSingleLineText, wrapText, type TextAlign } from './text';
 
 export interface CanvasCtx {
   fillStyle: string;
@@ -120,6 +120,27 @@ export class ReceiptPainter {
     });
   }
 
+  /** Single-line cell text (no wrap) — use for amounts / quantities. */
+  singleLine(
+    value: string,
+    x: number,
+    y: number,
+    fontSize: number,
+    align: TextAlign = 'left',
+    bold = false,
+    maxWidth?: number,
+  ) {
+    drawSingleLineText(this.ctx, value, {
+      x,
+      y,
+      fontSize,
+      align,
+      bold,
+      maxWidth,
+      fillStyle: PRINT_TOKENS.ink,
+    });
+  }
+
   /**
    * Inverted badge (black fill, white text) — use sparingly for priority/order #.
    */
@@ -190,7 +211,7 @@ export class ReceiptPainter {
   }
 
   /**
-   * Borderless 2-column RTL meta rows: "Label: Value" — no cell boxes.
+   * Borderless meta rows: label (sm) + value (bold) per cell — clearer on thermal paper.
    * Returns height consumed.
    */
   infoGrid(
@@ -205,10 +226,14 @@ export class ReceiptPainter {
     });
     if (visible.length === 0) return 0;
 
-    const gap = 16;
+    const gap = 12;
     const cellW = (this.contentW - gap * (cols - 1)) / cols;
-    const lh = fontSize + 8;
-    const cellPad = 2;
+    const labelSize = Math.max(PRINT_TOKENS.font.xs, fontSize - 4);
+    const valueSize = fontSize;
+    const labelLh = labelSize + 4;
+    const valueLh = valueSize + 6;
+    const cellPad = 4;
+    const rowGap = 10;
 
     const rows: typeof visible[] = [];
     for (let i = 0; i < visible.length; i += cols) {
@@ -217,21 +242,31 @@ export class ReceiptPainter {
 
     let y = startY;
     for (const row of rows) {
-      let rowH = lh;
+      let rowH = labelLh + valueLh;
       const measured = row.map((f) => {
-        const line = `${f.label}: ${f.value}`;
-        this.ctx.font = printFont(fontSize, false);
-        const wrapped = wrapText(this.ctx, line, cellW - cellPad * 2);
-        rowH = Math.max(rowH, wrapped.length * lh);
-        return { line, wrapped };
+        const value = String(f.value);
+        this.ctx.font = printFont(valueSize, true);
+        const wrapped = wrapText(this.ctx, value, cellW - cellPad * 2);
+        rowH = Math.max(rowH, labelLh + wrapped.length * valueLh);
+        return { label: f.label, value, wrapped };
       });
 
       measured.forEach((m, idx) => {
         const xRight = this.right - idx * (cellW + gap);
-        this.text(m.line, xRight - cellPad, y, fontSize, 'right', false, cellW - cellPad * 2, lh);
+        this.text(m.label, xRight - cellPad, y, labelSize, 'right', false, cellW - cellPad * 2, labelLh);
+        this.text(
+          m.value,
+          xRight - cellPad,
+          y + labelLh,
+          valueSize,
+          'right',
+          true,
+          cellW - cellPad * 2,
+          valueLh,
+        );
       });
 
-      y += rowH + 4;
+      y += rowH + rowGap;
     }
 
     return y - startY;
@@ -241,6 +276,7 @@ export class ReceiptPainter {
    * Draw a full items table frame: outer border + vertical column dividers + row rules.
    * `dividers` are X positions of internal vertical lines (between columns).
    * `rowYs` are Y positions of horizontal rules inside the body (after header rule).
+   * Horizontal rules are clipped to the table box (not full receipt width).
    */
   tableFrame(
     x: number,
@@ -251,47 +287,87 @@ export class ReceiptPainter {
     dividers: number[],
     rowYs: number[],
     lineWidth: number = PRINT_TOKENS.line.thick,
+    rowLineWidth: number = PRINT_TOKENS.line.thick,
   ) {
     this.box(x, y, w, h, lineWidth);
-    // Header separator
-    this.hLine(lineWidth, y + headerH);
+    // Header separator (within table bounds)
+    this.hRule(x, x + w, y + headerH, lineWidth);
     for (const dx of dividers) {
-      this.vLine(dx, y, y + h, PRINT_TOKENS.line.hair);
+      this.vLine(dx, y, y + h, lineWidth);
     }
     for (const ry of rowYs) {
-      this.hLine(PRINT_TOKENS.line.hair, ry);
+      this.hRule(x, x + w, ry, rowLineWidth);
     }
   }
 
+  /** Horizontal rule between two X coordinates (table-scoped). */
+  hRule(x1: number, x2: number, y: number, width: number = PRINT_TOKENS.line.thick) {
+    const ctx = this.ctx;
+    ctx.strokeStyle = PRINT_TOKENS.ink;
+    ctx.lineWidth = width;
+    ctx.beginPath();
+    ctx.moveTo(x1, y);
+    ctx.lineTo(x2, y);
+    ctx.stroke();
+  }
+
   /**
-   * Highlighted note box (kitchen notes).
+   * Order-note block: inverted title bar + padded body (no overlap with border).
+   * Returns total height consumed.
    */
-  noteBox(text: string, startY: number, fontSize: number = PRINT_TOKENS.font.sm): number {
-    const pad = 8;
+  orderNoteBlock(
+    title: string,
+    text: string,
+    startY: number,
+    fontSize: number = PRINT_TOKENS.font.sm,
+  ): number {
+    const padX = 10;
+    const padY = 10;
+    const titleSize = PRINT_TOKENS.font.sm;
+    const titleH = titleSize + 14;
     const lh = fontSize + 6;
-    this.ctx.font = printFont(fontSize, false);
-    const lines = wrapText(this.ctx, text, this.contentW - pad * 2);
-    const h = pad * 2 + lines.length * lh;
-    this.box(this.pad, startY, this.contentW, h, PRINT_TOKENS.line.thick);
-    this.text(text, this.right - pad, startY + pad, fontSize, 'right', false, this.contentW - pad * 2, lh);
-    return h;
+    this.ctx.font = printFont(fontSize, true);
+    const lines = wrapText(this.ctx, text, this.contentW - padX * 2);
+    const bodyH = Math.max(lh + padY * 2, lines.length * lh + padY * 2);
+    const totalH = titleH + bodyH;
+
+    this.box(this.pad, startY, this.contentW, totalH, PRINT_TOKENS.line.thick);
+    this.fillBox(this.pad, startY, this.contentW, titleH);
+    const ctx = this.ctx;
+    ctx.fillStyle = PRINT_TOKENS.paper;
+    ctx.font = printFont(titleSize, true);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(title, this.centerX, startY + titleH / 2);
+    ctx.fillStyle = PRINT_TOKENS.ink;
+    ctx.textBaseline = 'top';
+
+    this.text(text, this.right - padX, startY + titleH + padY, fontSize, 'right', true, this.contentW - padX * 2, lh);
+    return totalH;
   }
 
   /**
    * Try to load and draw a logo centered as 1-bit black/white (thermal-safe).
    * Returns height used (0 if missing).
    */
-  async drawLogo(logoUrl: string | undefined | null, maxH = 64): Promise<number> {
+  async drawLogo(
+    logoUrl: string | undefined | null,
+    maxH = 64,
+    options?: { allowFallback?: boolean },
+  ): Promise<number> {
+    const allowFallback = options?.allowFallback !== false;
     const candidates: string[] = [];
     if (logoUrl && fs.existsSync(logoUrl)) candidates.push(logoUrl);
 
-    candidates.push(
-      path.join(__dirname, '../../build/sufralogo.png'),
-      path.join(__dirname, '../../dist/logo.png'),
-      path.join(__dirname, '../../../frontend/dist/logo/logo.png'),
-      path.join(process.cwd(), 'build/sufralogo.png'),
-      path.join(process.cwd(), 'dist/logo.png'),
-    );
+    if (allowFallback) {
+      candidates.push(
+        path.join(__dirname, '../../build/sufralogo.png'),
+        path.join(__dirname, '../../dist/logo.png'),
+        path.join(__dirname, '../../../frontend/dist/logo/logo.png'),
+        path.join(process.cwd(), 'build/sufralogo.png'),
+        path.join(process.cwd(), 'dist/logo.png'),
+      );
+    }
 
     let file: string | null = null;
     for (const c of candidates) {

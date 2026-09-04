@@ -193,6 +193,13 @@ class FinanceService {
     to?: string;
     category?: string;
   }): Promise<Expense[]> {
+    // Materialize any due recurring expenses before listing
+    try {
+      await this.processDueRecurringExpenses();
+    } catch (err) {
+      console.error('[FINANCE] processDueRecurringExpenses failed:', err);
+    }
+
     let query = `SELECT e.* FROM expenses e WHERE 1=1`;
     const params: any[] = [];
 
@@ -227,12 +234,171 @@ class FinanceService {
     }));
   }
 
+  /** All recurring expense templates (not limited by finance date range). */
+  async getRecurringExpenses(): Promise<Expense[]> {
+    try {
+      await this.processDueRecurringExpenses();
+    } catch (err) {
+      console.error('[FINANCE] processDueRecurringExpenses failed (recurring list):', err);
+    }
+
+    const rows = await this.db.all(
+      `SELECT e.* FROM expenses e
+       WHERE e.is_recurring = 1
+       ORDER BY
+         CASE WHEN e.next_occurrence_date IS NULL OR e.next_occurrence_date = '' THEN 1 ELSE 0 END,
+         DATE(e.next_occurrence_date) ASC,
+         e.category ASC,
+         e.id ASC`,
+    );
+
+    return rows.map((row: any) => ({
+      id: row.id,
+      date: row.date?.split?.('T')[0] ?? row.date ?? '',
+      category: row.category,
+      amount: row.amount,
+      notes: row.notes,
+      user_id: row.user_id,
+      is_recurring: Boolean(row.is_recurring),
+      recurrence_type: row.recurrence_type || null,
+      recurrence_interval: row.recurrence_interval || null,
+      next_occurrence_date: row.next_occurrence_date || null,
+      created_at: row.created_at,
+    }));
+  }
+
+  /**
+   * Materialize at most the latest due occurrence for each recurring template.
+   * Past periods are skipped (no backfill) so registering/opening finance months
+   * later does not flood expenses from the original start date.
+   */
+  async processDueRecurringExpenses(asOfDate?: string): Promise<{ created: number }> {
+    const today = (asOfDate || new Date().toISOString().split('T')[0]).slice(0, 10);
+    const templates = await this.db.all(
+      `SELECT * FROM expenses
+       WHERE is_recurring = 1
+         AND next_occurrence_date IS NOT NULL
+         AND next_occurrence_date != ''
+         AND DATE(next_occurrence_date) <= DATE(?)
+       ORDER BY id ASC`,
+      [today],
+    );
+
+    if (!templates?.length) return { created: 0 };
+
+    let created = 0;
+
+    for (const tpl of templates) {
+      const recurrenceType = tpl.recurrence_type as
+        | 'daily'
+        | 'weekly'
+        | 'monthly'
+        | 'yearly'
+        | null;
+      if (!recurrenceType) continue;
+
+      const interval = Number(tpl.recurrence_interval) > 0 ? Number(tpl.recurrence_interval) : 1;
+      const from = String(tpl.next_occurrence_date).split('T')[0];
+      const { dueDate, nextAfterDue } = this.resolveLatestDueOccurrence(
+        from,
+        recurrenceType,
+        interval,
+        today,
+      );
+
+      if (dueDate) {
+        const existing = await this.db.get(
+          `SELECT id FROM expenses
+           WHERE DATE(date) = DATE(?)
+             AND category = ?
+             AND amount = ?
+             AND is_recurring = 0
+             AND COALESCE(notes, '') = COALESCE(?, '')
+           LIMIT 1`,
+          [dueDate, tpl.category, tpl.amount, tpl.notes ?? null],
+        );
+
+        if (!existing) {
+          await this.db.run(
+            `INSERT INTO expenses
+              (date, category, amount, notes, user_id, is_recurring, recurrence_type, recurrence_interval, next_occurrence_date, created_at)
+             VALUES (?, ?, ?, ?, ?, 0, NULL, NULL, NULL, CURRENT_TIMESTAMP)`,
+            [dueDate, tpl.category, tpl.amount, tpl.notes ?? null, tpl.user_id ?? null],
+          );
+          created++;
+        }
+      }
+
+      await this.db.run('UPDATE expenses SET next_occurrence_date = ? WHERE id = ?', [
+        nextAfterDue,
+        tpl.id,
+      ]);
+    }
+
+    if (created > 0) {
+      console.log(`[FINANCE] ✓ Materialized ${created} recurring expense occurrence(s)`);
+    }
+    return { created };
+  }
+
+  /**
+   * Walk from `fromDate` through due dates ≤ asOfDate without creating history.
+   * Returns the latest due date (if any) and the first occurrence strictly after asOfDate.
+   */
+  private resolveLatestDueOccurrence(
+    fromDate: string,
+    recurrenceType: 'daily' | 'weekly' | 'monthly' | 'yearly',
+    interval: number,
+    asOfDate: string,
+  ): { dueDate: string | null; nextAfterDue: string } {
+    let cursor = String(fromDate).split('T')[0];
+    let dueDate: string | null = null;
+    let steps = 0;
+    const maxSteps = 400;
+
+    while (cursor && cursor <= asOfDate && steps < maxSteps) {
+      dueDate = cursor;
+      const advanced = this.calculateNextOccurrence(cursor, recurrenceType, interval);
+      if (!advanced || advanced <= cursor) break;
+      cursor = advanced;
+      steps++;
+    }
+
+    return { dueDate, nextAfterDue: cursor };
+  }
+
+  /** First occurrence strictly after `afterDate` (typically today), starting from `fromDate`. */
+  private firstOccurrenceAfter(
+    fromDate: string,
+    recurrenceType: 'daily' | 'weekly' | 'monthly' | 'yearly',
+    interval: number,
+    afterDate: string,
+  ): string {
+    let cursor = this.calculateNextOccurrence(fromDate, recurrenceType, interval);
+    let steps = 0;
+    const maxSteps = 400;
+    while (cursor && cursor <= afterDate && steps < maxSteps) {
+      const advanced = this.calculateNextOccurrence(cursor, recurrenceType, interval);
+      if (!advanced || advanced <= cursor) break;
+      cursor = advanced;
+      steps++;
+    }
+    return cursor;
+  }
+
   private calculateNextOccurrence(
     date: string,
     recurrenceType: 'daily' | 'weekly' | 'monthly' | 'yearly',
     interval: number = 1,
   ): string {
-    const currentDate = new Date(date);
+    const parts = String(date).split('T')[0].split('-').map((p) => Number(p));
+    const y = parts[0];
+    const m = parts[1];
+    const d = parts[2];
+    const currentDate =
+      Number.isFinite(y) && Number.isFinite(m) && Number.isFinite(d)
+        ? new Date(y, m - 1, d)
+        : new Date(date);
     const nextDate = new Date(currentDate);
 
     switch (recurrenceType) {
@@ -240,7 +406,7 @@ class FinanceService {
         nextDate.setDate(currentDate.getDate() + interval);
         break;
       case 'weekly':
-        nextDate.setDate(currentDate.getDate() + (7 * interval));
+        nextDate.setDate(currentDate.getDate() + 7 * interval);
         break;
       case 'monthly':
         nextDate.setMonth(currentDate.getMonth() + interval);
@@ -250,17 +416,23 @@ class FinanceService {
         break;
     }
 
-    return nextDate.toISOString().split('T')[0];
+    const yy = nextDate.getFullYear();
+    const mm = String(nextDate.getMonth() + 1).padStart(2, '0');
+    const dd = String(nextDate.getDate()).padStart(2, '0');
+    return `${yy}-${mm}-${dd}`;
   }
 
   async createExpense(dto: CreateExpenseDto): Promise<Expense> {
     const dateVal = dto.date || new Date().toISOString().split('T')[0];
+    const today = new Date().toISOString().split('T')[0];
     const isRecurring = dto.is_recurring ? 1 : 0;
     const recurrenceType = dto.recurrence_type || null;
     const recurrenceInterval = dto.recurrence_interval ?? 1;
-    const nextOccurrence = dto.is_recurring && dto.recurrence_type && dto.date
-      ? this.calculateNextOccurrence(dto.date, dto.recurrence_type, recurrenceInterval)
-      : null;
+    // Never schedule next_occurrence in the past — avoids backfill floods on late registration
+    const nextOccurrence =
+      dto.is_recurring && dto.recurrence_type
+        ? this.firstOccurrenceAfter(dateVal, dto.recurrence_type, recurrenceInterval, today)
+        : null;
 
     await this.db.run(
       'INSERT INTO expenses (date, category, amount, notes, user_id, is_recurring, recurrence_type, recurrence_interval, next_occurrence_date, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)',
@@ -347,10 +519,18 @@ class FinanceService {
       const finalRecurrenceType = dto.recurrence_type !== undefined ? dto.recurrence_type : existing.recurrence_type;
       const finalRecurrenceInterval = dto.recurrence_interval !== undefined ? dto.recurrence_interval : (existing.recurrence_interval || 1);
       const finalDate = dto.date !== undefined ? dto.date : existing.date;
+      const today = new Date().toISOString().split('T')[0];
 
       if (finalIsRecurring && finalRecurrenceType && finalDate) {
         updates.push('next_occurrence_date = ?');
-        params.push(this.calculateNextOccurrence(finalDate, finalRecurrenceType, finalRecurrenceInterval));
+        params.push(
+          this.firstOccurrenceAfter(
+            finalDate,
+            finalRecurrenceType as 'daily' | 'weekly' | 'monthly' | 'yearly',
+            Number(finalRecurrenceInterval) > 0 ? Number(finalRecurrenceInterval) : 1,
+            today,
+          ),
+        );
       } else {
         updates.push('next_occurrence_date = ?');
         params.push(null);
@@ -482,6 +662,12 @@ class FinanceService {
     from?: string;
     to?: string;
   }): Promise<ProfitSummary> {
+    try {
+      await this.processDueRecurringExpenses();
+    } catch (err) {
+      console.error('[FINANCE] processDueRecurringExpenses failed (P&L):', err);
+    }
+
     const fromDate = filters?.from || new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
     const toDate = filters?.to || new Date().toISOString().split('T')[0];
 
@@ -549,6 +735,18 @@ export function getExpenses(
   ...args: Parameters<FinanceService['getExpenses']>
 ): ReturnType<FinanceService['getExpenses']> {
   return requireFinance().getExpenses(...args);
+}
+
+export function getRecurringExpenses(
+  ...args: Parameters<FinanceService['getRecurringExpenses']>
+): ReturnType<FinanceService['getRecurringExpenses']> {
+  return requireFinance().getRecurringExpenses(...args);
+}
+
+export function processDueRecurringExpenses(
+  ...args: Parameters<FinanceService['processDueRecurringExpenses']>
+): ReturnType<FinanceService['processDueRecurringExpenses']> {
+  return requireFinance().processDueRecurringExpenses(...args);
 }
 
 export function createExpense(

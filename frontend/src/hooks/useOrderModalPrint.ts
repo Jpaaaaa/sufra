@@ -2,6 +2,10 @@ import { fetchJson, getServerUrl } from '../utils';
 import { showToast } from '../components/ui/Toast';
 import { showPasswordDialog } from '../components/ui/PasswordDialog';
 import { getOrderReceiptTotals } from '../utils/order-totals';
+import { expandOrdersForCustomerReceipt } from '../utils/map-receipt-print-items';
+import { groupExpandedItemsByKitchen } from '../utils/order-trays';
+import { mapKitchenPrintItems } from '../utils/map-kitchen-print-items';
+import { orderDisplayNumber } from '../utils/order-display-number';
 import { APP_BRAND_NAME } from '../lib/brand';
 import type { ExistingOrder } from './useOrderModalTypes';
 import type { TableEntity } from '../utils';
@@ -74,7 +78,8 @@ export function createOrderModalPrintHandlers(
   setExistingOrders: (orders: ExistingOrder[]) => void,
   appliedDiscount: { percent: number; amount: number } | null,
   tableTotal: number,
-  user: UserRole | undefined
+  user: UserRole | undefined,
+  hall?: { name?: string; floor_id?: number | null; floor?: { name?: string; number?: number } | null } | null,
 ) {
   const executePrintOrder = async (orderId: number) => {
     try {
@@ -84,19 +89,63 @@ export function createOrderModalPrintHandlers(
         return;
       }
 
-      let hallName = 'القاعة';
-      if (table.hall_id) {
+      let hallName = hall?.name || 'القاعة';
+      let floorName: string | null = null;
+
+      // Prefer floor already attached to the open hall (Orders page has it)
+      if (hall?.floor?.name) {
+        floorName = hall.floor.name;
+      } else if (hall?.floor?.number != null) {
+        floorName = `الطابق ${hall.floor.number}`;
+      }
+
+      const hallId = table.hall_id ?? null;
+      if (hallId) {
         try {
           const serverUrl = getServerUrl();
-          if (window.sufra?.halls?.findOne) {
-            const hall = await window.sufra.halls.findOne(table.hall_id);
-            hallName = hall?.name || 'القاعة';
-          } else {
-            const hall = await fetchJson<any>(`${serverUrl}/halls/${table.hall_id}`);
-            hallName = hall?.name || 'القاعة';
+          const hallRow = window.sufra?.halls?.findOne
+            ? await window.sufra.halls.findOne(hallId)
+            : await fetchJson<any>(`${serverUrl}/halls/${hallId}`);
+          if (hallRow?.name) hallName = hallRow.name;
+
+          if (!floorName) {
+            if (hallRow?.floor?.name) {
+              floorName = hallRow.floor.name;
+            } else if (hallRow?.floor?.number != null || hallRow?.floor?.floor_number != null) {
+              floorName = `الطابق ${hallRow.floor.number ?? hallRow.floor.floor_number}`;
+            } else {
+              const floorId = hallRow?.floor_id ?? hall?.floor_id ?? null;
+              if (floorId) {
+                const floorRow = window.sufra?.floors?.findOne
+                  ? await window.sufra.floors.findOne(floorId)
+                  : await fetchJson<any>(`${serverUrl}/floors/${floorId}`);
+                if (floorRow?.name) {
+                  floorName = floorRow.name;
+                } else if (floorRow?.floor_number != null || floorRow?.number != null) {
+                  floorName = `الطابق ${floorRow.floor_number ?? floorRow.number}`;
+                }
+              }
+            }
           }
         } catch {
-          /* use default */
+          /* keep resolved values */
+        }
+      }
+
+      // Last resort: floor_id on the hall prop without nested floor
+      if (!floorName && hall?.floor_id) {
+        try {
+          const serverUrl = getServerUrl();
+          const floorRow = window.sufra?.floors?.findOne
+            ? await window.sufra.floors.findOne(hall.floor_id)
+            : await fetchJson<any>(`${serverUrl}/floors/${hall.floor_id}`);
+          if (floorRow?.name) {
+            floorName = floorRow.name;
+          } else if (floorRow?.floor_number != null || floorRow?.number != null) {
+            floorName = `الطابق ${floorRow.floor_number ?? floorRow.number}`;
+          }
+        } catch {
+          /* ignore */
         }
       }
 
@@ -104,8 +153,10 @@ export function createOrderModalPrintHandlers(
 
       const basePrintData = {
         orderId: order.id,
+        displayNumber: orderDisplayNumber(order),
         table: table.number || table.id || 0,
         hall: hallName,
+        floor: floorName,
         totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
         printTime: new Date().toISOString(),
@@ -115,12 +166,7 @@ export function createOrderModalPrintHandlers(
         cashier: user?.username,
       };
 
-      const kitchenGroups = new Map<number | null, any[]>();
-      order.items.forEach((item: any) => {
-        const kid = item.kitchen_id ?? null;
-        if (!kitchenGroups.has(kid)) kitchenGroups.set(kid, []);
-        kitchenGroups.get(kid)!.push(item);
-      });
+      const kitchenGroups = groupExpandedItemsByKitchen(order.items ?? []);
 
       const kitchenJobs: Array<{
         kitchenId: number;
@@ -130,15 +176,7 @@ export function createOrderModalPrintHandlers(
 
       for (const [kitchenId, items] of kitchenGroups) {
         if (kitchenId === null) continue;
-        const mappedItems = items.map((item: any) => ({
-          id: item.id,
-          item_name: item.item_name || item.name || 'صنف',
-          quantity: item.quantity || 1,
-          price: item.price || 0,
-          kitchen_id: item.kitchen_id ?? null,
-          service_type: item.service_type || order.order_type || 'dine-in',
-          options_json: item.options_json ?? null,
-        }));
+        const mappedItems = mapKitchenPrintItems(items, order.order_type || 'dine-in');
         kitchenJobs.push({
           kitchenId,
           items,
@@ -204,28 +242,37 @@ export function createOrderModalPrintHandlers(
     });
   };
 
-  const handlePrintReceipt = async (hallName: string, tableName: string) => {
+  const handlePrintReceipt = async (hallName: string, _tableName: string) => {
     await withPrintPasswordCheck(user, async () => {
       try {
-      const totalItems = existingOrders.reduce((sum, o) => sum + o.items.length, 0);
+      const totalItems = existingOrders.reduce(
+        (sum, o) => sum + (o.items ?? []).filter((i: any) => i.parent_order_item_id == null).length,
+        0,
+      );
       const subtotalBeforeDiscount = existingOrders.reduce((sum, order) => {
-        return sum + order.items.reduce((itemSum: number, item: any) => itemSum + (item.price || 0) * (item.quantity || 1), 0);
+        return (
+          sum +
+          (order.items ?? []).reduce((itemSum: number, item: any) => {
+            if (item.parent_order_item_id != null) return itemSum;
+            return itemSum + (item.price || 0) * (item.quantity || 1);
+          }, 0)
+        );
       }, 0);
 
-      const receiptItems = existingOrders.flatMap((order: any) =>
-        order.items.map((item: any) => ({
-          order_id: order.id,
-          item_name: item.item_name || item.name || 'صنف',
-          quantity: item.quantity || 1,
-          price: item.price || 0,
-          service_type: item.service_type || order.order_type || 'dine-in',
-        }))
-      );
+      const receiptItems = expandOrdersForCustomerReceipt(existingOrders);
+
+      const orderIds = existingOrders
+        .map((o) => o.id)
+        .filter((id): id is number => id != null && Number.isFinite(Number(id)));
+      const displayNums = existingOrders.map((o) => orderDisplayNumber(o));
+      const invoiceNumber = displayNums.length > 0 ? displayNums.join(' + ') : '0';
 
       const printData = {
-        orderId: existingOrders[0]?.id || 0,
-        invoiceNumber: existingOrders[0]?.id || 0,
-        table: parseInt(tableName) || table.id || 0,
+        orderId: orderIds.length === 1 ? orderIds[0] : undefined,
+        displayNumber: displayNums.length === 1 ? displayNums[0] : undefined,
+        invoiceNumber,
+        // Use table.number (display number), not table.id or parseInt(name)
+        table: table.number || table.id || 0,
         hall: hallName || 'القاعة',
         items: receiptItems,
         totals: {

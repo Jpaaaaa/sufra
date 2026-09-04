@@ -2,8 +2,12 @@ import { getServerUrl, fetchJson, type Kitchen } from '../../utils';
 import { showToast } from '../../components/ui/Toast';
 import { showPasswordDialog } from '../../components/ui/PasswordDialog';
 import { getOrderReceiptTotals } from '../../utils/order-totals';
+import { expandOrderForCustomerReceipt } from '../../utils/map-receipt-print-items';
 import { APP_BRAND_NAME } from '../../lib/brand';
 import type { ExistingOrder } from '../../hooks/useOrderModal';
+import { groupExpandedItemsByKitchen } from '../../utils/order-trays';
+import { mapKitchenPrintItems } from '../../utils/map-kitchen-print-items';
+import { orderDisplayNumber } from '../../utils/order-display-number';
 
 type OrderType = 'pickup' | 'delivery';
 
@@ -41,6 +45,7 @@ export function createOrdersPagePrintHandlers(
 
       const basePrintData = {
         orderId: order.id,
+        displayNumber: orderDisplayNumber(order),
         table: 0,
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
         totals: receiptTotals,
@@ -49,32 +54,22 @@ export function createOrdersPagePrintHandlers(
         restaurantName: APP_BRAND_NAME,
         note: order.note || null,
         cashier: user?.username,
-        ...(orderType === 'delivery' && {
+        service_type: orderType,
+        ...((orderType === 'pickup' || orderType === 'delivery') && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
-          customer_address: order.customer_address || null,
+          ...(orderType === 'delivery'
+            ? { customer_address: order.customer_address || null }
+            : {}),
         }),
       };
 
-      const kitchenGroups = new Map<number | null, any[]>();
-      order.items.forEach((item: any) => {
-        const kitchenId = item.kitchen_id ?? null;
-        if (!kitchenGroups.has(kitchenId)) kitchenGroups.set(kitchenId, []);
-        kitchenGroups.get(kitchenId)!.push(item);
-      });
+      const kitchenGroups = groupExpandedItemsByKitchen(order.items ?? []);
 
       const results: { kitchen_id: number; success: boolean }[] = [];
       for (const [kitchenId, items] of kitchenGroups) {
         if (kitchenId === null) continue;
-        const mappedItems = items.map((item: any) => ({
-          id: item.id,
-          item_name: item.item_name || item.name || 'صنف',
-          quantity: item.quantity || 1,
-          price: item.price || 0,
-          kitchen_id: item.kitchen_id ?? null,
-          service_type: item.service_type || orderType,
-          options_json: item.options_json ?? null,
-        }));
+        const mappedItems = mapKitchenPrintItems(items, orderType);
         const kitchenPrintData = {
           ...basePrintData,
           items: mappedItems,
@@ -153,16 +148,11 @@ export function createOrdersPagePrintHandlers(
 
     try {
       const receiptTotals = getOrderReceiptTotals(order);
-      const receiptItems = order.items.map((item: any) => ({
-        order_id: order.id,
-        item_name: item.item_name || item.name || 'صنف',
-        quantity: item.quantity || 1,
-        price: item.price || 0,
-        service_type: item.service_type || orderType,
-      }));
+      const receiptItems = expandOrderForCustomerReceipt(order);
       const receiptData = {
         orderId: order.id,
-        invoiceNumber: order.id,
+        displayNumber: orderDisplayNumber(order),
+        invoiceNumber: orderDisplayNumber(order),
         table: 0,
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
         items: receiptItems,
@@ -172,10 +162,12 @@ export function createOrdersPagePrintHandlers(
         service_type: orderType,
         thankYouMessage: 'شكراً لزيارتكم',
         cashier: user?.username,
-        ...(orderType === 'delivery' && {
+        ...((orderType === 'pickup' || orderType === 'delivery') && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
-          customer_address: order.customer_address || null,
+          ...(orderType === 'delivery'
+            ? { customer_address: order.customer_address || null }
+            : {}),
         }),
       };
 
@@ -214,16 +206,11 @@ export function createOrdersPagePrintHandlers(
 
     try {
       const receiptTotals = getOrderReceiptTotals(order);
-      const receiptItems = order.items.map((item: any) => ({
-        order_id: order.id,
-        item_name: item.item_name || item.name || 'صنف',
-        quantity: item.quantity || 1,
-        price: item.price || 0,
-        service_type: item.service_type || 'dine-in',
-      }));
+      const receiptItems = expandOrderForCustomerReceipt(order);
       const receiptData = {
         orderId: order.id,
-        invoiceNumber: order.id,
+        displayNumber: orderDisplayNumber(order),
+        invoiceNumber: orderDisplayNumber(order),
         table: (order as any).table_number || (order as any).table_id || 0,
         hall: (order as any).hall_name || 'الصالة',
         floor: (order as any).floor_name || null,

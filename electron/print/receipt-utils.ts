@@ -16,10 +16,18 @@ export interface KitchenPrintItem {
   /** Per-item kitchen note */
   note?: string | null;
   modifiers?: string[];
+  /** Group/tray container row on kitchen ticket */
+  is_tray_header?: boolean;
+  /** Product nested under a group on kitchen ticket */
+  is_tray_child?: boolean;
+  /** Tray/group number when item belongs to a set (null for singles) */
+  tray_number?: number | null;
 }
 
 export interface OrderPrintData {
   orderId: number;
+  /** Daily ticket # shown on kitchen (falls back to orderId when omitted). */
+  displayNumber?: number | null;
   table: number | string;
   hall: string;
   items: KitchenPrintItem[];
@@ -60,10 +68,17 @@ export interface ReceiptPrintItem {
   service_type?: ServiceType | null;
   discount?: number | null;
   options_json?: string | PrintItemOption[] | null;
+  /** Group/tray container — billed as one line */
+  is_tray_header?: boolean;
+  /** Product nested under a group (detail only; price included in header) */
+  is_tray_child?: boolean;
+  tray_number?: number | null;
 }
 
 export interface ReceiptPrintData {
   orderId?: number;
+  /** Daily ticket # for single-order label (falls back to orderId). */
+  displayNumber?: number | null;
   invoiceNumber?: string | number | null;
   table: number | string;
   hall: string;
@@ -78,6 +93,8 @@ export interface ReceiptPrintData {
   timestamp: string;
   restaurantName: string;
   logoUrl?: string;
+  /** When true, do not fall back to the built-in Sufra logo. */
+  skipDefaultLogo?: boolean;
   address?: string | null;
   phone?: string | null;
   taxNumber?: string | null;

@@ -14,6 +14,7 @@ import { showPasswordDialog } from '../components/ui/PasswordDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffers } from './useOffers';
 import { APP_BRAND_NAME } from '../lib/brand';
+import { orderDisplayNumber } from '../utils/order-display-number';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
 import { isHappyHourActiveNow } from '../utils/offer-pricing';
 import { isWeekdayIncluded } from '../utils/weekdays';
@@ -24,10 +25,20 @@ import {
   buildCartItem,
   cartSubtotal,
   getCartLineKey,
+  mergeIntoTrayChildren,
+  trayUnitPrice,
   updateCartLine,
   mapCartItemToOrderPayload,
-  orderItemToCartLine,
 } from './cart-item-utils';
+import {
+  buildTrayCartItem,
+  nextTrayNumber,
+  removeCartLine,
+  findCartLine,
+  orderItemsToCartLines,
+  groupExpandedItemsByKitchen,
+} from '../utils/order-trays';
+import { mapKitchenPrintItems } from '../utils/map-kitchen-print-items';
 import { withOrderCreator } from '../utils/order-payload';
 
 export function usePickupOrderModal() {
@@ -39,6 +50,7 @@ export function usePickupOrderModal() {
   const kitchens = useKitchensStore((state) => state.kitchens);
   const [loadingItems, setLoadingItems] = useState(false);
   const [selectedItems, setSelectedItems] = useState<CartItem[]>([]);
+  const [activeTrayId, setActiveTrayId] = useState<string | null>(null);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [existingOrders, setExistingOrders] = useState<ExistingOrder[]>([]);
@@ -190,23 +202,50 @@ export function usePickupOrderModal() {
   }, [menuItems, shelfItems, selectedCategory, debouncedSearch, offers.featuredItems, offers.combos, offers.happyHours]);
 
   const addItemToOrder = useCallback((item: Item, extras?: AddItemExtras) => {
-    const s = extras?.shelfItem;
+    const sItem = extras?.shelfItem;
     setSelectedItems((prev) => {
       const next = buildCartItem(item, extras ?? {}, 'pickup');
       const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
+
+      if (activeTrayId) {
+        const tray = prev.find((si) => si.cartLineId === activeTrayId && si.lineKind === 'tray');
+        if (tray) {
+          const children = tray.children ?? [];
+          const existingChild = children.find(
+            (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+          );
+          if (existingChild && sItem && existingChild.quantity + 1 > sItem.quantity) {
+            showToast(`الكمية المتوفرة: ${sItem.quantity}`, 'error');
+            return prev;
+          }
+          if (sItem && !existingChild && sItem.quantity === 0) {
+            showToast('نفذت الكمية', 'error');
+            return prev;
+          }
+          const newChildren = mergeIntoTrayChildren(children, next);
+          return prev.map((si) =>
+            si.cartLineId === activeTrayId
+              ? { ...si, children: newChildren, linePrice: trayUnitPrice(newChildren) }
+              : si,
+          );
+        }
+      }
+
       const existing = prev.find(
-        (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+        (si) =>
+          si.lineKind !== 'tray' &&
+          getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
       );
       if (existing) {
-        if (s && existing.quantity + 1 > s.quantity) {
-          showToast(`الكمية المتوفرة: ${s.quantity}`, 'error');
+        if (sItem && existing.quantity + 1 > sItem.quantity) {
+          showToast(`الكمية المتوفرة: ${sItem.quantity}`, 'error');
           return prev;
         }
         return prev.map((si) =>
           si.cartLineId === existing.cartLineId ? { ...si, quantity: si.quantity + 1 } : si,
         );
       }
-      if (s && s.quantity === 0) {
+      if (sItem && sItem.quantity === 0) {
         showToast('نفذت الكمية', 'error');
         return prev;
       }
@@ -215,9 +254,22 @@ export function usePickupOrderModal() {
     if (ordersExpanded && existingOrders.length > 0) {
       setOrdersExpanded(false);
     }
+  }, [ordersExpanded, existingOrders.length, activeTrayId]);
+
+  const addTrayToOrder = useCallback(() => {
+    setSelectedItems((prev) => {
+      const tray = buildTrayCartItem(nextTrayNumber(prev), 'pickup');
+      setActiveTrayId(tray.cartLineId);
+      return [...prev, tray];
+    });
+    if (ordersExpanded && existingOrders.length > 0) setOrdersExpanded(false);
   }, [ordersExpanded, existingOrders.length]);
 
-  // Add shelf item by barcode
+  const selectTray = useCallback((cartLineId: string | null) => {
+    setActiveTrayId((prev) => (prev === cartLineId ? null : cartLineId));
+  }, []);
+
+    // Add shelf item by barcode
   const addShelfItemByBarcode = useCallback(async (barcode: string) => {
     try {
       const serverUrl = getServerUrl();
@@ -262,15 +314,17 @@ export function usePickupOrderModal() {
   }, [addItemToOrder, selectedItems]);
 
   const removeItemFromOrder = useCallback((cartLineId: string) => {
-    setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
+    setSelectedItems((prev) => removeCartLine(prev, cartLineId));
+    setActiveTrayId((prev) => (prev === cartLineId ? null : prev));
   }, []);
 
   const updateQuantity = useCallback((cartLineId: string, quantity: number) => {
     if (quantity <= 0) {
-      setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
+      setSelectedItems((prev) => removeCartLine(prev, cartLineId));
+      setActiveTrayId((prev) => (prev === cartLineId ? null : prev));
     } else {
       setSelectedItems((prev) => {
-        const line = prev.find((si) => si.cartLineId === cartLineId);
+        const line = findCartLine(prev, cartLineId);
         if (line?.shelfItem && quantity > line.shelfItem.quantity) {
           showToast(`الكمية المتوفرة: ${line.shelfItem.quantity}`, 'error');
           return prev;
@@ -282,11 +336,7 @@ export function usePickupOrderModal() {
 
   const updateCartLineOptions = useCallback(
     (cartLineId: string, selectedOptions: import('../lib/item-options').SelectedItemOptions, linePrice: number) => {
-      setSelectedItems((prev) =>
-        prev.map((si) =>
-          si.cartLineId === cartLineId ? { ...si, selectedOptions, linePrice } : si,
-        ),
-      );
+      setSelectedItems((prev) => updateCartLine(prev, cartLineId, { selectedOptions, linePrice }));
     },
     [],
   );
@@ -314,14 +364,11 @@ export function usePickupOrderModal() {
     setMode('EDIT');
     setEditingOrder(order);
     
-    // Map order items to CartItems
-    const orderItems: CartItem[] = order.items
-      .map((item: any) => {
-        const line = orderItemToCartLine(item, items);
-        if (line) line.order_type = 'pickup';
-        return line;
-      })
-      .filter((x): x is CartItem => x != null);
+    const orderItems: CartItem[] = orderItemsToCartLines(order.items ?? [], items).map((line) => ({
+      ...line,
+      order_type: 'pickup' as const,
+      children: line.children?.map((c) => ({ ...c, order_type: 'pickup' as const })),
+    }));
     
     setSelectedItems(orderItems);
     
@@ -421,6 +468,7 @@ export function usePickupOrderModal() {
       // Build base print data structure
       const basePrintData = {
         orderId: order.id,
+        displayNumber: orderDisplayNumber(order),
         table: 0,
         hall: 'سفري',
         totals: {
@@ -433,31 +481,18 @@ export function usePickupOrderModal() {
         restaurantName: APP_BRAND_NAME,
         note: order.note || null,
         printTime: new Date().toISOString(),
+        customer_name: order.customer_name || null,
+        customer_phone: order.customer_phone || null,
       };
       
-      // Group items by kitchen and print each
-      const kitchenGroups = new Map<number | null, any[]>();
-      order.items.forEach((item: any) => {
-        const kitchenId = item.kitchen_id ?? null;
-        if (!kitchenGroups.has(kitchenId)) {
-          kitchenGroups.set(kitchenId, []);
-        }
-        kitchenGroups.get(kitchenId)!.push(item);
-      });
+      // Group items by kitchen (expand trays) and print each
+      const kitchenGroups = groupExpandedItemsByKitchen(order.items ?? []);
 
       const kitchenJobs: Array<{ kitchenId: number; items: any[]; kitchenPrintData: any }> = [];
 
       for (const [kitchenId, items] of kitchenGroups) {
         if (kitchenId === null) continue;
-        const mappedItems = items.map((item: any) => ({
-          id: item.id,
-          item_name: item.item_name || item.name || 'صنف',
-          quantity: item.quantity || 1,
-          price: item.price || 0,
-          kitchen_id: item.kitchen_id ?? null,
-          service_type: item.service_type || 'pickup',
-          options_json: item.options_json ?? null,
-        }));
+        const mappedItems = mapKitchenPrintItems(items, 'pickup');
         kitchenJobs.push({
           kitchenId,
           items,
@@ -535,6 +570,10 @@ export function usePickupOrderModal() {
 
   const handleSubmitOrder = useCallback(async () => {
     if (selectedItems.length === 0) return;
+    if (selectedItems.some((si) => si.lineKind === 'tray' && !(si.children?.length))) {
+      showToast('المجموعة يجب أن تحتوي على منتج واحد على الأقل', 'error');
+      return;
+    }
 
     try {
       const payload = withOrderCreator(
@@ -619,6 +658,7 @@ export function usePickupOrderModal() {
     kitchens,
     existingOrders,
     selectedItems,
+    activeTrayId,
     loadingItems,
     loadingOrders,
     selectedCategory,
@@ -643,12 +683,15 @@ export function usePickupOrderModal() {
     setCustomerPhone,
     handleApplyDiscount,
     addItemToOrder,
+    addTrayToOrder,
+    selectTray,
     addShelfItemByBarcode,
     removeItemFromOrder,
     updateQuantity,
     updateCartLineOptions,
     clearCart: () => {
       setSelectedItems([]);
+      setActiveTrayId(null);
       setNote('');
     },
     handleSubmitOrder,

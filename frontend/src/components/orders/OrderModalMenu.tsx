@@ -8,6 +8,7 @@ import { CategoryTabs } from './CategoryTabs';
 import { ItemSelector } from './ItemSelector';
 import { useOffers } from '../../hooks/useOffers';
 import { buildCategoryMenuActiveMap } from '../../utils/item-order-availability';
+import { orderDisplayNumber } from '../../utils/order-display-number';
 
 interface OrderModalMenuProps {
   items: Item[];
@@ -17,7 +18,7 @@ interface OrderModalMenuProps {
   selectedCategory: number | null;
   searchQuery: string;
   loadingItems: boolean;
-  editingOrder: { id: number } | null;
+  editingOrder: { id: number; display_number?: number | null } | null;
   onSetSelectedCategory: (category: number | null) => void;
   onSetSearchQuery: (query: string) => void;
   onAddItem: (item: Item, extras?: import('../../hooks/cart-item-utils').AddItemExtras) => void;
@@ -70,7 +71,7 @@ function OrderModalMenuComponent({
         <div className="mb-3 rounded-xl border border-cyber-aqua bg-cyber-aqua/10 p-3 shadow-sm flex-shrink-0 md:mb-0 md:p-0.5 md:rounded-md xl:mb-3 xl:p-3 xl:rounded-xl">
           <div className="flex items-center justify-between">
             <span className="text-[15px] sm:text-[16px] md:text-[11px] xl:text-[16px] leading-normal font-bold text-cyber-aqua truncate">
-              {t('orders.menuModalEditing', { id: editingOrder.id })}
+              {t('orders.menuModalEditing', { id: orderDisplayNumber(editingOrder) })}
             </span>
             <button
               type="button"

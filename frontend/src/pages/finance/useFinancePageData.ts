@@ -11,6 +11,7 @@ import {
 import {
   fetchRevenues,
   fetchExpenses,
+  fetchRecurringExpenses,
   fetchProfitAndLoss,
   formatDate,
 } from '../../lib/finance/utils';
@@ -25,6 +26,7 @@ export function useFinancePageData() {
   const [filters, setFilters] = useState<FinanceFilters>(DEFAULT_FILTERS);
   const [revenues, setRevenues] = useState<Revenue[]>([]);
   const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [recurringExpenses, setRecurringExpenses] = useState<Expense[]>([]);
   const [profit, setProfit] = useState<ProfitSummary | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [hasAutoSynced, setHasAutoSynced] = useState(false);
@@ -36,14 +38,19 @@ export function useFinancePageData() {
       try {
         const to = range.to || range.from || new Date().toISOString().split('T')[0];
         const fullRange = { ...range, to };
-        const [revenuesData, expensesData, profitData] = await Promise.all([
+        const [revenuesData, expensesData, profitData, recurringResult] = await Promise.all([
           fetchRevenues(fullRange),
           fetchExpenses(fullRange),
           fetchProfitAndLoss(fullRange),
+          fetchRecurringExpenses().catch((err) => {
+            console.error('Failed to load recurring expenses:', err);
+            return [] as Expense[];
+          }),
         ]);
         setRevenues(revenuesData);
         setExpenses(expensesData);
         setProfit(profitData);
+        setRecurringExpenses(recurringResult);
       } catch (error) {
         console.error('Failed to load finance data:', error);
         showToast(t('finance.toastLoadFailed'), 'error');
@@ -94,6 +101,8 @@ export function useFinancePageData() {
     setRevenues,
     expenses,
     setExpenses,
+    recurringExpenses,
+    setRecurringExpenses,
     profit,
     isLoading,
     hasAutoSynced,

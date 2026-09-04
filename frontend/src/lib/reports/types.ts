@@ -48,6 +48,8 @@ export interface EmployeeSummary {
 
 export interface OrderReport {
   id: number;
+  /** Daily ticket # when available from order rows. */
+  display_number?: number | null;
   openTime: string;
   closeTime: string | null;
   itemCount: number;

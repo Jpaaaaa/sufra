@@ -8,6 +8,7 @@ import { getServerUrl, fetchJson, Hall } from '../../utils';
 import { Clock } from 'lucide-react';
 import { useOrderSocket } from '../../hooks/useOrderSocket';
 import { homeUi } from './home-ui';
+import { orderDisplayNumber } from '../../utils/order-display-number';
 
 interface RecentOrder {
   id: string;
@@ -21,6 +22,7 @@ interface RecentOrder {
 
 interface Order {
   id: number;
+  display_number?: number | null;
   table_id: number;
   status: string;
   total: number;
@@ -151,7 +153,7 @@ function RecentOrders() {
           if (order.hall_name) parts.push(order.hall_name);
           return {
             id: order.id.toString(),
-            orderId: `#${order.id}`,
+            orderId: `#${orderDisplayNumber(order)}`,
             tableNumber: parts.join(' · '),
             total: order.total || 0,
             status: mapOrderStatus(order.status),

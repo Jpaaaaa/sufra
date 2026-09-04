@@ -106,17 +106,77 @@ export function buildFinanceGeneralPdfHtml(opts: {
 </html>`;
 }
 
-/** Open a print window so the user can save as PDF. */
-export function printFinanceHtml(html: string): void {
-  const printWindow = window.open('', '_blank', 'noopener,noreferrer,width=900,height=700');
-  if (!printWindow) {
-    throw new Error('POPUP_BLOCKED');
+export type FinancePdfExportResult = {
+  success: boolean;
+  filePath?: string;
+  fileName?: string;
+  error?: string;
+};
+
+/**
+ * Save finance HTML as PDF via Electron IPC (no popup).
+ * Falls back to a hidden iframe print dialog when IPC is unavailable.
+ */
+export async function saveFinanceHtmlPdf(
+  html: string,
+  fileName?: string,
+): Promise<FinancePdfExportResult> {
+  const sufra = (window as any).sufra;
+  if (sufra?.export?.htmlPdf) {
+    const result = await sufra.export.htmlPdf({ html, fileName });
+    if (!result?.success) {
+      throw new Error(result?.error || 'PDF_EXPORT_FAILED');
+    }
+    return result as FinancePdfExportResult;
   }
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-  }, 300);
+
+  // Browser / fallback: print via hidden iframe (no window.open)
+  await new Promise<void>((resolve, reject) => {
+    const iframe = document.createElement('iframe');
+    iframe.setAttribute('aria-hidden', 'true');
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;opacity:0;pointer-events:none';
+    document.body.appendChild(iframe);
+
+    const cleanup = () => {
+      try {
+        document.body.removeChild(iframe);
+      } catch {
+        /* ignore */
+      }
+    };
+
+    try {
+      const doc = iframe.contentDocument || iframe.contentWindow?.document;
+      const win = iframe.contentWindow;
+      if (!doc || !win) {
+        cleanup();
+        reject(new Error('POPUP_BLOCKED'));
+        return;
+      }
+      doc.open();
+      doc.write(html);
+      doc.close();
+      setTimeout(() => {
+        try {
+          win.focus();
+          win.print();
+          setTimeout(cleanup, 800);
+          resolve();
+        } catch (err) {
+          cleanup();
+          reject(err);
+        }
+      }, 350);
+    } catch (err) {
+      cleanup();
+      reject(err);
+    }
+  });
+
+  return { success: true };
+}
+
+/** @deprecated Use saveFinanceHtmlPdf */
+export function printFinanceHtml(html: string): void {
+  void saveFinanceHtmlPdf(html);
 }

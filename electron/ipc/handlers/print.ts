@@ -1,7 +1,7 @@
 /**
  * IPC handlers: printers, print, export-pdf.
  */
-import { ipcMain, BrowserWindow, app } from 'electron';
+import { ipcMain, BrowserWindow, app, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import {
@@ -24,6 +24,10 @@ import {
 import {
   readRecipePrintBranding,
   writeRecipePrintBranding,
+  saveRestaurantLogoFromFile,
+  removeRestaurantLogo,
+  getRestaurantLogoPreviewBase64,
+  mergeCustomerReceiptBranding,
 } from '../../recipe-print-branding-store';
 import { buildRecipePreviewSample } from '../../print/recipe-preview-sample';
 import { invalidateWindowsPrinterCache } from '../../print/windows-printer-cache';
@@ -128,7 +132,8 @@ async function renderSamplePng(
 ): Promise<Buffer> {
   if (kind === 'customer') {
     const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
-    return renderReceiptToPng(customerTestReceiptData());
+    const merged = await mergeCustomerReceiptBranding(customerTestReceiptData());
+    return renderReceiptToPng(merged);
   }
   const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
   return renderOrderToPng(kitchenTestPrintData(kitchenName));
@@ -165,6 +170,51 @@ export function registerPrintHandlers() {
     async (_, data: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
       writeRecipePrintBranding(data ?? {}),
   );
+  ipcMain.handle('recipePrint:pickLogo', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0];
+      const options: Electron.OpenDialogOptions = {
+        title: 'اختر شعار المطعم',
+        filters: [
+          { name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] },
+        ],
+        properties: ['openFile'],
+      };
+      const result = win
+        ? await dialog.showOpenDialog(win, options)
+        : await dialog.showOpenDialog(options);
+      if (result.canceled || !result.filePaths[0]) {
+        return { success: false as const, error: 'CANCELLED' };
+      }
+      const branding = await saveRestaurantLogoFromFile(result.filePaths[0]);
+      const preview = await getRestaurantLogoPreviewBase64();
+      return {
+        success: true as const,
+        branding,
+        logoPreviewBase64: preview,
+      };
+    } catch (err: any) {
+      console.error('[recipePrint:pickLogo]', err);
+      return { success: false as const, error: err?.message || 'فشل رفع الشعار' };
+    }
+  });
+  ipcMain.handle('recipePrint:removeLogo', async () => {
+    try {
+      const branding = await removeRestaurantLogo();
+      return { success: true as const, branding };
+    } catch (err: any) {
+      console.error('[recipePrint:removeLogo]', err);
+      return { success: false as const, error: err?.message || 'فشل حذف الشعار' };
+    }
+  });
+  ipcMain.handle('recipePrint:logoPreview', async () => {
+    try {
+      const preview = await getRestaurantLogoPreviewBase64();
+      return { success: true as const, logoPreviewBase64: preview };
+    } catch (err: any) {
+      return { success: false as const, error: err?.message || 'فشل تحميل الشعار' };
+    }
+  });
   ipcMain.handle(
     'recipePrint:preview',
     async (_, branding: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) => {
@@ -273,7 +323,8 @@ export function registerPrintHandlers() {
   ipcMain.handle('print:receipt', async (_event, receiptData: any) => {
     try {
       const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
-      const png = await renderReceiptToPng(receiptData);
+      const merged = await mergeCustomerReceiptBranding(receiptData ?? {});
+      const png = await renderReceiptToPng(merged);
       const settings = await printersGetAllSettings();
       const setting = settings.find(
         (s: any) => s.kitchen_id === null && s.printer_type === 'customer' && s.is_active,
@@ -351,6 +402,78 @@ export function registerPrintHandlers() {
         const downloadsPath = app.getPath('downloads');
         const baseFileName = `sufra-pos-${exportData.type}-${exportData.date}.pdf`;
         const { filePath, fileName } = writePdfBufferToDownloads(downloadsPath, baseFileName, pdfBuffer);
+        return { success: true, filePath, fileName };
+      } catch (error: any) {
+        return { success: false, error: error.message || 'Unknown error during PDF export' };
+      } finally {
+        if (pdfWin) {
+          try {
+            pdfWin.close();
+          } catch {
+            /* ignore */
+          }
+          pdfWin = null;
+        }
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'export-html-pdf',
+    async (
+      _event,
+      payload: { html: string; fileName?: string },
+    ) => {
+      let pdfWin: BrowserWindow | null = null;
+      try {
+        const html = String(payload?.html || '');
+        if (!html.trim()) throw new Error('Empty HTML for PDF export');
+
+        pdfWin = new BrowserWindow({
+          show: false,
+          width: 1200,
+          height: 1600,
+          webPreferences: { nodeIntegration: false, contextIsolation: true, sandbox: false },
+        });
+        const dataUrl = `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+        const loadPromise = new Promise<void>((resolve, reject) => {
+          const timeout = setTimeout(
+            () => reject(new Error('Page load timeout after 120 seconds')),
+            120000,
+          );
+          pdfWin!.webContents.once('dom-ready', () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+          pdfWin!.webContents.once('did-fail-load', (_, __, errorDescription) => {
+            clearTimeout(timeout);
+            reject(new Error(`Page load failed: ${errorDescription}`));
+          });
+        });
+        pdfWin.loadURL(dataUrl);
+        await loadPromise;
+        await pdfWin.webContents.executeJavaScript(`
+        new Promise((resolve) => {
+          if (document.fonts?.ready) document.fonts.ready.then(resolve).catch(() => setTimeout(resolve, 1000));
+          else setTimeout(resolve, 1000);
+        })
+      `);
+        await new Promise((resolve) => setTimeout(resolve, 400));
+        const pdfBuffer = await pdfWin.webContents.printToPDF({
+          pageSize: 'A4',
+          margins: { top: 0.5, right: 0.5, bottom: 0.5, left: 0.5 },
+          printBackground: true,
+          preferCSSPageSize: false,
+        });
+        if (!pdfBuffer || pdfBuffer.length === 0) throw new Error('PDF generation returned empty buffer');
+
+        const downloadsPath = app.getPath('downloads');
+        const baseFileName = (payload.fileName || `sufra-finance-${new Date().toISOString().slice(0, 10)}.pdf`).replace(
+          /[<>:"/\\|?*]/g,
+          '-',
+        );
+        const safeName = baseFileName.toLowerCase().endsWith('.pdf') ? baseFileName : `${baseFileName}.pdf`;
+        const { filePath, fileName } = writePdfBufferToDownloads(downloadsPath, safeName, pdfBuffer);
         return { success: true, filePath, fileName };
       } catch (error: any) {
         return { success: false, error: error.message || 'Unknown error during PDF export' };

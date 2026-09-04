@@ -7,6 +7,7 @@ import {
   saveGroupsForItem,
   copyGroupsFromItem,
 } from './item-options.service';
+import { deleteFile } from './upload.service';
 
 export interface Item {
   id: number;
@@ -167,8 +168,17 @@ class ItemsService {
   }
 
   async remove(id: number): Promise<void> {
-    await this.findOne(id);
+    const existing = await this.findOne(id);
+    // Detach from order history so FK does not block delete (item_name stays on the line).
+    await this.db.run('UPDATE order_items SET item_id = NULL WHERE item_id = ?', [id]);
     await this.db.run('DELETE FROM items WHERE id = ?', [id]);
+    if (existing.image_url) {
+      try {
+        deleteFile(existing.image_url);
+      } catch {
+        // Image cleanup is best-effort; item row is already gone.
+      }
+    }
   }
 
   async copyOptionsFromItem(targetId: number, sourceId: number): Promise<Item> {

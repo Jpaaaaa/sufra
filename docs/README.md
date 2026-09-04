@@ -1,6 +1,6 @@
 # Sufra Lite POS — Documentation Hub
 
-> **Last doc review:** 2026-08-05  
+> **Last doc review:** 2026-08-09  
 > **Product:** Sufra Lite POS (Electron + LAN clients)  
 > **Vendor:** Aman Technology
 

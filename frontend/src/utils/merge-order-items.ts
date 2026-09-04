@@ -42,6 +42,7 @@ export function mergeOrderItemsAcrossOrders(
 
   for (const order of orders) {
     for (const item of order.items ?? []) {
+      if ((item as any).parent_order_item_id != null) continue;
       const key = buildMergeKey(item);
       const existing = map.get(key);
       if (existing) {

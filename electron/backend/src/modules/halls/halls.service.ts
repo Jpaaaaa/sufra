@@ -22,13 +22,34 @@ class HallsService {
 
   async findOne(id: number): Promise<Hall> {
     const row = await this.db.get(
-      'SELECT id, name, hall_number, floor_id, created_at, updated_at FROM halls WHERE id = ?',
+      `SELECT h.id, h.name, h.hall_number, h.floor_id, h.created_at, h.updated_at,
+              f.name AS floor_name, f.floor_number AS floor_number
+       FROM halls h
+       LEFT JOIN floors f ON h.floor_id = f.id
+       WHERE h.id = ?`,
       [id],
     );
     if (!row) {
       throw new NotFoundException('Hall not found');
     }
-    return row as Hall;
+    const hall = row as any;
+    return {
+      id: hall.id,
+      name: hall.name,
+      hall_number: hall.hall_number,
+      number: hall.hall_number,
+      floor_id: hall.floor_id ?? null,
+      created_at: hall.created_at,
+      updated_at: hall.updated_at,
+      floor:
+        hall.floor_id != null
+          ? {
+              id: hall.floor_id,
+              name: hall.floor_name || `الطابق ${hall.floor_number}`,
+              number: hall.floor_number,
+            }
+          : null,
+    } as Hall;
   }
 
   async create(data: { name: string; hall_number: number; floor_id?: number | null }): Promise<Hall> {

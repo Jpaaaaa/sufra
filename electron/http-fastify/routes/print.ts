@@ -87,9 +87,11 @@ export function registerPrintRoutes(ctx: FastifyRouteContext): void {
         }
 
         const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
-        const png = await renderReceiptToPng(
-          receiptData as Parameters<typeof renderReceiptToPng>[0],
+        const { mergeCustomerReceiptBranding } = await import('../../recipe-print-branding-store');
+        const merged = await mergeCustomerReceiptBranding(
+          receiptData as NonNullable<Parameters<typeof renderReceiptToPng>[0]>,
         );
+        const png = await renderReceiptToPng(merged);
         const settings = await printersGetAllSettings();
         const setting = settings.find(
           (s: any) =>

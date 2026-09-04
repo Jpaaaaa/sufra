@@ -232,6 +232,34 @@ export class DatabaseService {
     }
   }
 
+  /** Tray nesting: line_kind ('item'|'tray') + parent_order_item_id. Safe to call repeatedly. */
+  private ensureOrderItemsTrayColumns(): void {
+    const lineKindCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('order_items') WHERE name='line_kind'",
+    );
+    if (lineKindCheck && lineKindCheck.cnt === 0) {
+      try {
+        this.runSync("ALTER TABLE order_items ADD COLUMN line_kind TEXT DEFAULT 'item'");
+        this.runSync("UPDATE order_items SET line_kind='item' WHERE line_kind IS NULL");
+        console.log('[DB] ✅ Added line_kind column to order_items table');
+      } catch (error) {
+        console.error('[DB] Failed to add line_kind to order_items', error);
+      }
+    }
+
+    const parentCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('order_items') WHERE name='parent_order_item_id'",
+    );
+    if (parentCheck && parentCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE order_items ADD COLUMN parent_order_item_id INTEGER');
+        console.log('[DB] ✅ Added parent_order_item_id column to order_items table');
+      } catch (error) {
+        console.error('[DB] Failed to add parent_order_item_id to order_items', error);
+      }
+    }
+  }
+
   private createTablesTable() {
     try {
       this.runSync(
@@ -571,7 +599,9 @@ export class DatabaseService {
         shelf_item_id INTEGER,
         order_type TEXT DEFAULT 'dine_in',
         options_json TEXT,
-        FOREIGN KEY(item_id) REFERENCES items(id),
+        line_kind TEXT DEFAULT 'item',
+        parent_order_item_id INTEGER,
+        FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE SET NULL,
         FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
         FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
       )`,
@@ -647,6 +677,7 @@ export class DatabaseService {
 
     // Ensure options_json before any rebuild so data is preserved across migrates.
     this.ensureOrderItemsOptionsJsonColumn();
+    this.ensureOrderItemsTrayColumns();
 
     // Migration: order_items.order_id used to FK orders(id), but dine_in/pickup/delivery
     // orders now live in separate tables. Drop that FK so inserts work with FK enforcement on.
@@ -670,21 +701,25 @@ export class DatabaseService {
             shelf_item_id INTEGER,
             order_type TEXT DEFAULT 'dine_in',
             options_json TEXT,
-            FOREIGN KEY(item_id) REFERENCES items(id),
+            line_kind TEXT DEFAULT 'item',
+            parent_order_item_id INTEGER,
+            FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE SET NULL,
             FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
             FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
           )`,
         );
         this.runSync(
           `INSERT INTO order_items_new (
-            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
+            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
           )
           SELECT
             id, order_id,
             CASE WHEN shelf_item_id IS NOT NULL THEN NULL ELSE item_id END,
             item_name, quantity, price, kitchen_id, service_type, shelf_item_id,
             COALESCE(order_type, 'dine_in'),
-            options_json
+            options_json,
+            COALESCE(line_kind, 'item'),
+            parent_order_item_id
           FROM order_items`,
         );
         this.runSync('DROP TABLE order_items');
@@ -721,21 +756,25 @@ export class DatabaseService {
             shelf_item_id INTEGER,
             order_type TEXT DEFAULT 'dine_in',
             options_json TEXT,
-            FOREIGN KEY(item_id) REFERENCES items(id),
+            line_kind TEXT DEFAULT 'item',
+            parent_order_item_id INTEGER,
+            FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE SET NULL,
             FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
             FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
           )`,
         );
         this.runSync(
           `INSERT INTO order_items_shelf_fix (
-            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
+            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json, line_kind, parent_order_item_id
           )
           SELECT
             id, order_id,
             CASE WHEN shelf_item_id IS NOT NULL THEN NULL ELSE item_id END,
             item_name, quantity, price, kitchen_id, service_type, shelf_item_id,
             COALESCE(order_type, 'dine_in'),
-            options_json
+            options_json,
+            COALESCE(line_kind, 'item'),
+            parent_order_item_id
           FROM order_items`,
         );
         this.runSync('DROP TABLE order_items');
@@ -751,6 +790,7 @@ export class DatabaseService {
     // Rebuild migrations above used to drop options_json; re-ensure for already-broken DBs
     // and any future recreate that forgets the column.
     this.ensureOrderItemsOptionsJsonColumn();
+    this.ensureOrderItemsTrayColumns();
 
     // Migration: Migrate from table_number to name column
     // Check if table_number column exists (old schema) - MUST run BEFORE CREATE TABLE
@@ -2020,6 +2060,108 @@ export class DatabaseService {
           stmt.run(computeBusinessDate(String(row.created_at), dayStart), row.id);
         }
       }
+    }
+
+    this.migrateDailyDisplayNumbers(orderTables);
+  }
+
+  /**
+   * Restaurant ticket numbers that reset per business_date (shared across order domains).
+   * Keeps AUTOINCREMENT id as the permanent PK.
+   */
+  private migrateDailyDisplayNumbers(
+    orderTables: readonly ['dine_in_orders', 'pickup_orders', 'delivery_orders'],
+  ): void {
+    for (const table of orderTables) {
+      const col = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name='display_number'`,
+      );
+      if (col && col.cnt === 0) {
+        try {
+          this.runSync(`ALTER TABLE ${table} ADD COLUMN display_number INTEGER`);
+          this.runSync(
+            `CREATE INDEX IF NOT EXISTS idx_${table}_biz_display ON ${table}(business_date, display_number)`,
+          );
+          console.log(`[DB] ✅ Added display_number to ${table}`);
+        } catch (error) {
+          console.error(`[DB] Failed to add display_number to ${table}`, error);
+        }
+      } else {
+        this.runSync(
+          `CREATE INDEX IF NOT EXISTS idx_${table}_biz_display ON ${table}(business_date, display_number)`,
+        );
+      }
+    }
+
+    const needsBackfill = orderTables.some((table) => {
+      const row = this.getSync(
+        `SELECT COUNT(*) as cnt FROM ${table}
+         WHERE (display_number IS NULL OR display_number = 0)
+           AND business_date IS NOT NULL AND business_date != ''`,
+      );
+      return Number(row?.cnt ?? 0) > 0;
+    });
+    if (!needsBackfill) return;
+
+    const rows = this.allSync(
+      `SELECT 'dine_in_orders' AS table_name, id, business_date, created_at
+         FROM dine_in_orders
+        WHERE business_date IS NOT NULL AND business_date != ''
+          AND (display_number IS NULL OR display_number = 0)
+       UNION ALL
+       SELECT 'pickup_orders', id, business_date, created_at
+         FROM pickup_orders
+        WHERE business_date IS NOT NULL AND business_date != ''
+          AND (display_number IS NULL OR display_number = 0)
+       UNION ALL
+       SELECT 'delivery_orders', id, business_date, created_at
+         FROM delivery_orders
+        WHERE business_date IS NOT NULL AND business_date != ''
+          AND (display_number IS NULL OR display_number = 0)
+       ORDER BY business_date ASC, created_at ASC, id ASC`,
+    );
+    if (!rows?.length) return;
+
+    // Existing assigned max per business_date (so re-runs don't clash)
+    const maxByDate = new Map<string, number>();
+    for (const table of orderTables) {
+      const maxRows = this.allSync(
+        `SELECT business_date, MAX(display_number) AS m
+           FROM ${table}
+          WHERE business_date IS NOT NULL AND business_date != ''
+            AND display_number IS NOT NULL AND display_number > 0
+          GROUP BY business_date`,
+      );
+      for (const r of maxRows || []) {
+        const d = String(r.business_date);
+        const m = Number(r.m) || 0;
+        maxByDate.set(d, Math.max(maxByDate.get(d) ?? 0, m));
+      }
+    }
+
+    const stmts = {
+      dine_in_orders: this.db.prepare(
+        'UPDATE dine_in_orders SET display_number = ? WHERE id = ?',
+      ),
+      pickup_orders: this.db.prepare(
+        'UPDATE pickup_orders SET display_number = ? WHERE id = ?',
+      ),
+      delivery_orders: this.db.prepare(
+        'UPDATE delivery_orders SET display_number = ? WHERE id = ?',
+      ),
+    } as const;
+
+    let updated = 0;
+    for (const row of rows) {
+      const table = row.table_name as keyof typeof stmts;
+      const date = String(row.business_date);
+      const next = (maxByDate.get(date) ?? 0) + 1;
+      maxByDate.set(date, next);
+      stmts[table].run(next, row.id);
+      updated++;
+    }
+    if (updated > 0) {
+      console.log(`[DB] ✅ Backfilled display_number on ${updated} order rows`);
     }
   }
 }

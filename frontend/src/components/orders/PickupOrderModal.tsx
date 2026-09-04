@@ -194,13 +194,13 @@ function PickupOrderModal({ onClose, orderToEdit }: PickupOrderModalProps) {
             padding: 6px !important;
           }
           [data-order-modal] [data-order-cart] {
-            width: 28% !important;
-            min-width: 180px !important;
-            max-width: 280px !important;
+            width: 38% !important;
+            min-width: 260px !important;
+            max-width: 400px !important;
             flex: 0 0 auto !important;
             border-left: 1px solid rgba(0,0,0,0.05) !important;
             border-top: none !important;
-            padding: 6px !important;
+            padding: 8px !important;
           }
           [data-order-modal] [data-order-menu-filters] {
             flex-direction: column !important;
@@ -234,9 +234,9 @@ function PickupOrderModal({ onClose, orderToEdit }: PickupOrderModalProps) {
             padding: 1rem !important;
           }
           [data-order-modal] [data-order-cart] {
-            width: 30% !important;
-            min-width: 260px !important;
-            max-width: 360px !important;
+            width: 40% !important;
+            min-width: 340px !important;
+            max-width: 480px !important;
             flex: 0 0 auto !important;
             border-left: 1px solid rgba(0,0,0,0.05) !important;
             border-top: none !important;
@@ -338,6 +338,9 @@ function PickupOrderModal({ onClose, orderToEdit }: PickupOrderModalProps) {
             <OrderModalCart
               existingOrders={orderModal.existingOrders}
               selectedItems={orderModal.selectedItems}
+              activeTrayId={orderModal.activeTrayId}
+              onAddTray={orderModal.addTrayToOrder}
+              onSelectTray={orderModal.selectTray}
               ordersExpanded={orderModal.ordersExpanded}
               editingOrder={orderModal.editingOrder}
               editingOrderType="pickup"

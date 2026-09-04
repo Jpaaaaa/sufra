@@ -58,6 +58,11 @@ export async function fetchExpenses(filters?: FinanceFilters): Promise<Expense[]
   return fetchJson<Expense[]>(`${serverUrl}/finance/expenses?${params.toString()}`);
 }
 
+export async function fetchRecurringExpenses(): Promise<Expense[]> {
+  const serverUrl = getServerUrl();
+  return fetchJson<Expense[]>(`${serverUrl}/finance/expenses/recurring`);
+}
+
 export async function createExpense(data: {
   date: string;
   category: string;
@@ -81,6 +86,9 @@ export async function updateExpense(
     amount?: number;
     notes?: string | null;
     user_id?: number | null;
+    is_recurring?: boolean;
+    recurrence_type?: 'daily' | 'weekly' | 'monthly' | 'yearly' | null;
+    recurrence_interval?: number | null;
   },
 ): Promise<Expense> {
   const serverUrl = getServerUrl();

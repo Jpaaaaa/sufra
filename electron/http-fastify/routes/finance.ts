@@ -13,6 +13,7 @@ import {
   financeCreateRevenue,
   financeSyncRevenueFromOrders,
   financeGetExpenses,
+  financeGetRecurringExpenses,
   financeCreateExpense,
   financeUpdateExpense,
   financeDeleteExpense,
@@ -21,14 +22,29 @@ import {
 import type { FastifyRouteContext } from '../types';
 import { sendRouteError } from '../errors';
 
-type DateRangeQuery = { Querystring: { startDate?: string; endDate?: string } };
+type DateRangeQuery = {
+  Querystring: {
+    startDate?: string;
+    endDate?: string;
+    from?: string;
+    to?: string;
+  };
+};
 
 function parseId(value: string): number {
   return parseInt(value, 10);
 }
 
-function dateRange(query: { startDate?: string; endDate?: string }) {
-  return { from: query.startDate, to: query.endDate };
+function dateRange(query: {
+  startDate?: string;
+  endDate?: string;
+  from?: string;
+  to?: string;
+}) {
+  return {
+    from: query.from || query.startDate,
+    to: query.to || query.endDate,
+  };
 }
 
 function parseUsername(body: unknown): string | undefined {
@@ -105,6 +121,14 @@ export function registerFinanceRoutes(ctx: FastifyRouteContext): void {
     }
   });
 
+  app.get('/api/finance/expenses/recurring', async (request, reply) => {
+    try {
+      return await financeGetRecurringExpenses();
+    } catch (error) {
+      sendRouteError(reply, error, `${request.method} ${request.url}`);
+    }
+  });
+
   app.post('/api/finance/expenses', async (request, reply) => {
     try {
       return await financeCreateExpense(request.body);
@@ -114,6 +138,20 @@ export function registerFinanceRoutes(ctx: FastifyRouteContext): void {
   });
 
   app.put<{ Params: { id: string } }>(
+    '/api/finance/expenses/:id',
+    async (request, reply) => {
+      try {
+        return await financeUpdateExpense(
+          parseId(request.params.id),
+          request.body,
+        );
+      } catch (error) {
+        sendRouteError(reply, error, `${request.method} ${request.url}`);
+      }
+    },
+  );
+
+  app.patch<{ Params: { id: string } }>(
     '/api/finance/expenses/:id',
     async (request, reply) => {
       try {

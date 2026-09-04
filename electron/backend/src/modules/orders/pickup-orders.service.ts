@@ -2,23 +2,23 @@ import { NotFoundException, BadRequestException } from '../../utils/exceptions';
 import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
-import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
-import { serializeOptionsJson, mapOrderItemRow } from '../../utils/order-item-options';
-import { validateOrderItemPrices } from '../../utils/order-pricing';
+import { allocateDailyDisplayNumber } from './daily-display-number';
+import { mapOrderItemRow } from '../../utils/order-item-options';
+import {
+  ORDER_ITEM_SELECT_COLS,
+  type OrderItemInput,
+  topLevelSubtotal,
+  validateOrderItemsWithTrays,
+  insertOrderItemsWithTrays,
+  shelfStockDecrements,
+} from '../../utils/order-trays';
 
 function mapItemRows(rows: any[]) {
   return rows.map((row) => mapOrderItemRow(row));
 }
 
-export interface PickupOrderItem {
-  item_id: number | null;
-  item_name: string;
-  quantity: number;
-  price: number;
-  kitchen_id?: number | null;
-  shelf_item_id?: number | null;
-  options_json?: unknown[] | null;
-}
+export type PickupOrderItem = OrderItemInput;
+
 
 export interface CreatePickupOrderDto {
   items: PickupOrderItem[];
@@ -34,6 +34,7 @@ export interface CreatePickupOrderDto {
 
 export interface PickupOrder {
   id: number;
+  display_number?: number | null;
   status: 'pending' | 'printed' | 'completed' | 'cancelled' | 'archived';
   total: number;
   discount: number;
@@ -74,7 +75,7 @@ class PickupOrdersService {
     console.log('[PICKUP_ORDERS] findActive: querying active pickup orders');
 
     const orderRows = await this.db.all(
-      `SELECT id, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
+      `SELECT id, display_number, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
        FROM pickup_orders 
        WHERE status IN ('pending', 'printed') 
        ORDER BY created_at ASC`,
@@ -101,7 +102,7 @@ class PickupOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+        `SELECT ${ORDER_ITEM_SELECT_COLS}
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'pickup'`,
         orderIds,
@@ -123,7 +124,7 @@ class PickupOrdersService {
     console.log('[PICKUP_ORDERS] findArchived: querying archived pickup orders');
 
     const orderRows = await this.db.all(
-      `SELECT id, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
+      `SELECT id, display_number, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
        FROM pickup_orders 
        WHERE status IN ('archived', 'completed', 'cancelled') 
        ORDER BY created_at DESC`,
@@ -150,7 +151,7 @@ class PickupOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+        `SELECT ${ORDER_ITEM_SELECT_COLS}
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'pickup'`,
         orderIds,
@@ -170,7 +171,7 @@ class PickupOrdersService {
    */
   async findById(id: number): Promise<PickupOrderWithItems | null> {
     const orderRow = await this.db.get(
-      `SELECT id, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
+      `SELECT id, display_number, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
        FROM pickup_orders WHERE id = ?`,
       [id],
     );
@@ -189,7 +190,7 @@ class PickupOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+      `SELECT ${ORDER_ITEM_SELECT_COLS}
        FROM order_items 
        WHERE order_id = ? AND order_type = 'pickup'`,
       [id],
@@ -212,16 +213,17 @@ class PickupOrdersService {
       throw new BadRequestException('Order must have at least one item');
     }
 
-    const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    await validateOrderItemPrices(this.db, data.items);
+    await validateOrderItemsWithTrays(this.db, data.items);
+    const subtotal = topLevelSubtotal(data.items);
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
     const shiftFields = await resolveOrderShiftFields();
+    const displayNumber = await allocateDailyDisplayNumber(this.db, shiftFields.business_date);
 
     await this.db.run(
-      `INSERT INTO pickup_orders (status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, created_by_user_id, business_date, shift_definition_id) 
-       VALUES ('pending', ?, 0, ?, ?, ?, ?, datetime('now', 'localtime'), ?, ?, ?)`,
+      `INSERT INTO pickup_orders (status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, created_by_user_id, business_date, shift_definition_id, display_number) 
+       VALUES ('pending', ?, 0, ?, ?, ?, ?, datetime('now', 'localtime'), ?, ?, ?, ?)`,
       [
         total,
         globalDiscountJson,
@@ -231,6 +233,7 @@ class PickupOrdersService {
         data.userId ?? null,
         shiftFields.business_date,
         shiftFields.shift_definition_id,
+        displayNumber,
       ],
     );
 
@@ -239,39 +242,26 @@ class PickupOrdersService {
       throw new BadRequestException('Failed to create order: Invalid order ID returned');
     }
 
-    for (const item of data.items) {
-      await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          orderId,
-          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
-          item.item_name,
-          item.quantity,
-          item.price,
-          item.kitchen_id ?? null,
-          item.shelf_item_id ?? null,
-          'pickup',
-          serializeOptionsJson(item.options_json),
-        ],
-      );
-    }
+    await insertOrderItemsWithTrays(this.db, {
+      orderId,
+      orderType: 'pickup',
+      items: data.items,
+    });
 
-    // Decrease stock for shelf items
+    // Decrease stock for shelf items (tray children × tray qty)
     try {
-      for (const item of data.items) {
-        if (item.shelf_item_id) {
-          try {
-            await this.shelvesService.decreaseStock(item.shelf_item_id, item.quantity);
-          } catch (stockErr: any) {
-            console.error('[PICKUP_ORDERS] create: stock decrease failed, rolling back order', orderId);
-            await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'pickup'", [orderId]);
-            await this.db.run('DELETE FROM pickup_orders WHERE id = ?', [orderId]);
-            throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'كمية غير كافية'}`);
-          }
+      for (const stock of shelfStockDecrements(data.items)) {
+        try {
+          await this.shelvesService.decreaseStock(stock.shelf_item_id, stock.quantity);
+        } catch (stockErr: any) {
+          console.error('[PICKUP_ORDERS] create: stock decrease failed, rolling back order', orderId);
+          await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'pickup'", [orderId]);
+          await this.db.run('DELETE FROM pickup_orders WHERE id = ?', [orderId]);
+          throw new BadRequestException(`فشل تحديث المخزون: ${stockErr.message || 'كمية غير كافية'}`);
         }
       }
     } catch (stockErr: any) {
+      if (stockErr instanceof BadRequestException) throw stockErr;
       console.error('[PICKUP_ORDERS] create: error during stock update, rolling back order', orderId);
       await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'pickup'", [orderId]);
       await this.db.run('DELETE FROM pickup_orders WHERE id = ?', [orderId]);
@@ -279,7 +269,7 @@ class PickupOrdersService {
     }
 
     const orderRow = await this.db.get(
-      `SELECT id, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
+      `SELECT id, display_number, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
        FROM pickup_orders WHERE id = ?`,
       [orderId],
     );
@@ -298,7 +288,7 @@ class PickupOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+      `SELECT ${ORDER_ITEM_SELECT_COLS}
        FROM order_items 
        WHERE order_id = ? AND order_type = 'pickup'`,
       [orderId],
@@ -322,7 +312,7 @@ class PickupOrdersService {
     );
 
     const row = await this.db.get(
-      `SELECT id, status, total, discount, globalDiscount, note, created_at, updated_at 
+      `SELECT id, display_number, status, total, discount, globalDiscount, note, created_at, updated_at
        FROM pickup_orders WHERE id = ?`,
       [id],
     );
@@ -365,8 +355,8 @@ class PickupOrdersService {
       throw new BadRequestException('Order must have at least one item');
     }
 
-    const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
-    await validateOrderItemPrices(this.db, data.items);
+    await validateOrderItemsWithTrays(this.db, data.items);
+    const subtotal = topLevelSubtotal(data.items);
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
@@ -383,27 +373,15 @@ class PickupOrdersService {
     // Delete old order items (only for this order_type to prevent accidental deletion)
     await this.db.run("DELETE FROM order_items WHERE order_id = ? AND order_type = 'pickup'", [id]);
 
-    for (const item of data.items) {
-      await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          id,
-          resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
-          item.item_name,
-          item.quantity,
-          item.price,
-          item.kitchen_id ?? null,
-          item.shelf_item_id ?? null,
-          'pickup',
-          serializeOptionsJson(item.options_json),
-        ],
-      );
-    }
+    await insertOrderItemsWithTrays(this.db, {
+      orderId: id,
+      orderType: 'pickup',
+      items: data.items,
+    });
 
     // Return the updated order with items
     const orderRow = await this.db.get(
-      `SELECT id, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
+      `SELECT id, display_number, status, total, discount, globalDiscount, note, customer_name, customer_phone, created_at, updated_at 
        FROM pickup_orders WHERE id = ?`,
       [id],
     );
@@ -422,7 +400,7 @@ class PickupOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
+      `SELECT ${ORDER_ITEM_SELECT_COLS}
        FROM order_items 
        WHERE order_id = ? AND order_type = 'pickup'`,
       [id],

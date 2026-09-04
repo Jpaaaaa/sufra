@@ -42,6 +42,10 @@ export function getCartLineKey(
   return `${itemId}|${shelfItemId ?? 0}|${selectionSignature(selected)}`;
 }
 
+export function trayUnitPrice(children: CartItem[]): number {
+  return children.reduce((sum, c) => sum + c.linePrice * c.quantity, 0);
+}
+
 export function buildCartItem(
   item: Item,
   extras: AddItemExtras = {},
@@ -51,6 +55,7 @@ export function buildCartItem(
   const linePrice = calculateLinePrice(item.price, item.option_groups ?? [], selectedOptions);
   return {
     cartLineId: extras.cartLineId ?? createCartLineId(),
+    lineKind: 'item',
     item,
     quantity: 1,
     selectedOptions,
@@ -65,6 +70,7 @@ export function mergeCartItem(prev: CartItem[], next: CartItem): CartItem[] {
   const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
   const existing = prev.find(
     (si) =>
+      si.lineKind !== 'tray' &&
       getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
   );
   if (existing) {
@@ -78,36 +84,85 @@ export function mergeCartItem(prev: CartItem[], next: CartItem): CartItem[] {
   return [...prev, next];
 }
 
+/** Merge a product into a tray's children (or bump qty if same key). */
+export function mergeIntoTrayChildren(children: CartItem[], next: CartItem): CartItem[] {
+  const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
+  const existing = children.find(
+    (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+  );
+  if (existing) {
+    if (next.shelfItem && existing.quantity + 1 > next.shelfItem.quantity) {
+      return children;
+    }
+    return children.map((si) =>
+      si.cartLineId === existing.cartLineId ? { ...si, quantity: si.quantity + 1 } : si,
+    );
+  }
+  return [...children, next];
+}
+
 export function updateCartLine(
   prev: CartItem[],
   cartLineId: string,
-  patch: Partial<Pick<CartItem, 'quantity' | 'order_type' | 'selectedOptions' | 'linePrice'>>,
+  patch: Partial<Pick<CartItem, 'quantity' | 'order_type' | 'selectedOptions' | 'linePrice' | 'trayName'>>,
 ): CartItem[] {
   return prev.map((si) => {
-    if (si.cartLineId !== cartLineId) return si;
-    const updated = { ...si, ...patch };
-    if (patch.selectedOptions) {
-      updated.linePrice = calculateLinePrice(
-        si.item.price,
-        si.item.option_groups ?? [],
-        patch.selectedOptions,
-      );
+    if (si.cartLineId === cartLineId) {
+      const updated = { ...si, ...patch };
+      if (patch.selectedOptions) {
+        updated.linePrice = calculateLinePrice(
+          si.item.price,
+          si.item.option_groups ?? [],
+          patch.selectedOptions,
+        );
+      }
+      return updated;
     }
-    return updated;
+    if (si.lineKind === 'tray' && Array.isArray(si.children)) {
+      const children = updateCartLine(si.children, cartLineId, patch);
+      if (children !== si.children) {
+        return { ...si, children, linePrice: trayUnitPrice(children) };
+      }
+    }
+    return si;
   });
 }
 
 export function cartSubtotal(items: CartItem[]): number {
-  return items.reduce((sum, si) => sum + si.linePrice * si.quantity, 0);
+  return items.reduce((sum, si) => {
+    if (si.lineKind === 'tray') {
+      return sum + trayUnitPrice(si.children ?? []) * si.quantity;
+    }
+    return sum + si.linePrice * si.quantity;
+  }, 0);
 }
 
-export function mapCartItemToOrderPayload(si: CartItem) {
+export function mapCartItemToOrderPayload(si: CartItem): Record<string, unknown> {
+  if (si.lineKind === 'tray') {
+    const children = si.children ?? [];
+    return {
+      item_id: null,
+      item_name: si.trayName || si.item.name || 'مجموعة',
+      quantity: si.quantity,
+      price: trayUnitPrice(children),
+      line_kind: 'tray',
+      kitchen_id: null,
+      service_type: si.order_type || 'dine-in',
+      shelf_item_id: null,
+      options_json: null,
+      items: children.map((c) =>
+        mapCartItemToOrderPayload({ ...c, order_type: si.order_type || c.order_type }),
+      ),
+    };
+  }
+
   const displayName = si.offerDisplayName ?? si.item.name;
   return {
     item_id: si.shelfItem?.id ? null : si.item.id,
     item_name: formatItemDisplayName(displayName, si.selectedOptions),
     quantity: si.quantity,
     price: si.linePrice,
+    line_kind: 'item',
     options_json: selectionsToSnapshots(si.selectedOptions),
     kitchen_id: si.item.kitchen_id ?? null,
     service_type: si.order_type || 'dine-in',
@@ -116,6 +171,7 @@ export function mapCartItemToOrderPayload(si: CartItem) {
 }
 
 export function orderItemToCartLine(item: any, menuItems: import('./useItems').Item[]): CartItem | null {
+  if (item.line_kind === 'tray') return null;
   const snapshots = Array.isArray(item.options_json)
     ? item.options_json
     : parseOptionsJson(item.options_json);
@@ -131,6 +187,7 @@ export function orderItemToCartLine(item: any, menuItems: import('./useItems').I
   };
   return {
     cartLineId: createCartLineId(),
+    lineKind: 'item',
     item: baseItem,
     quantity: item.quantity ?? 1,
     selectedOptions,

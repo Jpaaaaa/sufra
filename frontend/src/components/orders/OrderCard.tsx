@@ -4,6 +4,7 @@ import { ExistingOrder } from '../../hooks/useOrderModal';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
 import { PrinterIcon, ReceiptIcon, PencilIcon, CheckCircleIcon, XIcon } from '../icons';
 import { OrderItemOptionLines } from './OrderItemOptionLines';
+import { orderDisplayNumber } from '../../utils/order-display-number';
 
 interface OrderCardProps {
   order: ExistingOrder;
@@ -77,7 +78,7 @@ export const OrderCard = memo(function OrderCard({
     <div className={`rounded-soft-xl border-2 bg-white p-5 shadow-soft ${statusColors}`}>
       {/* Header */}
       <div className="flex items-center justify-between mb-4 pb-3 border-b border-black/10">
-        <span className="text-[18px] leading-tight font-bold text-obsidian">{t('orders.orderNumber', { id: order.id })}</span>
+        <span className="text-[18px] leading-tight font-bold text-obsidian">{t('orders.orderNumber', { id: orderDisplayNumber(order) })}</span>
         <span className="text-[18px] leading-tight font-bold text-obsidian bg-obsidian/5 px-3 py-1 rounded-soft-lg">
           {(order.total ?? 0).toLocaleString(numberLocale)} {t('orders.currency')}
         </span>
@@ -146,7 +147,10 @@ export const OrderCard = memo(function OrderCard({
       {/* Order Items */}
       <div className="mb-4 rounded-soft-lg bg-cloud-soft-white p-3">
         <div className="space-y-2 text-[14px] leading-relaxed">
-          {order.items?.slice(0, 3).map((item: any, idx: number) => (
+          {(order.items ?? [])
+            .filter((item: any) => item.parent_order_item_id == null)
+            .slice(0, 3)
+            .map((item: any, idx: number) => (
             <div key={idx} className="flex items-start justify-between py-1 border-b border-black/5 last:border-0 gap-2">
               <OrderItemOptionLines
                 itemName={item.item_name}
@@ -159,9 +163,12 @@ export const OrderCard = memo(function OrderCard({
               </span>
             </div>
           ))}
-          {order.items?.length > 3 && (
+          {(order.items ?? []).filter((item: any) => item.parent_order_item_id == null).length > 3 && (
             <div className="text-[13px] text-obsidian/60 text-center pt-2 font-medium">
-              {t('orders.moreMenuItems', { count: order.items.length - 3 })}
+              {t('orders.moreMenuItems', {
+                count:
+                  (order.items ?? []).filter((item: any) => item.parent_order_item_id == null).length - 3,
+              })}
             </div>
           )}
         </div>

@@ -128,9 +128,54 @@ export function drawWrappedText(
   return lines.length;
 }
 
-export function formatCurrencyIqd(amount: number): string {
+/** Draw one line only — never wraps (for money / qty cells). */
+export function drawSingleLineText(
+  ctx: any,
+  text: string,
+  opts: Omit<DrawTextOpts, 'maxWidth' | 'lineHeight'> & { maxWidth?: number },
+): void {
+  const { x, y, fontSize, align = 'left', bold = false, fillStyle = '#000000', maxWidth } = opts;
+  ctx.font = printFont(fontSize, bold);
+  ctx.fillStyle = fillStyle;
+  ctx.textBaseline = 'top';
+  ctx.textAlign = align;
+  ctx.direction = 'ltr';
+
+  let value = String(text ?? '');
+  if (maxWidth != null && maxWidth > 0) {
+    while (value.length > 1 && ctx.measureText(value).width > maxWidth) {
+      // Prefer dropping currency suffix, then trim digits from the left rarely needed
+      if (value.endsWith(' د.ع')) {
+        value = value.slice(0, -4);
+        continue;
+      }
+      value = value.slice(0, -1);
+    }
+  }
+  ctx.fillText(value, x, y);
+}
+
+export function formatAmountIqd(amount: number): string {
   const n = Math.round(Number(amount) || 0);
-  return `${n.toLocaleString('en-US')} د.ع`;
+  return n.toLocaleString('en-US');
+}
+
+export function formatCurrencyIqd(amount: number): string {
+  return `${formatAmountIqd(amount)} د.ع`;
+}
+
+/**
+ * Prefer "12,000 د.ع" when it fits in one line; otherwise amount only.
+ * Prevents currency wrapping into the next receipt row.
+ */
+export function formatMoneyCell(
+  ctx: { measureText: (s: string) => { width: number }; font: string },
+  amount: number,
+  maxWidth: number,
+): string {
+  const full = formatCurrencyIqd(amount);
+  if (ctx.measureText(full).width <= Math.max(8, maxWidth)) return full;
+  return formatAmountIqd(amount);
 }
 
 export function formatTimeAr(iso: string | undefined | null): string {

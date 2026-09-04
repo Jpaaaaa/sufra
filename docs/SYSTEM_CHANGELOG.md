@@ -2,6 +2,34 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.28] — 2026-08-09
+
+### Fixed
+
+- Pickup (takeaway) customer receipts now include customer name and phone
+- Delivery and pickup kitchen tickets show customer details more clearly
+
+### Changed
+
+- Customer block on pickup/delivery receipts: bold header bar, double outline, larger name/phone/address for thermal readability
+
+## [0.1.24] — 2026-08-08
+
+### Added
+
+- Restaurant print branding: upload a logo (auto-converted to black & white) for customer receipts
+- Settings tab renamed to «هوية الطباعة» with receipt preview
+
+### Fixed
+
+- Kitchen ticket: order-note box no longer overlaps the title; clearer table highlight and meta fields
+- Customer receipt: clearer info layout; multi-order invoices show all order numbers joined with `+`
+- Dine-in customer receipt: table number uses display number (`table.number`), not database id
+
+### Changed
+
+- Customer receipts merge saved restaurant name / thank-you / phone / logo from print branding settings
+
 ## [0.1.23] — 2026-08-05
 
 ### Fixed

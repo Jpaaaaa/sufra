@@ -81,6 +81,9 @@ contextBridge.exposeInMainWorld('sufra', {
     getSettings: () => invoke('recipePrint:getSettings'),
     saveSettings: (settings: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
       invoke('recipePrint:saveSettings', settings),
+    pickLogo: () => invoke('recipePrint:pickLogo'),
+    removeLogo: () => invoke('recipePrint:removeLogo'),
+    logoPreview: () => invoke('recipePrint:logoPreview'),
     preview: (branding: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
       invoke('recipePrint:preview', branding),
     print: (branding: { restaurantName?: string; thankYouLine?: string; mobileNumber?: string }) =>
@@ -251,6 +254,7 @@ contextBridge.exposeInMainWorld('sufra', {
     revenues: (startDate?: string, endDate?: string) => invoke('finance:revenues', startDate, endDate),
     createRevenue: (data: any) => invoke('finance:createRevenue', data),
     expenses: (startDate?: string, endDate?: string) => invoke('finance:expenses', startDate, endDate),
+    recurringExpenses: () => invoke('finance:recurringExpenses'),
     createExpense: (data: any) => invoke('finance:createExpense', data),
     updateExpense: (id: number, data: any) => invoke('finance:updateExpense', id, data),
     deleteExpense: (id: number) => invoke('finance:deleteExpense', id),
@@ -315,6 +319,8 @@ contextBridge.exposeInMainWorld('sufra', {
         drawer?: any;
       };
     }) => invoke('export-pdf', exportData),
+    htmlPdf: (payload: { html: string; fileName?: string }) =>
+      invoke('export-html-pdf', payload),
   },
   // Generic API method for routing any endpoint via IPC
   api: (endpoint: string, method: string = 'GET', body?: any) => {
@@ -406,12 +412,51 @@ declare global {
         scan: () => Promise<Array<{ ip: string; port: number }>>;
       };
       recipePrint: {
-        getSettings: () => Promise<{ restaurantName: string; thankYouLine: string; mobileNumber: string }>;
+        getSettings: () => Promise<{
+          restaurantName: string;
+          thankYouLine: string;
+          mobileNumber: string;
+          logoPath: string;
+        }>;
         saveSettings: (settings: {
           restaurantName?: string;
           thankYouLine?: string;
           mobileNumber?: string;
-        }) => Promise<{ restaurantName: string; thankYouLine: string; mobileNumber: string }>;
+        }) => Promise<{
+          restaurantName: string;
+          thankYouLine: string;
+          mobileNumber: string;
+          logoPath: string;
+        }>;
+        pickLogo: () => Promise<
+          | {
+              success: true;
+              branding: {
+                restaurantName: string;
+                thankYouLine: string;
+                mobileNumber: string;
+                logoPath: string;
+              };
+              logoPreviewBase64: string | null;
+            }
+          | { success: false; error: string }
+        >;
+        removeLogo: () => Promise<
+          | {
+              success: true;
+              branding: {
+                restaurantName: string;
+                thankYouLine: string;
+                mobileNumber: string;
+                logoPath: string;
+              };
+            }
+          | { success: false; error: string }
+        >;
+        logoPreview: () => Promise<
+          | { success: true; logoPreviewBase64: string | null }
+          | { success: false; error: string }
+        >;
         preview: (branding: {
           restaurantName?: string;
           thankYouLine?: string;
@@ -658,6 +703,7 @@ declare global {
         revenues: (startDate?: string, endDate?: string) => Promise<any[]>;
         createRevenue: (data: any) => Promise<any>;
         expenses: (startDate?: string, endDate?: string) => Promise<any[]>;
+        recurringExpenses: () => Promise<any[]>;
         createExpense: (data: any) => Promise<any>;
         updateExpense: (id: number, data: any) => Promise<any>;
         deleteExpense: (id: number) => Promise<any>;

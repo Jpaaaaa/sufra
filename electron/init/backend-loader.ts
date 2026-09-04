@@ -142,6 +142,7 @@ export let financeGetRevenues: (...args: any[]) => Promise<any>;
 export let financeCreateRevenue: (...args: any[]) => Promise<any>;
 export let financeSyncRevenueFromOrders: (...args: any[]) => Promise<any>;
 export let financeGetExpenses: (...args: any[]) => Promise<any>;
+export let financeGetRecurringExpenses: (...args: any[]) => Promise<any>;
 export let financeCreateExpense: (...args: any[]) => Promise<any>;
 export let financeUpdateExpense: (...args: any[]) => Promise<any>;
 export let financeDeleteExpense: (...args: any[]) => Promise<any>;
@@ -307,6 +308,7 @@ function loadPackagedBackendModules(): void {
     financeCreateRevenue = b.financeService.createRevenue;
     financeSyncRevenueFromOrders = b.financeService.syncRevenueFromOrders;
     financeGetExpenses = b.financeService.getExpenses;
+    financeGetRecurringExpenses = b.financeService.getRecurringExpenses;
     financeCreateExpense = b.financeService.createExpense;
     financeUpdateExpense = b.financeService.updateExpense;
     financeDeleteExpense = b.financeService.deleteExpense;
@@ -496,6 +498,7 @@ export function loadBackendModules(): void {
     financeCreateRevenue = financeModule.createRevenue;
     financeSyncRevenueFromOrders = financeModule.syncRevenueFromOrders;
     financeGetExpenses = financeModule.getExpenses;
+    financeGetRecurringExpenses = financeModule.getRecurringExpenses;
     financeCreateExpense = financeModule.createExpense;
     financeUpdateExpense = financeModule.updateExpense;
     financeDeleteExpense = financeModule.deleteExpense;

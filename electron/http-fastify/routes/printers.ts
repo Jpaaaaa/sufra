@@ -35,7 +35,9 @@ async function renderSamplePng(
 ): Promise<Buffer> {
   if (kind === 'customer') {
     const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
-    return renderReceiptToPng(customerTestReceiptData());
+    const { mergeCustomerReceiptBranding } = await import('../../recipe-print-branding-store');
+    const merged = await mergeCustomerReceiptBranding(customerTestReceiptData());
+    return renderReceiptToPng(merged);
   }
   const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
   return renderOrderToPng(kitchenTestPrintData(kitchenName));
