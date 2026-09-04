@@ -107,6 +107,16 @@ export class DatabaseService {
     }
   }
 
+  /** Hot checkpoint before copying sufra.sqlite for backup (app keeps running). */
+  checkpointWal(): void {
+    if (!this.db) return;
+    try {
+      this.db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (error) {
+      console.warn('[DB] WAL checkpoint failed:', error);
+    }
+  }
+
   getConnection(): BetterSqliteDatabase {
     if (!this.isInitialized) {
       throw new Error('Database not initialized. Call ensureInitialized() first or wait for initialize() to complete.');
@@ -116,6 +126,10 @@ export class DatabaseService {
 
   // Public helper methods for services to use
   async run(sql: string, params: any[] = []): Promise<void> {
+    await this.runInsert(sql, params).then(() => undefined);
+  }
+
+  async runInsert(sql: string, params: any[] = []): Promise<number> {
     await this.ensureInitialized();
 
     try {
@@ -123,6 +137,7 @@ export class DatabaseService {
       if (sql.trim().toUpperCase().startsWith('INSERT')) {
         this.lastInsertRowId = Number(result.lastInsertRowid);
       }
+      return this.lastInsertRowId;
     } catch (error) {
       console.error('[DB] Run error:', error);
       console.error('[DB] SQL:', sql);
@@ -196,6 +211,24 @@ export class DatabaseService {
       console.error('[DB] AllSync error:', error);
       console.error('[DB] SQL:', sql);
       throw error;
+    }
+  }
+
+  /**
+   * Ensures order_items.options_json exists on old and rebuilt schemas.
+   * Safe to call multiple times; must run again after any table recreate.
+   */
+  private ensureOrderItemsOptionsJsonColumn(): void {
+    const check = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('order_items') WHERE name='options_json'",
+    );
+    if (check && check.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE order_items ADD COLUMN options_json TEXT');
+        console.log('[DB] ✅ Added options_json column to order_items table');
+      } catch (error) {
+        console.error('[DB] Failed to add options_json to order_items', error);
+      }
     }
   }
 
@@ -356,6 +389,44 @@ export class DatabaseService {
       }
     }
 
+    const itemsHasOptionsCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('items') WHERE name='has_options'",
+    );
+    if (itemsHasOptionsCheck && itemsHasOptionsCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE items ADD COLUMN has_options INTEGER NOT NULL DEFAULT 0');
+        console.log('[DB] ✅ Added has_options column to items table');
+      } catch (error) {
+        console.error('[DB] Failed to add has_options to items', error);
+      }
+    }
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS item_option_groups (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        item_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        pricing_mode TEXT NOT NULL,
+        min_select INTEGER NOT NULL DEFAULT 1,
+        max_select INTEGER NOT NULL DEFAULT 1,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(item_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS item_options (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        group_id INTEGER NOT NULL,
+        name TEXT NOT NULL,
+        price INTEGER NOT NULL DEFAULT 0,
+        is_default INTEGER NOT NULL DEFAULT 0,
+        is_out_of_stock INTEGER NOT NULL DEFAULT 0,
+        sort_order INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY(group_id) REFERENCES item_option_groups(id) ON DELETE CASCADE
+      )`,
+    );
+
     // Shelf items table for barcoded products
     this.runSync(
       `CREATE TABLE IF NOT EXISTS shelf_items (
@@ -499,6 +570,7 @@ export class DatabaseService {
         service_type TEXT DEFAULT 'dine-in',
         shelf_item_id INTEGER,
         order_type TEXT DEFAULT 'dine_in',
+        options_json TEXT,
         FOREIGN KEY(item_id) REFERENCES items(id),
         FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
         FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
@@ -573,6 +645,9 @@ export class DatabaseService {
       }
     }
 
+    // Ensure options_json before any rebuild so data is preserved across migrates.
+    this.ensureOrderItemsOptionsJsonColumn();
+
     // Migration: order_items.order_id used to FK orders(id), but dine_in/pickup/delivery
     // orders now live in separate tables. Drop that FK so inserts work with FK enforcement on.
     const orderItemsSchema = this.getSync(
@@ -594,6 +669,7 @@ export class DatabaseService {
             service_type TEXT DEFAULT 'dine-in',
             shelf_item_id INTEGER,
             order_type TEXT DEFAULT 'dine_in',
+            options_json TEXT,
             FOREIGN KEY(item_id) REFERENCES items(id),
             FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
             FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
@@ -601,13 +677,14 @@ export class DatabaseService {
         );
         this.runSync(
           `INSERT INTO order_items_new (
-            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
           )
           SELECT
             id, order_id,
             CASE WHEN shelf_item_id IS NOT NULL THEN NULL ELSE item_id END,
             item_name, quantity, price, kitchen_id, service_type, shelf_item_id,
-            COALESCE(order_type, 'dine_in')
+            COALESCE(order_type, 'dine_in'),
+            options_json
           FROM order_items`,
         );
         this.runSync('DROP TABLE order_items');
@@ -643,6 +720,7 @@ export class DatabaseService {
             service_type TEXT DEFAULT 'dine-in',
             shelf_item_id INTEGER,
             order_type TEXT DEFAULT 'dine_in',
+            options_json TEXT,
             FOREIGN KEY(item_id) REFERENCES items(id),
             FOREIGN KEY(kitchen_id) REFERENCES kitchens(id),
             FOREIGN KEY(shelf_item_id) REFERENCES shelf_items(id) ON DELETE SET NULL
@@ -650,13 +728,14 @@ export class DatabaseService {
         );
         this.runSync(
           `INSERT INTO order_items_shelf_fix (
-            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type
+            id, order_id, item_id, item_name, quantity, price, kitchen_id, service_type, shelf_item_id, order_type, options_json
           )
           SELECT
             id, order_id,
             CASE WHEN shelf_item_id IS NOT NULL THEN NULL ELSE item_id END,
             item_name, quantity, price, kitchen_id, service_type, shelf_item_id,
-            COALESCE(order_type, 'dine_in')
+            COALESCE(order_type, 'dine_in'),
+            options_json
           FROM order_items`,
         );
         this.runSync('DROP TABLE order_items');
@@ -668,6 +747,10 @@ export class DatabaseService {
         console.error('[DB] Failed to migrate order_items nullable item_id', error);
       }
     }
+
+    // Rebuild migrations above used to drop options_json; re-ensure for already-broken DBs
+    // and any future recreate that forgets the column.
+    this.ensureOrderItemsOptionsJsonColumn();
 
     // Migration: Migrate from table_number to name column
     // Check if table_number column exists (old schema) - MUST run BEFORE CREATE TABLE
@@ -985,6 +1068,8 @@ export class DatabaseService {
         kitchen_id INTEGER,
         printer_ip TEXT,
         printer_port INTEGER DEFAULT 9100,
+        printer_name TEXT,
+        connection_type TEXT NOT NULL DEFAULT 'network',
         printer_type TEXT NOT NULL CHECK(printer_type IN ('kitchen', 'customer')),
         is_active INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
@@ -1017,25 +1102,32 @@ export class DatabaseService {
       }
     }
 
-    // Migration: Migrate printer_name to printer_ip if printer_name exists but printer_ip is null
-    // This allows existing installations to migrate their data
-    try {
-      const migrateCheck = this.getSync(
-        "SELECT COUNT(*) as cnt FROM pragma_table_info('printer_settings') WHERE name='printer_name'",
-      );
-      if (migrateCheck && migrateCheck.cnt > 0) {
-        // Check if there are rows with printer_name but no printer_ip
-        const rowsToMigrate = this.allSync(
-          "SELECT id, printer_name FROM printer_settings WHERE printer_ip IS NULL AND printer_name IS NOT NULL AND printer_name != ''",
+    // Migration: connection_type (network | windows_spooler)
+    const connectionTypeCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('printer_settings') WHERE name='connection_type'",
+    );
+    if (connectionTypeCheck && connectionTypeCheck.cnt === 0) {
+      try {
+        this.runSync(
+          "ALTER TABLE printer_settings ADD COLUMN connection_type TEXT NOT NULL DEFAULT 'network'",
         );
-        if (rowsToMigrate && rowsToMigrate.length > 0) {
-          console.log(`[MIGRATION] Found ${rowsToMigrate.length} printer settings to migrate from printer_name to printer_ip`);
-          // Note: We can't automatically convert printer names to IPs, so we'll leave them null
-          // Users will need to reconfigure their printers with IP addresses
-        }
+        console.log('[DB] ✅ Added connection_type column to printer_settings table');
+      } catch (error) {
+        console.error('[DB] Failed to add connection_type to printer_settings', error);
       }
-    } catch (error) {
-      console.error('Failed to check printer_name migration', error);
+    }
+
+    // Migration: printer_name (Windows Spooler queue name)
+    const printerNameCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('printer_settings') WHERE name='printer_name'",
+    );
+    if (printerNameCheck && printerNameCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE printer_settings ADD COLUMN printer_name TEXT');
+        console.log('[DB] ✅ Added printer_name column to printer_settings table');
+      } catch (error) {
+        console.error('[DB] Failed to add printer_name to printer_settings', error);
+      }
     }
 
     // Finance tables
@@ -1251,6 +1343,7 @@ export class DatabaseService {
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
+            password_plain TEXT,
             role TEXT NOT NULL CHECK(role IN ('admin', 'manager', 'cashier', 'waiter', 'kitchen', 'customer')),
             require_captain_approval INTEGER DEFAULT 0,
             customer_free_order INTEGER DEFAULT 0,
@@ -1261,8 +1354,8 @@ export class DatabaseService {
 
         // Copy all data from old table to new table
         this.runSync(
-          `INSERT INTO users_new (id, username, password_hash, role, require_captain_approval, customer_free_order, created_at, updated_at)
-           SELECT id, username, password_hash, role, 
+          `INSERT INTO users_new (id, username, password_hash, password_plain, role, require_captain_approval, customer_free_order, created_at, updated_at)
+           SELECT id, username, password_hash, NULL, role, 
                   COALESCE(require_captain_approval, 0) as require_captain_approval,
                   COALESCE(customer_free_order, 0) as customer_free_order,
                   created_at, updated_at
@@ -1290,6 +1383,19 @@ export class DatabaseService {
       }
     }
 
+    // Migration: store plain login code for admin display (login still uses password_hash)
+    const usersPasswordPlainCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('users') WHERE name='password_plain'",
+    );
+    if (usersPasswordPlainCheck && usersPasswordPlainCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE users ADD COLUMN password_plain TEXT');
+        console.log('[DB] ✅ Added password_plain column to users table');
+      } catch (error) {
+        console.error('[DB] Failed to add password_plain to users', error);
+      }
+    }
+
     // Seed default admin user if users table is empty
     const usersCount = this.getSync('SELECT COUNT(*) as count FROM users');
     if (usersCount && usersCount.count === 0) {
@@ -1298,13 +1404,31 @@ export class DatabaseService {
 
       try {
         this.runSync(
-          'INSERT INTO users (username, password_hash, role, created_at, updated_at) VALUES (?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
-          ['admin', defaultPasswordHash, 'admin'],
+          'INSERT INTO users (username, password_hash, password_plain, role, created_at, updated_at) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)',
+          ['admin', defaultPasswordHash, 'admin123', 'admin'],
         );
         console.log('[DB] ✅ Seeded default admin user (username: admin, password: admin123)');
       } catch (error) {
         console.error('[DB] Failed to seed default admin user', error);
       }
+    }
+
+    // Backfill default admin code when still using factory password and plain is missing
+    try {
+      const adminRow = this.getSync(
+        "SELECT id, password_hash, password_plain FROM users WHERE username = 'admin' AND role = 'admin' LIMIT 1",
+      );
+      if (adminRow && !adminRow.password_plain && adminRow.password_hash) {
+        if (bcrypt.compareSync('admin123', String(adminRow.password_hash))) {
+          this.runSync('UPDATE users SET password_plain = ? WHERE id = ?', [
+            'admin123',
+            adminRow.id,
+          ]);
+          console.log('[DB] ✅ Backfilled password_plain for default admin');
+        }
+      }
+    } catch (error) {
+      console.error('[DB] Failed to backfill admin password_plain', error);
     }
 
     // Seed active business day if none exists

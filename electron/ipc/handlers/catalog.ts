@@ -9,6 +9,7 @@ import {
   itemsCreate,
   itemsUpdate,
   itemsRemove,
+  itemsCopyOptionsFromItem,
   categoriesFindAll,
   categoriesFindOne,
   categoriesCreate,
@@ -28,6 +29,9 @@ export function registerCatalogHandlers() {
     itemsUpdate(id, data),
   );
   ipcMain.handle('items:remove', async (_, id: number) => itemsRemove(id));
+  ipcMain.handle('items:copyOptionsFromItem', async (_, targetId: number, sourceId: number) =>
+    itemsCopyOptionsFromItem(targetId, sourceId),
+  );
 
   ipcMain.handle('categories:findAll', async () => categoriesFindAll());
   ipcMain.handle('categories:findOne', async (_, id: number) => categoriesFindOne(id));

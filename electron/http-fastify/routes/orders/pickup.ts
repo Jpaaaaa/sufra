@@ -13,7 +13,7 @@ import {
 } from '../../../init/backend-loader';
 import type { FastifyRouteContext } from '../../types';
 import { sendRouteError } from '../../errors';
-import { emitOrder, parseId, type DineInStatus } from './helpers';
+import { emitOrder, parseId, withOrderCreatorFromRequest, type DineInStatus } from './helpers';
 
 type StatusBody = { status?: DineInStatus };
 
@@ -74,7 +74,9 @@ export function registerPickupOrderRoutes(ctx: FastifyRouteContext): void {
 
     app.post(basePath, async (request, reply) => {
       try {
-        const order = await pickupOrdersCreate(request.body);
+        const order = await pickupOrdersCreate(
+          withOrderCreatorFromRequest(request.body as Record<string, unknown>, request.headers.authorization),
+        );
         emitOrder(ctx, 'created', 'pickup', order);
         return order;
       } catch (error) {
@@ -84,7 +86,9 @@ export function registerPickupOrderRoutes(ctx: FastifyRouteContext): void {
 
     app.post(apiBasePath, async (request, reply) => {
       try {
-        const order = await pickupOrdersCreate(request.body);
+        const order = await pickupOrdersCreate(
+          withOrderCreatorFromRequest(request.body as Record<string, unknown>, request.headers.authorization),
+        );
         emitOrder(ctx, 'created', 'pickup', order);
         return order;
       } catch (error) {

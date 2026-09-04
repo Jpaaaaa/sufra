@@ -8,6 +8,7 @@ import {
   generateReportsExcel,
   businessDayGetCurrentBusinessDay,
   businessDayStartNewBusinessDay,
+  businessDayEnsureBusinessDayExists,
   financeGetCashFlow,
   financeCreateCashFlow,
   financeSyncCashFlowFromOrders,
@@ -64,6 +65,7 @@ export function registerFinanceHandlers() {
     const username = data?.username || data;
     return businessDayStartNewBusinessDay(typeof username === 'string' ? username : undefined);
   });
+  ipcMain.handle('business-day:ensure', async () => businessDayEnsureBusinessDayExists());
 
   ipcMain.handle('api:request', async (_, payload: { endpoint: string; method: string; body?: any }) => {
     const { endpoint, method, body } = payload || {};

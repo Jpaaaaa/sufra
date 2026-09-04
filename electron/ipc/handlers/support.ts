@@ -57,4 +57,22 @@ export function registerSupportHandlers() {
       return { ok: false as const, error: e?.message || 'Failed to open browser' };
     }
   });
+
+  /** Open http(s) URL in the OS default browser (safe for ad / marketing links). */
+  ipcMain.handle('support:openExternalUrl', async (_event, url: unknown) => {
+    try {
+      if (typeof url !== 'string' || !url.trim()) {
+        return { ok: false as const, error: 'Invalid URL' };
+      }
+      const parsed = new URL(url.trim());
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        return { ok: false as const, error: 'Only http(s) URLs are allowed' };
+      }
+      await shell.openExternal(parsed.toString());
+      return { ok: true as const };
+    } catch (e: any) {
+      console.error('[support:openExternalUrl]', e);
+      return { ok: false as const, error: e?.message || 'Failed to open browser' };
+    }
+  });
 }

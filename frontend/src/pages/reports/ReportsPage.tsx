@@ -92,6 +92,10 @@ export default function ReportsPage() {
           items: reportData.itemsPerformance,
           employees: reportData.employeeSummary,
           orders: reportData.orders,
+          shiftBreakdown: reportData.shiftBreakdown,
+          shiftBreakdownByDay: reportData.shiftBreakdownByDay,
+          shiftBreakdownByMonth: reportData.shiftBreakdownByMonth,
+          shiftBreakdownTotals: reportData.shiftBreakdownTotals,
           ...(activeTab === 'daily' && reportData.cashDrawer
             ? { drawer: reportData.cashDrawer }
             : {}),

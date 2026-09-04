@@ -1,11 +1,11 @@
 import type { Item } from './useItems';
 import type { ShelfItem } from './useShelves';
+import type { SelectedItemOptions } from '../lib/item-options';
 
 export interface Category {
   id: number;
   name: string;
   sort_order?: number;
-  /** When false, hidden from POS menu (admin still sees in settings). */
   is_menu_active?: boolean;
 }
 
@@ -16,7 +16,6 @@ export interface ExistingOrder {
   total: number;
   discount?: number;
   globalDiscount?: string | { percent: number; amount: number };
-  /** Delivery aggregator (Talabat, Toters, …) — snapshot on order */
   delivery_platform_id?: number | null;
   delivery_platform_name?: string | null;
   delivery_platform_commission_percent?: number | null;
@@ -30,10 +29,12 @@ export interface ExistingOrder {
 }
 
 export interface CartItem {
+  cartLineId: string;
   item: Item;
   quantity: number;
+  selectedOptions: SelectedItemOptions;
+  linePrice: number;
   order_type?: 'dine-in' | 'pickup';
   shelfItem?: ShelfItem;
-  /** When set, show this in the cart instead of item.name (e.g. "عرض اليوم") */
   offerDisplayName?: string;
 }

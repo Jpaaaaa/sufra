@@ -2,6 +2,63 @@ import { PNG } from 'pngjs';
 import * as net from 'net';
 
 export { scanForPrinters } from './printer-scanner';
+export {
+  listWindowsPrinters,
+  printPngViaWindowsSpooler,
+  warmupWindowsSpoolerWorker as warmupWindowsSpooler,
+  shutdownWindowsSpoolerWorker as shutdownWindowsSpooler,
+} from './windows-spooler';
+import {
+  listWindowsPrinters,
+  printPngViaWindowsSpooler,
+} from './windows-spooler';
+
+export type PrinterConnectionType = 'network' | 'windows_spooler';
+
+export type PrinterDestination = {
+  connection_type?: PrinterConnectionType | string | null;
+  printer_ip?: string | null;
+  printer_port?: number | null;
+  printer_name?: string | null;
+};
+
+export function resolveConnectionType(
+  setting: PrinterDestination | null | undefined,
+): PrinterConnectionType {
+  return setting?.connection_type === 'windows_spooler' ? 'windows_spooler' : 'network';
+}
+
+export function isPrinterConfigured(
+  setting: PrinterDestination | null | undefined,
+): boolean {
+  if (!setting) return false;
+  if (resolveConnectionType(setting) === 'windows_spooler') {
+    return !!(setting.printer_name && setting.printer_name.trim());
+  }
+  return !!(setting.printer_ip && setting.printer_ip.trim());
+}
+
+/**
+ * Print PNG using a saved printer setting (network ESC/POS or Windows Spooler/GDI).
+ */
+export async function printPngUsingSetting(
+  pngBuffer: Buffer,
+  setting: PrinterDestination,
+): Promise<{ success: boolean; error?: string }> {
+  const connectionType = resolveConnectionType(setting);
+  if (connectionType === 'windows_spooler') {
+    const name = setting.printer_name?.trim();
+    if (!name) {
+      return { success: false, error: 'No Windows printer name configured' };
+    }
+    return printPngViaWindowsSpooler(pngBuffer, name);
+  }
+  return printPngToPrinter(
+    pngBuffer,
+    setting.printer_ip || undefined,
+    setting.printer_port ?? 9100,
+  );
+}
 
 /**
  * Convert PNG buffer to ESC/POS raster graphics format
@@ -43,11 +100,11 @@ function pngToEscPos(pngBuffer: Buffer): Buffer {
       console.warn(`[ESC/POS] ⚠ PNG data length mismatch: expected ${width * height * 4}, got ${png.data.length}`);
     }
 
-    // ESC/POS thermal printer: 80mm = 576px width (standard for 80mm printers)
-    const PRINTER_WIDTH = 576;
-    const BYTES_PER_LINE = Math.ceil(PRINTER_WIDTH / 8); // 72 bytes per line (576/8)
+    // Use PNG width (padded to 8px) so 58mm (384) and 80mm (576) both work
+    const PRINTER_WIDTH = Math.ceil(width / 8) * 8;
+    const BYTES_PER_LINE = PRINTER_WIDTH / 8;
     
-    console.log(`[ESC/POS] Printer width: ${PRINTER_WIDTH}px (80mm), bytes per line: ${BYTES_PER_LINE}`);
+    console.log(`[ESC/POS] Printer width: ${PRINTER_WIDTH}px (png ${width}px), bytes per line: ${BYTES_PER_LINE}`);
 
     const buffers: Buffer[] = [];
     
@@ -308,13 +365,11 @@ export async function printPngToPrinter(
 }
 
 /**
- * Get list of available printers (LAN-based)
- * Returns empty list - printers are configured by IP address in settings
+ * Get list of Windows-installed printers (Spooler queue names).
+ * Network printers are configured by IP; this list is for windows_spooler mode.
  */
-export async function getAvailablePrinters(): Promise<
-  Array<{ name: string; isDefault: boolean }>
-> {
-  // LAN printers are configured by IP address, not discovered
-  // Return empty list - frontend will use saved IP addresses from settings
-  return [];
+export async function getAvailablePrinters(
+  forceRefresh = false,
+): Promise<Array<{ name: string; isDefault: boolean; status?: string }>> {
+  return listWindowsPrinters(forceRefresh);
 }

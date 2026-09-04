@@ -13,6 +13,7 @@ import { registerShiftsHandlers } from './shifts';
 import { registerFinanceHandlers } from './finance';
 import { registerSupportHandlers } from './support';
 import { registerSettingsHandlers } from './settings';
+import { registerBackupIpc } from '../../backup/register-backup-ipc';
 
 export function setupIpcHandlers() {
   console.log('[IPC] Setting up IPC handlers...');
@@ -28,5 +29,6 @@ export function setupIpcHandlers() {
   registerFinanceHandlers();
   registerSettingsHandlers();
   registerSupportHandlers();
+  registerBackupIpc();
   console.log('[IPC] ✓ IPC handlers registered');
 }

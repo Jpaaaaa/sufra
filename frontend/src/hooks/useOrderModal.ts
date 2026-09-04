@@ -8,6 +8,13 @@ import { useOffers } from './useOffers';
 import { useOrderModalData } from './useOrderModalData';
 import { createOrderModalPrintHandlers } from './useOrderModalPrint';
 import { createOrderModalHandlers } from './useOrderModalHandlers';
+import {
+  type AddItemExtras,
+  buildCartItem,
+  cartSubtotal,
+  getCartLineKey,
+  updateCartLine,
+} from './cart-item-utils';
 
 export type { Category, ExistingOrder, CartItem } from './useOrderModalTypes';
 import type { CartItem, ExistingOrder } from './useOrderModalTypes';
@@ -51,15 +58,12 @@ export function useOrderModal(table: TableEntity) {
     setTableDiscount,
   } = data;
 
-  const subtotal = useMemo(
-    () => selectedItems.reduce((sum, si) => sum + si.item.price * si.quantity, 0),
-    [selectedItems]
-  );
+  const subtotal = useMemo(() => cartSubtotal(selectedItems), [selectedItems]);
   const total = subtotal;
   const tableSubtotal = useMemo(() => {
     let t = 0;
     for (const order of existingOrders) {
-      for (const item of order.items) {
+      for (const item of order.items ?? []) {
         t += (item.price || 0) * (item.quantity || 0);
       }
     }
@@ -128,38 +132,42 @@ export function useOrderModal(table: TableEntity) {
     ]
   );
 
-  const addItemToOrder = useCallback((item: Item, shelfItem?: ShelfItem | unknown, offerDisplayName?: string) => {
-    const s = shelfItem as ShelfItem | undefined;
+  const addItemToOrder = useCallback((item: Item, extras?: AddItemExtras) => {
+    const s = extras?.shelfItem;
     setSelectedItems((prev) => {
-      const existing = prev.find((si) => si.item.id === item.id && (!s || si.shelfItem?.id === s.id));
+      const next = buildCartItem(item, extras ?? {}, 'dine-in');
+      const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
+      const existing = prev.find(
+        (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+      );
       if (existing) {
-        if (s && existing.shelfItem && existing.quantity + 1 > s.quantity) {
+        if (s && existing.quantity + 1 > s.quantity) {
           showToast(`الكمية المتوفرة: ${s.quantity}`, 'error');
           return prev;
         }
         return prev.map((si) =>
-          si.item.id === item.id && (!s || si.shelfItem?.id === s.id)
-            ? { ...si, quantity: si.quantity + 1 }
-            : si
+          si.cartLineId === existing.cartLineId ? { ...si, quantity: si.quantity + 1 } : si,
         );
       }
-      if (s && (s as ShelfItem).quantity === 0) {
+      if (s && s.quantity === 0) {
         showToast('نفذت الكمية', 'error');
         return prev;
       }
-      return [
-        ...prev,
-        {
-          item,
-          quantity: 1,
-          order_type: 'dine-in' as const,
-          shelfItem: s,
-          ...(offerDisplayName ? { offerDisplayName } : {}),
-        },
-      ];
+      return [...prev, next];
     });
     if (ordersExpanded && existingOrders.length > 0) setOrdersExpanded(false);
   }, [ordersExpanded, existingOrders.length]);
+
+  const updateCartLineOptions = useCallback(
+    (cartLineId: string, selectedOptions: import('../lib/item-options').SelectedItemOptions, linePrice: number) => {
+      setSelectedItems((prev) =>
+        prev.map((si) =>
+          si.cartLineId === cartLineId ? { ...si, selectedOptions, linePrice } : si,
+        ),
+      );
+    },
+    [],
+  );
 
   const addShelfItemByBarcode = useCallback(
     async (barcode: string) => {
@@ -190,7 +198,7 @@ export function useOrderModal(table: TableEntity) {
           categoryId: null,
           kitchen_id: null,
         };
-        addItemToOrder(virtualItem, shelfItem);
+        addItemToOrder(virtualItem, { shelfItem });
         showToast(`تم إضافة ${shelfItem.name}`, 'success');
       } catch {
         showToast('لم يتم العثور على المنتج بهذا الباركود', 'error');
@@ -199,32 +207,26 @@ export function useOrderModal(table: TableEntity) {
     [addItemToOrder, selectedItems]
   );
 
-  const updateItemOrderType = useCallback((itemId: number, newOrderType: 'dine-in' | 'pickup') => {
-    setSelectedItems((prev) =>
-      prev.map((si) => (si.item.id === itemId ? { ...si, order_type: newOrderType } : si))
-    );
+  const updateItemOrderType = useCallback((cartLineId: string, newOrderType: 'dine-in' | 'pickup') => {
+    setSelectedItems((prev) => updateCartLine(prev, cartLineId, { order_type: newOrderType }));
   }, []);
 
-  const removeItemFromOrder = useCallback((itemId: number) => {
-    setSelectedItems((prev) => prev.filter((si) => si.item.id !== itemId));
+  const removeItemFromOrder = useCallback((cartLineId: string) => {
+    setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
   }, []);
 
-  const updateQuantity = useCallback((itemId: number, quantity: number) => {
+  const updateQuantity = useCallback((cartLineId: string, quantity: number) => {
     if (quantity <= 0) {
-      setSelectedItems((prev) => prev.filter((si) => si.item.id !== itemId));
+      setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
     } else {
-      setSelectedItems((prev) =>
-        prev.map((si) => {
-          if (si.item.id === itemId) {
-            if (si.shelfItem && quantity > si.shelfItem.quantity) {
-              showToast(`الكمية المتوفرة: ${si.shelfItem.quantity}`, 'error');
-              return si;
-            }
-            return { ...si, quantity };
-          }
-          return si;
-        })
-      );
+      setSelectedItems((prev) => {
+        const line = prev.find((si) => si.cartLineId === cartLineId);
+        if (line?.shelfItem && quantity > line.shelfItem.quantity) {
+          showToast(`الكمية المتوفرة: ${line.shelfItem.quantity}`, 'error');
+          return prev;
+        }
+        return updateCartLine(prev, cartLineId, { quantity });
+      });
     }
   }, []);
 
@@ -318,12 +320,14 @@ export function useOrderModal(table: TableEntity) {
     updateItemOrderType,
     removeItemFromOrder,
     updateQuantity,
+    updateCartLineOptions,
     clearCart: () => {
       setSelectedItems([]);
       setNote('');
     },
     handleSubmitOrder: orderHandlers.handleSubmitOrder,
     handlePrintOrder: printHandlers.handlePrintOrder,
+    handlePrintAllKitchen: printHandlers.handlePrintAllKitchen,
     handlePrintReceipt: printHandlers.handlePrintReceipt,
     handleClearTable: orderHandlers.handleClearTable,
     handleEditOrder: orderHandlers.handleEditOrder,

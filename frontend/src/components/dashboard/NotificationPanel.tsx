@@ -112,7 +112,7 @@ export default function NotificationPanel() {
         });
       }
 
-      // Check for tables waiting too long (more than 20 minutes)
+      // Check table wait times and kitchen delays from dine-in orders by hall
       try {
         const halls = await fetchJson<Hall[]>(`${serverUrl}/halls`);
         const virtualHallNames = ['طلبات خارجية', 'طلبات سفري / توصيل'];
@@ -120,12 +120,15 @@ export default function NotificationPanel() {
 
         for (const hall of filteredHalls) {
           try {
-            const orders = await fetchJson<Order[]>(`${serverUrl}/orders?hall_id=${hall.id}`);
-            const pendingOrders = orders.filter((o) => o.status === 'pending' || o.status === 'printed');
+            const orders = await fetchJson<Order[]>(
+              `${serverUrl}/orders/dine-in/hall/${hall.id}`,
+            );
+            const now = new Date();
 
-            for (const order of pendingOrders) {
+            for (const order of orders) {
+              if (order.status !== 'pending' && order.status !== 'printed') continue;
+
               const created = new Date(order.created_at);
-              const now = new Date();
               const diffMins = Math.floor((now.getTime() - created.getTime()) / 60000);
 
               if (diffMins > 20) {
@@ -142,32 +145,8 @@ export default function NotificationPanel() {
                   time: formatTimeAgo(order.created_at),
                 });
               }
-            }
-          } catch (error) {
-            console.error(`Failed to check orders for hall ${hall.id}:`, error);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to check table waiting times:', error);
-      }
 
-      // Check for orders in "printed" status for more than 30 minutes (kitchen delay)
-      try {
-        const halls = await fetchJson<Hall[]>(`${serverUrl}/halls`);
-        const virtualHallNames = ['طلبات خارجية', 'طلبات سفري / توصيل'];
-        const filteredHalls = halls.filter((h) => !virtualHallNames.includes(h.name));
-
-        for (const hall of filteredHalls) {
-          try {
-            const orders = await fetchJson<Order[]>(`${serverUrl}/orders?hall_id=${hall.id}`);
-            const printedOrders = orders.filter((o) => o.status === 'printed');
-
-            for (const order of printedOrders) {
-              const created = new Date(order.created_at);
-              const now = new Date();
-              const diffMins = Math.floor((now.getTime() - created.getTime()) / 60000);
-
-              if (diffMins > 30) {
+              if (order.status === 'printed' && diffMins > 30) {
                 newNotifications.push({
                   id: `kitchen-${order.id}`,
                   type: 'kitchen',
@@ -178,11 +157,11 @@ export default function NotificationPanel() {
               }
             }
           } catch (error) {
-            console.error(`Failed to check kitchen delays for hall ${hall.id}:`, error);
+            console.error(`Failed to check orders for hall ${hall.id}:`, error);
           }
         }
       } catch (error) {
-        console.error('Failed to check kitchen delays:', error);
+        console.error('Failed to check hall order notifications:', error);
       }
 
       // Sort by time (most recent first) and limit to 10
@@ -321,4 +300,3 @@ export default function NotificationPanel() {
     </div>
   );
 }
-

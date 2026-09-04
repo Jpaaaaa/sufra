@@ -20,7 +20,7 @@ interface OrderModalMenuProps {
   editingOrder: { id: number } | null;
   onSetSelectedCategory: (category: number | null) => void;
   onSetSearchQuery: (query: string) => void;
-  onAddItem: (item: Item, shelfItem?: unknown, offerDisplayName?: string) => void;
+  onAddItem: (item: Item, extras?: import('../../hooks/cart-item-utils').AddItemExtras) => void;
   onAddShelfItemByBarcode?: (barcode: string) => void;
   onCancelEdit: () => void;
 }

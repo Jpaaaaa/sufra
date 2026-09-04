@@ -15,8 +15,9 @@ import { showToast } from '../components/ui/Toast';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
 import { isHappyHourActiveNow } from '../utils/offer-pricing';
 import { isWeekdayIncluded } from '../utils/weekdays';
-import type { TableEntity, Kitchen } from '../utils';
+import type { TableEntity } from '../utils';
 import type { useOffers } from './useOffers';
+import { useKitchensStore } from '../../stores/kitchensStore';
 
 function parseOrdersWithDiscount(loadedOrders: any[]) {
   return loadedOrders
@@ -47,7 +48,7 @@ export function useOrderModalData(
   const [items, setItems] = useState<Item[]>([]);
   const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const kitchens = useKitchensStore((state) => state.kitchens);
   const [loadingItems, setLoadingItems] = useState(false);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [existingOrders, setExistingOrders] = useState<ExistingOrder[]>([]);
@@ -62,17 +63,16 @@ export function useOrderModalData(
       setLoadingOrders(true);
       try {
         const serverUrl = getServerUrl();
-        const [itemsData, categoriesData, kitchensData, ordersData, shelvesData] = await Promise.all([
+        const [itemsData, categoriesData, ordersData, shelvesData] = await Promise.all([
           fetchJson<any[]>(`${serverUrl}/items`),
           fetchJson<any[]>(`${serverUrl}/categories`),
-          fetchJson<any[]>(`${serverUrl}/kitchens`),
           fetchJson<any[]>(`${serverUrl}/orders/dine-in/table/${table.id}`),
           fetchJson<ShelfItem[]>(`${serverUrl}/shelves`),
+          useKitchensStore.getState().loadKitchens(),
         ]);
         setItems(itemsData.map(normalizeItemRow));
         setCategories(categoriesData.map(normalizeCategoryRow));
         setShelfItems(shelvesData || []);
-        setKitchens(kitchensData);
         const loadedOrders = ordersData.filter((o: any) => o.status === 'pending' || o.status === 'printed');
         setExistingOrders(loadedOrders);
 

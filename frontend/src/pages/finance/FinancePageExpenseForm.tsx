@@ -49,11 +49,37 @@ export default function FinancePageExpenseForm({
             ? t('finance.recurrenceUnitYear')
             : t('finance.recurrenceUnitGeneric');
 
+  const heading = formState.id ? t('finance.editExpenseTitle') : t('finance.addExpenseTitle');
+
   return (
-    <form
-      onSubmit={onSubmit}
-      className="mb-6 rounded-soft-lg border border-black/5 bg-cloud-soft-white p-4"
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-obsidian/70 backdrop-blur-sm p-4"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="finance-expense-form-title"
+      onClick={onCancel}
     >
+      <div
+        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-soft-xl border border-black/5 bg-white shadow-soft"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 z-10 flex items-center justify-between border-b border-black/5 bg-white px-6 py-4">
+          <h2 id="finance-expense-form-title" className="text-[20px] leading-tight font-semibold text-obsidian">
+            {heading}
+          </h2>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="rounded-soft-lg p-2 text-obsidian/60 hover:bg-cloud-soft-white hover:text-obsidian"
+            aria-label={t('finance.cancel')}
+          >
+            <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+
+        <form onSubmit={onSubmit} className="p-6">
       <div className="grid gap-4 md:grid-cols-2">
         <div>
           <label className="mb-2 block text-[15px] leading-normal font-medium text-obsidian">
@@ -203,7 +229,7 @@ export default function FinancePageExpenseForm({
           />
         </div>
       </div>
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-6 flex justify-end gap-2 border-t border-black/5 pt-4">
         <button
           type="button"
           onClick={onCancel}
@@ -219,6 +245,8 @@ export default function FinancePageExpenseForm({
           {isSubmitting ? t('finance.saving') : formState.id ? t('finance.update') : t('finance.save')}
         </button>
       </div>
-    </form>
+        </form>
+      </div>
+    </div>
   );
 }

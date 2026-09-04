@@ -5,6 +5,7 @@ import {
   generateReportsExcel,
   businessDayGetCurrentBusinessDay,
   businessDayStartNewBusinessDay,
+  businessDayEnsureBusinessDayExists,
   financeGetCashFlow,
   financeCreateCashFlow,
   financeSyncCashFlowFromOrders,
@@ -177,6 +178,22 @@ export function registerFinanceRoutes(ctx: FastifyRouteContext): void {
       return await businessDayStartNewBusinessDay(
         parseUsername(request.body),
       );
+    } catch (error) {
+      sendRouteError(reply, error, `${request.method} ${request.url}`);
+    }
+  });
+
+  app.post('/api/business-day/ensure', async (request, reply) => {
+    try {
+      return await businessDayEnsureBusinessDayExists();
+    } catch (error) {
+      sendRouteError(reply, error, `${request.method} ${request.url}`);
+    }
+  });
+
+  app.post('/business-day/ensure', async (request, reply) => {
+    try {
+      return await businessDayEnsureBusinessDayExists();
     } catch (error) {
       sendRouteError(reply, error, `${request.method} ${request.url}`);
     }

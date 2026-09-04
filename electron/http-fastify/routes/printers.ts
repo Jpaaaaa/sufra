@@ -5,50 +5,108 @@ import {
   printersGetAllSettings,
   printersSaveSetting,
 } from '../../init/backend-loader';
-import { printPngToPrinter, getAvailablePrinters } from '../../print/printer';
+import {
+  getAvailablePrinters,
+  isPrinterConfigured,
+  printPngUsingSetting,
+} from '../../print/printer';
+import {
+  customerTestReceiptData,
+  kitchenTestPrintData,
+} from '../../print/printer-test-samples';
 import { getIpcHandler } from '../ipc-handlers';
 import type { FastifyRouteContext } from '../types';
 import { sendRouteError } from '../errors';
 
 type PrinterTestBody = {
-  printer_ip?: string;
+  connection_type?: 'network' | 'windows_spooler';
+  printer_ip?: string | null;
   printer_port?: number;
+  printer_name?: string | null;
+  kitchen_id?: number | null;
+  kind?: 'customer' | 'kitchen';
+  kitchen_name?: string;
+  use_saved?: boolean;
 };
 
-const TEST_PRINT_DATA = {
-  orderId: 999,
-  table: 1,
-  hall: 'اختبار',
-  items: [
-    {
-      id: 1,
-      item_name: 'طباعة تجريبية - SUFRA POS',
-      quantity: 1,
-      price: 0,
-    },
-  ],
-  totals: { total: 0 },
-  timestamp: new Date().toISOString(),
-  restaurantName: 'سفرة',
-};
+async function renderSamplePng(
+  kind: 'customer' | 'kitchen',
+  kitchenName?: string,
+): Promise<Buffer> {
+  if (kind === 'customer') {
+    const { renderReceiptToPng } = await import('../../print/render-customer-receipt');
+    return renderReceiptToPng(customerTestReceiptData());
+  }
+  const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
+  return renderOrderToPng(kitchenTestPrintData(kitchenName));
+}
 
 async function runTestPrint(data: PrinterTestBody, reply: import('fastify').FastifyReply) {
-  if (!data?.printer_ip || data.printer_ip.trim() === '') {
-    return reply
-      .status(400)
-      .send({ success: false, error: 'Printer IP address is required' });
+  let setting: {
+    connection_type?: string;
+    printer_ip?: string | null;
+    printer_port?: number;
+    printer_name?: string | null;
+    printer_type?: string;
+  } | null = null;
+
+  if (
+    data.use_saved ||
+    (data.kitchen_id !== undefined &&
+      data.printer_ip === undefined &&
+      data.printer_name === undefined &&
+      !data.connection_type)
+  ) {
+    const settings = await printersGetAllSettings();
+    const kitchenId = data.kitchen_id ?? null;
+    setting =
+      settings.find((s: any) =>
+        kitchenId === null
+          ? s.kitchen_id === null && s.printer_type === 'customer' && s.is_active
+          : s.kitchen_id === kitchenId && s.printer_type === 'kitchen' && s.is_active,
+      ) || null;
+    if (!isPrinterConfigured(setting)) {
+      return reply.status(400).send({
+        success: false,
+        error:
+          kitchenId === null
+            ? 'No customer receipt printer configured'
+            : 'No printer configured for this kitchen',
+      });
+    }
+  } else {
+    setting = {
+      connection_type:
+        data.connection_type === 'windows_spooler' ? 'windows_spooler' : 'network',
+      printer_ip: data.printer_ip ?? null,
+      printer_port: data.printer_port || 9100,
+      printer_name: data.printer_name ?? null,
+    };
+    if (!isPrinterConfigured(setting)) {
+      return reply.status(400).send({
+        success: false,
+        error:
+          setting.connection_type === 'windows_spooler'
+            ? 'Windows printer name is required'
+            : 'Printer IP address is required',
+      });
+    }
   }
 
-  const { renderOrderToPng } = await import('../../print/render-kitchen-receipt');
-  const png = await renderOrderToPng(TEST_PRINT_DATA);
+  const kind: 'customer' | 'kitchen' =
+    data.kind ||
+    (setting?.printer_type === 'customer' || data.kitchen_id === null
+      ? 'customer'
+      : 'kitchen');
+
+  const png = await renderSamplePng(kind, data.kitchen_name);
   if (!png || png.length < 100) {
     return reply
       .status(500)
       .send({ success: false, error: 'Failed to generate test PNG' });
   }
 
-  const port = data.printer_port || 9100;
-  const printResult = await printPngToPrinter(png, data.printer_ip, port);
+  const printResult = await printPngUsingSetting(png, setting!);
   if (printResult.success) {
     return { success: true, message: 'Test print sent successfully' };
   }
@@ -149,6 +207,30 @@ export function registerPrintersRoutes(ctx: FastifyRouteContext): void {
       } catch (error) {
         const message =
           error instanceof Error ? error.message : 'Failed to test printer';
+        return reply.status(500).send({ success: false, error: message });
+      }
+    },
+  );
+
+  app.post<{ Body: { kind?: 'customer' | 'kitchen'; kitchen_name?: string } }>(
+    '/api/printers/preview',
+    async (request, reply) => {
+      try {
+        const kind = request.body?.kind === 'kitchen' ? 'kitchen' : 'customer';
+        const png = await renderSamplePng(kind, request.body?.kitchen_name);
+        if (!png || png.length < 100) {
+          return reply
+            .status(500)
+            .send({ success: false, error: 'Failed to generate preview PNG' });
+        }
+        return {
+          success: true,
+          imageBase64: png.toString('base64'),
+          kind,
+        };
+      } catch (error) {
+        const message =
+          error instanceof Error ? error.message : 'Failed to generate preview';
         return reply.status(500).send({ success: false, error: message });
       }
     },

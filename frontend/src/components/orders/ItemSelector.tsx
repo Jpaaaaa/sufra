@@ -9,6 +9,14 @@ import {
   toastMessageForUnavailable,
 } from '../../utils/item-order-availability';
 import { enrichItemWithOffers, isHappyHourActiveNow } from '../../utils/offer-pricing';
+import {
+  getDefaultSelections,
+  getMinReplacePrice,
+  itemHasOptionGroups,
+  type SelectedItemOptions,
+} from '../../lib/item-options';
+import type { AddItemExtras } from '../../hooks/cart-item-utils';
+import { ItemOptionsModal } from './ItemOptionsModal';
 
 const LONG_PRESS_MS = 450;
 
@@ -30,7 +38,7 @@ interface ItemSelectorProps {
   /** Kitchen id → display name (from `/kitchens`). */
   kitchenNameById?: Map<number, string>;
   loading: boolean;
-  onAddItem: (item: Item, shelfItem?: unknown, offerDisplayName?: string) => void;
+  onAddItem: (item: Item, extras?: AddItemExtras) => void;
   offers?: ReturnType<typeof useOffers>;
 }
 
@@ -38,18 +46,21 @@ interface ItemSelectorProps {
 const ItemButton = memo(function ItemButton({ 
   item, 
   onAddItem,
+  onOpenOptions,
   offers,
   allMenuItems = [],
   categoryMenuActiveById,
   kitchenNameById,
 }: { 
   item: Item; 
-  onAddItem: (item: Item, shelfItem?: unknown, offerDisplayName?: string) => void;
+  onAddItem: (item: Item, extras?: AddItemExtras) => void;
+  onOpenOptions?: (item: Item, extras?: AddItemExtras) => void;
   offers?: ReturnType<typeof useOffers>;
   allMenuItems?: Item[];
   categoryMenuActiveById?: Map<number, boolean>;
   kitchenNameById?: Map<number, string>;
 }) {
+  const { t } = useTranslation();
   const [showDetailOverlay, setShowDetailOverlay] = useState(false);
   const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const enrichedItem = useMemo(() => enrichItemWithOffers(item, offers), [item, offers]);
@@ -126,7 +137,19 @@ const ItemButton = memo(function ItemButton({
     }
   }
 
+  const hasOptions = itemHasOptionGroups(enrichedItem);
+  const minReplacePrice = getMinReplacePrice(enrichedItem.option_groups ?? []);
+
   const hasDetailToShow = !!(description || offerType || (isCombo && comboDetails.length > 0));
+
+  const getExtras = useCallback((): AddItemExtras => {
+    const offerLabel = offerType || (isCombo ? 'عرض مجمع' : undefined);
+    const shelfItem = (enrichedItem as { _shelfItem?: unknown })._shelfItem;
+    return {
+      shelfItem: shelfItem as AddItemExtras['shelfItem'],
+      offerDisplayName: offerLabel,
+    };
+  }, [enrichedItem, offerType, isCombo]);
 
   const clearLongPressTimer = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -138,13 +161,21 @@ const ItemButton = memo(function ItemButton({
   useEffect(() => () => clearLongPressTimer(), [clearLongPressTimer]);
 
   const handlePointerDown = useCallback(() => {
-    if (!hasDetailToShow) return;
+    if (!hasOptions && !hasDetailToShow) return;
     clearLongPressTimer();
     longPressTimerRef.current = setTimeout(() => {
       longPressTimerRef.current = null;
+      const { available, reason } = getItemOrderAvailability(enrichedItem, categoryMenuActiveById);
+      if (!available && reason) return;
+      if (hasOptions) {
+        const defaults = getDefaultSelections(enrichedItem.option_groups ?? []);
+        onAddItem(enrichedItem, { ...getExtras(), selectedOptions: defaults });
+        showToast(t('orders.optionsQuickAdd'), 'success');
+        return;
+      }
       setShowDetailOverlay(true);
     }, LONG_PRESS_MS);
-  }, [hasDetailToShow, clearLongPressTimer]);
+  }, [hasOptions, hasDetailToShow, clearLongPressTimer, enrichedItem, categoryMenuActiveById, onAddItem, getExtras, t]);
 
   const handlePointerUp = useCallback(() => {
     clearLongPressTimer();
@@ -166,8 +197,16 @@ const ItemButton = memo(function ItemButton({
     }
     const offerLabel = offerType || (isCombo ? 'عرض مجمع' : undefined);
     const shelfItem = (enrichedItem as { _shelfItem?: unknown })._shelfItem;
-    onAddItem(enrichedItem, shelfItem, offerLabel);
-  }, [enrichedItem, categoryMenuActiveById, onAddItem, showDetailOverlay, offerType, isCombo]);
+    const extras: AddItemExtras = {
+      shelfItem: shelfItem as AddItemExtras['shelfItem'],
+      offerDisplayName: offerLabel,
+    };
+    if (hasOptions && onOpenOptions) {
+      onOpenOptions(enrichedItem, extras);
+      return;
+    }
+    onAddItem(enrichedItem, extras);
+  }, [enrichedItem, categoryMenuActiveById, onAddItem, onOpenOptions, showDetailOverlay, offerType, isCombo, hasOptions]);
   
   return (
     <button
@@ -280,6 +319,11 @@ const ItemButton = memo(function ItemButton({
               {offerType}
             </span>
           )}
+          {!isUnavailable && hasOptions && (
+            <span className="inline-flex items-center text-[11px] font-semibold text-blue-800 bg-blue-100/95 px-2 py-1 rounded-md">
+              {t('orders.optionsBadge')}
+            </span>
+          )}
         </div>
       </div>
       
@@ -356,7 +400,9 @@ const ItemButton = memo(function ItemButton({
           )}
           <div className="flex flex-wrap items-baseline gap-1.5">
             <span className="text-[17px] sm:text-[18px] md:text-[11px] xl:text-[18px] leading-tight font-bold text-obsidian whitespace-nowrap">
-              {enrichedItem.price} د.ع
+              {minReplacePrice != null
+                ? t('orders.optionsFromPrice', { price: minReplacePrice.toLocaleString() })
+                : `${enrichedItem.price} د.ع`}
             </span>
             {isCombo && (
               <span className="text-[11px] text-slate-500 font-medium">
@@ -374,13 +420,15 @@ const ItemButton = memo(function ItemButton({
 function VirtualizedItemGrid({ 
   items, 
   onAddItem,
+  onOpenOptions,
   offers,
   allMenuItems = [],
   categoryMenuActiveById,
   kitchenNameById,
 }: { 
   items: Item[]; 
-  onAddItem: (item: Item, shelfItem?: unknown, offerDisplayName?: string) => void;
+  onAddItem: (item: Item, extras?: AddItemExtras) => void;
+  onOpenOptions?: (item: Item, extras?: AddItemExtras) => void;
   offers?: ReturnType<typeof useOffers>;
   allMenuItems?: Item[];
   categoryMenuActiveById?: Map<number, boolean>;
@@ -406,6 +454,7 @@ function VirtualizedItemGrid({
             <ItemButton
               item={item}
               onAddItem={onAddItem}
+              onOpenOptions={onOpenOptions}
               offers={offers}
               allMenuItems={allMenuItems}
               categoryMenuActiveById={categoryMenuActiveById}
@@ -428,8 +477,12 @@ export const ItemSelector = memo(function ItemSelector({
 }: ItemSelectorProps) {
   const { t } = useTranslation();
   const useVirtualization = items.length > 20;
+  const [picker, setPicker] = useState<{ item: Item; extras?: AddItemExtras } | null>(null);
 
-  // Memoize the grid to prevent re-rendering when items array reference changes but content is same
+  const handleOpenOptions = useCallback((item: Item, extras?: AddItemExtras) => {
+    setPicker({ item, extras });
+  }, []);
+
   const itemsGrid = useMemo(() => {
     if (loading) {
       return (
@@ -452,6 +505,7 @@ export const ItemSelector = memo(function ItemSelector({
         <VirtualizedItemGrid
           items={items}
           onAddItem={onAddItem}
+          onOpenOptions={handleOpenOptions}
           offers={offers}
           allMenuItems={allMenuItems}
           categoryMenuActiveById={categoryMenuActiveById}
@@ -474,6 +528,7 @@ export const ItemSelector = memo(function ItemSelector({
             key={item.id}
             item={item}
             onAddItem={onAddItem}
+            onOpenOptions={handleOpenOptions}
             offers={offers}
             allMenuItems={allMenuItems}
             categoryMenuActiveById={categoryMenuActiveById}
@@ -482,9 +537,24 @@ export const ItemSelector = memo(function ItemSelector({
         ))}
       </div>
     );
-  }, [items, allMenuItems, categoryMenuActiveById, kitchenNameById, loading, onAddItem, useVirtualization, offers, t]);
+  }, [items, allMenuItems, categoryMenuActiveById, kitchenNameById, loading, onAddItem, handleOpenOptions, useVirtualization, offers, t]);
 
-  return <div className="w-full h-full">{itemsGrid}</div>;
+  return (
+    <div className="w-full h-full">
+      {itemsGrid}
+      <ItemOptionsModal
+        isOpen={!!picker}
+        item={picker?.item ?? null}
+        onClose={() => setPicker(null)}
+        onConfirm={(selected: SelectedItemOptions) => {
+          if (picker) {
+            onAddItem(picker.item, { ...picker.extras, selectedOptions: selected });
+          }
+          setPicker(null);
+        }}
+      />
+    </div>
+  );
 }, (prevProps, nextProps) => {
   // Fast path: check loading state first
   if (prevProps.loading !== nextProps.loading) return false;

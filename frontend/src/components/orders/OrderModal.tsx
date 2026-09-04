@@ -356,7 +356,8 @@ function OrderModal({ hall, table, onClose }: OrderModalProps) {
             table={table}
             existingOrders={orderModal.existingOrders}
             onClose={onClose}
-            onPrintReceipt={() =>
+            onPrintKitchen={() => orderModal.handlePrintAllKitchen()}
+            onPrintInvoice={() =>
               orderModal.handlePrintReceipt(
                 hall.name,
                 table.name || t('orders.tableDefaultName', { number: table.number }),
@@ -407,6 +408,7 @@ function OrderModal({ hall, table, onClose }: OrderModalProps) {
               onUpdateQuantity={orderModal.updateQuantity}
               onRemoveItem={orderModal.removeItemFromOrder}
               onUpdateItemOrderType={orderModal.updateItemOrderType}
+              onUpdateCartLineOptions={orderModal.updateCartLineOptions}
               onSubmit={orderModal.editingOrder ? orderModal.handleSaveEditedOrder : orderModal.handleSubmitOrder}
               onCancel={orderModal.handleCancelEdit}
               onClearCart={orderModal.clearCart}

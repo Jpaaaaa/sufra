@@ -5,8 +5,6 @@ import { useTranslation } from 'react-i18next';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
 import { formatCurrency } from '../../lib/finance/utils';
 import type { Expense } from '../../lib/finance/types';
-import type { ExpenseFormState } from './useFinancePageHandlers';
-import FinancePageExpenseForm from './FinancePageExpenseForm';
 import FinancePageExpensesFilters from './FinancePageExpensesFilters';
 import FinancePageExpenseTableRow from './FinancePageExpenseTableRow';
 import {
@@ -21,29 +19,17 @@ import { tExpenseGroup } from '../../lib/finance/expense-i18n';
 interface FinancePageExpensesSectionProps {
   expenses: Expense[];
   users: Array<{ id: number; username: string; role: string }>;
-  isExpenseFormOpen: boolean;
-  expenseFormState: ExpenseFormState;
-  setExpenseFormState: React.Dispatch<React.SetStateAction<ExpenseFormState>>;
-  isSubmittingExpense: boolean;
-  onExpenseSubmit: (e: React.FormEvent) => void;
   onEditExpense: (expense: Expense) => void;
   onDeleteExpense: (id: number) => void;
   onOpenExpenseForm: () => void;
-  onCloseExpenseForm: () => void;
 }
 
 export default function FinancePageExpensesSection({
   expenses,
   users,
-  isExpenseFormOpen,
-  expenseFormState,
-  setExpenseFormState,
-  isSubmittingExpense,
-  onExpenseSubmit,
   onEditExpense,
   onDeleteExpense,
   onOpenExpenseForm,
-  onCloseExpenseForm,
 }: FinancePageExpensesSectionProps) {
   const { t } = useTranslation();
   const { numberLocale } = useOrderLocale();
@@ -77,17 +63,6 @@ export default function FinancePageExpensesSection({
         </div>
 
         <FinancePageExpensesFilters filters={tableFilters} onChange={setTableFilters} />
-
-        {isExpenseFormOpen && (
-          <FinancePageExpenseForm
-            formState={expenseFormState}
-            setFormState={setExpenseFormState}
-            users={users}
-            isSubmitting={isSubmittingExpense}
-            onSubmit={onExpenseSubmit}
-            onCancel={onCloseExpenseForm}
-          />
-        )}
 
         {expenses.length > 0 && (
           <p className="mb-4 text-[14px] text-obsidian/65">

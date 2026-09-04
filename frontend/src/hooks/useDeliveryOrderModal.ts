@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
-import { fetchJson, getServerUrl, Kitchen } from '../utils';
+import { fetchJson, getServerUrl } from '../utils';
 import {
   normalizeCategoryRow,
   normalizeItemRow,
@@ -13,10 +13,22 @@ import { showToast } from '../components/ui/Toast';
 import { showPasswordDialog } from '../components/ui/PasswordDialog';
 import { useAuth } from '../contexts/AuthContext';
 import { useOffers } from './useOffers';
+import { APP_BRAND_NAME } from '../lib/brand';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
 import { isHappyHourActiveNow } from '../utils/offer-pricing';
 import { isWeekdayIncluded } from '../utils/weekdays';
 import { ExistingOrder, CartItem, Category } from './useOrderModal';
+import { useKitchensStore } from '../../stores/kitchensStore';
+import {
+  type AddItemExtras,
+  buildCartItem,
+  cartSubtotal,
+  getCartLineKey,
+  updateCartLine,
+  mapCartItemToOrderPayload,
+  orderItemToCartLine,
+} from './cart-item-utils';
+import { withOrderCreator } from '../utils/order-payload';
 
 export interface DeliveryPlatformRow {
   id: number;
@@ -31,7 +43,7 @@ export function useDeliveryOrderModal() {
   const [items, setItems] = useState<Item[]>([]);
   const [shelfItems, setShelfItems] = useState<ShelfItem[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const kitchens = useKitchensStore((state) => state.kitchens);
   const [loadingItems, setLoadingItems] = useState(false);
   const [selectedItems, setSelectedItems] = useState<CartItem[]>([]);
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
@@ -58,18 +70,17 @@ export function useDeliveryOrderModal() {
       setLoadingOrders(true);
       try {
         const serverUrl = getServerUrl();
-        const [itemsData, categoriesData, kitchensData, shelvesData, platformsData] = await Promise.all([
+        const [itemsData, categoriesData, shelvesData, platformsData] = await Promise.all([
           fetchJson<any[]>(`${serverUrl}/items`),
           fetchJson<any[]>(`${serverUrl}/categories`),
-          fetchJson<any[]>(`${serverUrl}/kitchens`),
           fetchJson<ShelfItem[]>(`${serverUrl}/shelves`),
           fetchJson<DeliveryPlatformRow[]>(`${serverUrl}/orders/delivery/platforms`).catch(() => []),
+          useKitchensStore.getState().loadKitchens(),
         ]);
         setDeliveryPlatforms(Array.isArray(platformsData) ? platformsData : []);
         setItems(itemsData.map(normalizeItemRow));
         setCategories(categoriesData.map(normalizeCategoryRow));
         setShelfItems(shelvesData || []);
-        setKitchens(kitchensData);
         // Don't load existing orders - each modal should start fresh
         setExistingOrders([]);
       } catch (e) {
@@ -189,35 +200,28 @@ export function useDeliveryOrderModal() {
     });
   }, [menuItems, shelfItems, selectedCategory, debouncedSearch, offers.featuredItems, offers.combos, offers.happyHours]);
 
-  const addItemToOrder = useCallback((item: Item, shelfItem?: ShelfItem | unknown, offerDisplayName?: string) => {
-    const s = shelfItem as ShelfItem | undefined;
+  const addItemToOrder = useCallback((item: Item, extras?: AddItemExtras) => {
+    const s = extras?.shelfItem;
     setSelectedItems((prev) => {
-      const existing = prev.find((si) => si.item.id === item.id && (!s || si.shelfItem?.id === s.id));
+      const next = buildCartItem(item, extras ?? {}, 'dine-in');
+      const key = getCartLineKey(next.item.id, next.shelfItem?.id, next.selectedOptions);
+      const existing = prev.find(
+        (si) => getCartLineKey(si.item.id, si.shelfItem?.id, si.selectedOptions) === key,
+      );
       if (existing) {
-        if (s && existing.shelfItem) {
-          const newQuantity = existing.quantity + 1;
-          if (newQuantity > s.quantity) {
-            showToast(`الكمية المتوفرة: ${s.quantity}`, 'error');
-            return prev;
-          }
+        if (s && existing.quantity + 1 > s.quantity) {
+          showToast(`الكمية المتوفرة: ${s.quantity}`, 'error');
+          return prev;
         }
         return prev.map((si) =>
-          si.item.id === item.id && (!s || si.shelfItem?.id === s.id)
-            ? { ...si, quantity: si.quantity + 1 }
-            : si
+          si.cartLineId === existing.cartLineId ? { ...si, quantity: si.quantity + 1 } : si,
         );
       }
       if (s && s.quantity === 0) {
         showToast('نفذت الكمية', 'error');
         return prev;
       }
-      return [...prev, { 
-        item, 
-        quantity: 1,
-        order_type: 'dine-in', // Delivery items are always dine-in type
-        shelfItem: s,
-        ...(offerDisplayName ? { offerDisplayName } : {}),
-      }];
+      return [...prev, next];
     });
     if (ordersExpanded && existingOrders.length > 0) {
       setOrdersExpanded(false);
@@ -260,7 +264,7 @@ export function useDeliveryOrderModal() {
         kitchen_id: null,
       };
 
-      addItemToOrder(virtualItem, shelfItem);
+      addItemToOrder(virtualItem, { shelfItem });
       showToast(`تم إضافة ${shelfItem.name}`, 'success');
     } catch (e: any) {
       console.error('Failed to find shelf item:', e);
@@ -268,32 +272,37 @@ export function useDeliveryOrderModal() {
     }
   }, [addItemToOrder, selectedItems]);
 
-  const removeItemFromOrder = useCallback((itemId: number) => {
-    setSelectedItems((prev) => prev.filter((si) => si.item.id !== itemId));
+  const removeItemFromOrder = useCallback((cartLineId: string) => {
+    setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
   }, []);
 
-  const updateQuantity = useCallback((itemId: number, quantity: number) => {
+  const updateQuantity = useCallback((cartLineId: string, quantity: number) => {
     if (quantity <= 0) {
-      setSelectedItems((prev) => prev.filter((si) => si.item.id !== itemId));
+      setSelectedItems((prev) => prev.filter((si) => si.cartLineId !== cartLineId));
     } else {
-      setSelectedItems((prev) =>
-        prev.map((si) => {
-          if (si.item.id === itemId) {
-            if (si.shelfItem && quantity > si.shelfItem.quantity) {
-              showToast(`الكمية المتوفرة: ${si.shelfItem.quantity}`, 'error');
-              return si;
-            }
-            return { ...si, quantity };
-          }
-          return si;
-        })
-      );
+      setSelectedItems((prev) => {
+        const line = prev.find((si) => si.cartLineId === cartLineId);
+        if (line?.shelfItem && quantity > line.shelfItem.quantity) {
+          showToast(`الكمية المتوفرة: ${line.shelfItem.quantity}`, 'error');
+          return prev;
+        }
+        return updateCartLine(prev, cartLineId, { quantity });
+      });
     }
   }, []);
 
-  const subtotal = useMemo(() => {
-    return selectedItems.reduce((sum, si) => sum + si.item.price * si.quantity, 0);
-  }, [selectedItems]);
+  const updateCartLineOptions = useCallback(
+    (cartLineId: string, selectedOptions: import('../lib/item-options').SelectedItemOptions, linePrice: number) => {
+      setSelectedItems((prev) =>
+        prev.map((si) =>
+          si.cartLineId === cartLineId ? { ...si, selectedOptions, linePrice } : si,
+        ),
+      );
+    },
+    [],
+  );
+
+  const subtotal = useMemo(() => cartSubtotal(selectedItems), [selectedItems]);
 
   const total = useMemo(() => {
     const discountToApply = appliedDiscount ? appliedDiscount.amount : orderDiscount;
@@ -341,28 +350,9 @@ export function useDeliveryOrderModal() {
     setEditingOrder(order);
     
     // Map order items to CartItems
-    const orderItems: CartItem[] = order.items.map((item: any) => {
-      const fullItem = items.find((i) => i.id === item.item_id);
-      if (!fullItem) {
-        // Item not found, create a placeholder
-        return {
-          item: {
-            id: item.item_id,
-            name: item.item_name,
-            price: item.price,
-            categoryId: 0,
-            kitchen_id: item.kitchen_id ?? null,
-          } as Item,
-          quantity: item.quantity,
-          order_type: 'dine-in',
-        };
-      }
-      return {
-        item: fullItem,
-        quantity: item.quantity,
-        order_type: 'dine-in',
-      };
-    });
+    const orderItems: CartItem[] = order.items
+      .map((item: any) => orderItemToCartLine(item, items))
+      .filter((x): x is CartItem => x != null);
     
     setSelectedItems(orderItems);
     
@@ -482,8 +472,9 @@ export function useDeliveryOrderModal() {
           total: order.total || subtotal,
         },
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         note: order.note || null,
+        printTime: new Date().toISOString(),
         // Include customer info for delivery orders
         customer_name: order.customer_name || null,
         customer_phone: order.customer_phone || null,
@@ -502,12 +493,10 @@ export function useDeliveryOrderModal() {
         kitchenGroups.get(kitchenId)!.push(item);
       });
 
-      const results: any[] = [];
-      
+      const kitchenJobs: Array<{ kitchenId: number; items: any[]; kitchenPrintData: any }> = [];
+
       for (const [kitchenId, items] of kitchenGroups) {
         if (kitchenId === null) continue;
-        
-        // Map items to match OrderPrintData structure exactly
         const mappedItems = items.map((item: any) => ({
           id: item.id,
           item_name: item.item_name || item.name || 'صنف',
@@ -515,94 +504,67 @@ export function useDeliveryOrderModal() {
           price: item.price || 0,
           kitchen_id: item.kitchen_id ?? null,
           service_type: item.service_type || 'delivery',
+          options_json: item.options_json ?? null,
         }));
-        
-        const kitchenPrintData = {
-          ...basePrintData,
-          items: mappedItems,
-          kitchenName: kitchens.find(k => k.id === kitchenId)?.name || `المطبخ ${kitchenId}`,
-          service_type: 'delivery',
-        };
-        
-        // Print via IPC - pass kitchenId, Electron will get IP/port from settings
-        if (window.sufra?.print?.order) {
-          try {
-            console.log('[DELIVERY PRINT] Calling window.sufra.print.order:', { kitchenId, itemsCount: mappedItems.length, orderId: basePrintData.orderId });
-            const result = await window.sufra.print.order(kitchenPrintData, kitchenId);
-            console.log('[DELIVERY PRINT] IPC returned result:', result);
-            
-            // Verify result structure
-            if (!result || typeof result !== 'object') {
-              throw new Error('Invalid print result: IPC returned non-object');
-            }
-            
-            const printSuccess = result.success === true;
-            console.log('[DELIVERY PRINT] Print success status:', printSuccess, 'Error:', result.error);
-            
-            results.push({
-              kitchen_id: kitchenId,
-              success: printSuccess,
-            });
-            
-            const kitchen = kitchens.find(k => k.id === kitchenId);
-            const kitchenName = kitchen?.name || 'المطبخ العام';
-            const itemsText = items.map((i: any) => `${i.quantity}× ${i.item_name}`).join('، ');
-            
-            // Only show success toast if print actually succeeded
-            if (printSuccess) {
-              if (!silent) {
-                showToast(`✓ تم الطباعة إلى ${kitchenName}: ${itemsText}`, 'success', 4000);
-              }
-            } else {
-              const errorMsg = result.error ? `: ${result.error}` : '';
-              console.error('[DELIVERY PRINT] Print failed - result:', result);
-              if (!silent) {
-                showToast(`✕ فشل الطباعة إلى ${kitchenName}${errorMsg}`, 'error');
-              }
-            }
-          } catch (printError: any) {
-            console.error('[DELIVERY PRINT] Print exception caught:', printError);
-            console.error('[DELIVERY PRINT] Error stack:', printError?.stack);
-            results.push({
-              kitchen_id: kitchenId,
-              success: false,
-            });
-            const kitchen = kitchens.find(k => k.id === kitchenId);
-            const kitchenName = kitchen?.name || 'المطبخ العام';
-            if (!silent) {
-              showToast(`✕ فشل الطباعة إلى ${kitchenName}: ${printError?.message || 'خطأ غير معروف'}`, 'error');
-            }
-          }
-        } else {
-          console.error('[DELIVERY PRINT] window.sufra.print.order is not available');
-          results.push({
-            kitchen_id: kitchenId,
-            success: false,
-          });
-          if (!silent) {
-            const kitchen = kitchens.find(k => k.id === kitchenId);
-            const kitchenName = kitchen?.name || 'المطبخ العام';
-            showToast(`✕ فشل الطباعة إلى ${kitchenName}: واجهة الطباعة غير متوفرة`, 'error');
-          }
-        }
+        kitchenJobs.push({
+          kitchenId,
+          items,
+          kitchenPrintData: {
+            ...basePrintData,
+            items: mappedItems,
+            kitchenName: kitchens.find(k => k.id === kitchenId)?.name || `المطبخ ${kitchenId}`,
+            service_type: 'delivery',
+          },
+        });
       }
 
-      if (results.length === 0) {
+      if (kitchenJobs.length === 0) {
         if (!silent) {
           showToast('لا توجد طابعات مُعدّة للمطابخ. راجع الإعدادات', 'warning');
         }
-      } else if (silent) {
-        // Show single summary toast for auto-print
-        const successCount = results.filter(r => r.success).length;
-        const totalCount = results.length;
-        if (successCount === totalCount) {
-          showToast(`✓ تم طباعة الطلب إلى ${totalCount} مطبخ`, 'success', 3000);
-        } else {
-          showToast(`⚠ تم الطباعة إلى ${successCount}/${totalCount} مطبخ`, 'warning', 3000);
-        }
+      } else {
+        void Promise.all(
+          kitchenJobs.map(async ({ kitchenId, items, kitchenPrintData }) => {
+            const kitchen = kitchens.find(k => k.id === kitchenId);
+            const kitchenName = kitchen?.name || 'المطبخ العام';
+            const itemsText = items.map((i: any) => `${i.quantity}× ${i.item_name}`).join('، ');
+            try {
+              if (!window.sufra?.print?.order) {
+                if (!silent) {
+                  showToast(`✕ فشل الطباعة إلى ${kitchenName}: واجهة الطباعة غير متوفرة`, 'error');
+                }
+                return { kitchen_id: kitchenId, success: false };
+              }
+              const result = await window.sufra.print.order(kitchenPrintData, kitchenId);
+              const printSuccess = result?.success === true;
+              if (!silent) {
+                if (printSuccess) {
+                  showToast(`✓ تم الطباعة إلى ${kitchenName}: ${itemsText}`, 'success', 4000);
+                } else {
+                  showToast(`✕ فشل الطباعة إلى ${kitchenName}${result?.error ? `: ${result.error}` : ''}`, 'error');
+                }
+              }
+              return { kitchen_id: kitchenId, success: printSuccess };
+            } catch (printError: any) {
+              if (!silent) {
+                showToast(`✕ فشل الطباعة إلى ${kitchenName}: ${printError?.message || 'خطأ غير معروف'}`, 'error');
+              }
+              return { kitchen_id: kitchenId, success: false };
+            }
+          }),
+        ).then((results) => {
+          if (silent) {
+            const successCount = results.filter(r => r.success).length;
+            const totalCount = results.length;
+            if (successCount === totalCount) {
+              showToast(`✓ تم طباعة الطلب إلى ${totalCount} مطبخ`, 'success', 3000);
+            } else {
+              showToast(`⚠ تم الطباعة إلى ${successCount}/${totalCount} مطبخ`, 'warning', 3000);
+            }
+          }
+        });
       }
 
-      // Update order status
       if (order?.status === 'pending') {
         const serverUrl = getServerUrl();
         await fetchJson(`${serverUrl}/orders/delivery/${orderId}/status`, {
@@ -624,32 +586,29 @@ export function useDeliveryOrderModal() {
     }
 
     try {
-      const payload: any = {
-        customer_name: customerName.trim(),
-        customer_phone: customerPhone.trim(),
-        customer_address: customerAddress.trim(),
-        items: selectedItems.map((si) => ({
-          item_id: si.shelfItem?.id ? null : si.item.id,
-          item_name: si.item.name,
-          quantity: si.quantity,
-          price: si.item.price,
-          kitchen_id: si.item.kitchen_id ?? null,
-          service_type: 'delivery',
-          shelf_item_id: si.shelfItem?.id,
-        })),
-      };
-      
-      if (appliedDiscount) {
-        payload.globalDiscount = {
-          percent: appliedDiscount.percent,
-          amount: appliedDiscount.amount,
-        };
-      }
-
-      payload.delivery_platform_id =
-        selectedDeliveryPlatformId != null ? selectedDeliveryPlatformId : null;
-      
-      payload.note = note && note.trim() ? note.trim() : null;
+      const payload = withOrderCreator(
+        {
+          customer_name: customerName.trim(),
+          customer_phone: customerPhone.trim(),
+          customer_address: customerAddress.trim(),
+          items: selectedItems.map((si) => ({
+            ...mapCartItemToOrderPayload(si),
+            service_type: 'delivery',
+          })),
+          delivery_platform_id:
+            selectedDeliveryPlatformId != null ? selectedDeliveryPlatformId : null,
+          note: note && note.trim() ? note.trim() : null,
+          ...(appliedDiscount
+            ? {
+                globalDiscount: {
+                  percent: appliedDiscount.percent,
+                  amount: appliedDiscount.amount,
+                },
+              }
+            : {}),
+        },
+        user,
+      );
 
       const serverUrl = getServerUrl();
       
@@ -694,7 +653,7 @@ export function useDeliveryOrderModal() {
       console.error('Failed to save delivery order:', e);
       showToast('حدث خطأ أثناء حفظ الطلب: ' + (e.message || 'خطأ غير معروف'), 'error');
     }
-  }, [selectedItems, note, customerName, customerPhone, customerAddress, appliedDiscount, selectedDeliveryPlatformId, mode, editingOrder, handleCancelEdit, handlePrintOrder]);
+  }, [selectedItems, note, customerName, customerPhone, customerAddress, appliedDiscount, selectedDeliveryPlatformId, mode, editingOrder, handleCancelEdit, handlePrintOrder, user?.id]);
 
   const reset = useCallback(() => {
     // Only reset if in CREATE mode
@@ -755,6 +714,7 @@ export function useDeliveryOrderModal() {
     addShelfItemByBarcode,
     removeItemFromOrder,
     updateQuantity,
+    updateCartLineOptions,
     clearCart: () => {
       setSelectedItems([]);
       setNote('');

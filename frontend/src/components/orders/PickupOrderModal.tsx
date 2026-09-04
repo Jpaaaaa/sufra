@@ -358,6 +358,7 @@ function PickupOrderModal({ onClose, orderToEdit }: PickupOrderModalProps) {
               onUpdateQuantity={orderModal.updateQuantity}
               onRemoveItem={orderModal.removeItemFromOrder}
               onUpdateItemOrderType={() => {}}
+              onUpdateCartLineOptions={orderModal.updateCartLineOptions}
               onSubmit={orderModal.handleSubmitOrder}
               onCancel={orderModal.editingOrder ? orderModal.handleCancelEdit : orderModal.clearCart}
               onClearCart={orderModal.clearCart}

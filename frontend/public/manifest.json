@@ -1,6 +1,6 @@
 {
-  "name": "Sufra Lite POS",
-  "short_name": "Sufra Lite",
+  "name": "sufra pos",
+  "short_name": "sufra pos",
   "description": "Point of Sale System for Restaurants",
   "start_url": "/",
   "display": "standalone",

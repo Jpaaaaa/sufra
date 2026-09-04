@@ -1,6 +1,6 @@
 {
   "appId": "com.sufra.lite.pos",
-  "productName": "Sufra Lite POS",
+  "productName": "sufra pos",
   "publish": {
     "provider": "generic",
     "url": "https://bazarone.amaantechnology.com/updates/sufra_lite/",
@@ -12,11 +12,15 @@
     "buildResources": "build"
   },
   "asar": true,
-  "compression": "store",
+  "compression": "normal",
   "files": [
     "dist/**/*",
+    "!dist/backend/**",
     "package.json",
-    "build/**/*"
+    "build/**/*",
+    "!release/**",
+    "!**/node_modules/sufra-lite-pos/**",
+    "!**/node_modules/sufra-lite-electron/**"
   ],
   "extraResources": [
     {
@@ -27,14 +31,14 @@
       ]
     },
     {
-      "from": "backend/dist",
+      "from": "backend/dist-bundle",
       "to": "backend/dist",
       "filter": [
         "**/*"
       ]
     },
     {
-      "from": "backend/node_modules",
+      "from": "backend/runtime-node_modules",
       "to": "backend/node_modules",
       "filter": [
         "**/*",
@@ -45,16 +49,21 @@
         "!**/tests/**",
         "!**/__tests__/**",
         "!**/.github/**",
-        "!**/docs/**"
+        "!**/docs/**",
+        "!**/*.ts",
+        "!**/*.map",
+        "!**/src/**",
+        "!**/build/Release/*.pdb",
+        "!**/build/Release/*.lib",
+        "!**/build/Release/*.exp",
+        "!**/build/Release/*.iobj",
+        "!**/build/Release/*.ipdb",
+        "!**/build/Release/obj/**",
+        "!**/build/*.vcxproj*",
+        "!**/build/*.sln",
+        "!**/build/config.gypi",
+        "!**/.forge-meta"
       ]
-    },
-    {
-      "from": "backend/package.json",
-      "to": "backend/package.json"
-    },
-    {
-      "from": "./node",
-      "to": "node"
     },
     {
       "from": "build/icon.ico",
@@ -65,8 +74,10 @@
     "target": [
       "nsis"
     ],
+    "executableName": "sufra-pos",
     "icon": "build/icon.ico",
     "sign": null,
+    "signAndEditExecutable": false,
     "forceCodeSigning": false,
     "signingHashAlgorithms": []
   },
@@ -74,12 +85,20 @@
     "oneClick": false,
     "perMachine": true,
     "allowToChangeInstallationDirectory": false,
+    "allowElevation": true,
+    "runAfterFinish": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
+    "shortcutName": "sufra pos",
+    "include": "build/installer.nsh",
     "installerSidebar": "build/installerSidebar.bmp",
     "installerHeader": "build/installerHeader.bmp",
     "installerIcon": "build/icon.ico",
-    "uninstallerIcon": "build/icon.ico"
+    "uninstallerIcon": "build/icon.ico",
+    "uninstallDisplayName": "sufra pos",
+    "artifactName": "sufra pos Setup ${version}.${ext}",
+    "warningsAsErrors": false
   },
+  "afterPack": "./scripts/after-pack-win.js",
   "npmRebuild": false
 }

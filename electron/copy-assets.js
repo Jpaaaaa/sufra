@@ -78,7 +78,7 @@ if (fs.existsSync(backendDistSrc)) {
     }
   }
 
-  if (fs.existsSync(backendNodeModulesSrc)) {
+  if (fs.existsSync(backendNodeModulesSrc) && process.env.SUFRA_SKIP_BACKEND_NODE_MODULES_LINK !== '1') {
     removeDestNodeModules();
     const srcAbs = path.resolve(backendNodeModulesSrc);
     const destAbs = path.resolve(backendNodeModulesDest);

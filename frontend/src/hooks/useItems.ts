@@ -1,9 +1,26 @@
-import { useState, useEffect } from 'react';
-import { fetchJson, getServerUrl, Kitchen } from '../utils';
+import { useState, useEffect, useMemo } from 'react';
+import { fetchJson, getServerUrl } from '../utils';
+import { useKitchensStore } from '../../stores/kitchensStore';
 import { normalizeCategoryRow, normalizeItemRow } from '../utils/menu-filters';
 import { Category } from './useCategories';
 import { showConfirm } from '../components/ui/ConfirmDialog';
 import { showToast } from '../components/ui/Toast';
+
+import { apiGroupsToDraft, draftGroupsToApi, type ItemOptionGroup } from '../lib/item-options';
+
+interface ItemFormState {
+  id?: number;
+  name: string;
+  price: string;
+  categoryId: string;
+  kitchen_id: string;
+  image_url?: string;
+  description: string;
+  is_out_of_stock: boolean;
+  hidden_from_menu: boolean;
+  has_options: boolean;
+  option_groups: ReturnType<typeof apiGroupsToDraft>;
+}
 
 export interface Item {
   id: number;
@@ -16,27 +33,22 @@ export interface Item {
   original_price?: number;
   is_featured?: boolean;
   is_out_of_stock?: boolean;
-  /** When true, item is omitted from POS ordering menus. */
   hidden_from_menu?: boolean;
+  has_options?: boolean;
+  option_groups?: ItemOptionGroup[];
   _comboProducts?: Array<{ id: number; name: string; price: number }>;
 }
 
-interface ItemFormState {
-  id?: number;
-  name: string;
-  price: string;
-  categoryId: string;
-  kitchen_id: string;
-  image_url?: string;
-  description: string;
-  is_out_of_stock: boolean;
-  hidden_from_menu: boolean;
-}
+export type { ItemFormState };
 
 export function useItems() {
   const [items, setItems] = useState<Item[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const allKitchens = useKitchensStore((state) => state.kitchens);
+  const kitchens = useMemo(
+    () => allKitchens.filter((k) => k.is_active),
+    [allKitchens],
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [formState, setFormState] = useState<ItemFormState>({
@@ -48,6 +60,8 @@ export function useItems() {
     description: '',
     is_out_of_stock: false,
     hidden_from_menu: false,
+    has_options: false,
+    option_groups: [],
   });
   const [isFormOpen, setIsFormOpen] = useState(false);
 
@@ -80,16 +94,8 @@ export function useItems() {
 
   const loadKitchens = async () => {
     try {
-      const serverUrl = getServerUrl();
-      const raw = await fetchJson<any[]>(`${serverUrl}/kitchens`);
-      const mapped: Kitchen[] = raw.map((k) => ({
-        id: k.id,
-        name: k.name,
-        description: k.description,
-        is_active: Boolean(k.is_active),
-      }));
-      setKitchens(mapped.filter((k) => k.is_active));
-    } catch (e: any) {
+      await useKitchensStore.getState().loadKitchens();
+    } catch (e: unknown) {
       console.error('Failed to load kitchens:', e);
     }
   };
@@ -111,6 +117,8 @@ export function useItems() {
       description: '',
       is_out_of_stock: false,
       hidden_from_menu: false,
+      has_options: false,
+      option_groups: [],
     });
     setIsFormOpen(false);
   };
@@ -132,7 +140,7 @@ export function useItems() {
     setLoading(true);
     setError(null);
     try {
-      const payload = {
+      const payload: Record<string, unknown> = {
         name: formState.name.trim(),
         price: priceValue,
         categoryId: formState.categoryId ? Number(formState.categoryId) : null,
@@ -142,6 +150,12 @@ export function useItems() {
         is_out_of_stock: formState.is_out_of_stock,
         hidden_from_menu: formState.hidden_from_menu,
       };
+
+      if (formState.has_options && formState.option_groups.length > 0) {
+        payload.option_groups = draftGroupsToApi(formState.option_groups);
+      } else if (formState.id) {
+        payload.option_groups = [];
+      }
 
       const serverUrl = getServerUrl();
       if (formState.id) {
@@ -169,16 +183,22 @@ export function useItems() {
   };
 
   const handleEdit = (item: Item) => {
+    const categoryExists =
+      item.categoryId != null && categories.some((c) => c.id === item.categoryId);
+    const kitchenExists =
+      item.kitchen_id != null && kitchens.some((k) => k.id === item.kitchen_id);
     setFormState({
       id: item.id,
       name: item.name,
       price: String(item.price),
-      categoryId: item.categoryId ? String(item.categoryId) : '',
-      kitchen_id: item.kitchen_id ? String(item.kitchen_id) : '',
+      categoryId: categoryExists && item.categoryId ? String(item.categoryId) : '',
+      kitchen_id: kitchenExists && item.kitchen_id ? String(item.kitchen_id) : '',
       image_url: item.image_url || '',
       description: item.description || '',
       is_out_of_stock: item.is_out_of_stock || false,
       hidden_from_menu: item.hidden_from_menu || false,
+      has_options: Boolean(item.has_options || item.option_groups?.length),
+      option_groups: apiGroupsToDraft(item.option_groups),
     });
     setIsFormOpen(true);
   };

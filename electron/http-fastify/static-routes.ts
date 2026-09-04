@@ -18,6 +18,7 @@ const DATA_ENDPOINT_PREFIXES = [
   '/orders',
   '/reports',
   '/finance',
+  '/business-day',
   '/shifts',
   '/shelves',
   '/offers',

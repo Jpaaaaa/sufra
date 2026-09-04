@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import LanguageSwitcher from '../../components/i18n/LanguageSwitcher';
 import { useAuth } from '../../contexts/AuthContext';
 import { getServerConfig, subscribeToServerUrlChanges } from '../../lib/server-config';
+import { APP_BRAND_NAME } from '../../lib/brand';
 
 export default function LoginPage() {
   const { t } = useTranslation();
@@ -30,24 +31,7 @@ export default function LoginPage() {
 
     try {
       await login(username, password);
-      // Get user data from localStorage after login (login function stores it)
-      const storedUser = localStorage.getItem('sufra_auth_user');
-      if (storedUser) {
-        try {
-          const userData = JSON.parse(storedUser);
-          if (userData.role === 'admin') {
-            navigate('/marketing');
-          } else {
-            navigate('/');
-          }
-        } catch (parseError) {
-          // Fallback to home if parsing fails
-          navigate('/');
-        }
-      } else {
-        // Fallback to home if user data not available
-        navigate('/');
-      }
+      navigate('/');
     } catch (err: any) {
       setError(err.message || 'فشل تسجيل الدخول. يرجى التحقق من اسم الموظف (اسم الدخول) وكلمة المرور.');
     } finally {
@@ -64,7 +48,7 @@ export default function LoginPage() {
         <div className="rounded-2xl bg-white p-8 shadow-2xl">
           {/* Logo/Title */}
           <div className="mb-8 text-center">
-            <h1 className="mb-2 text-3xl font-bold text-obsidian">Sufra Lite</h1>
+            <h1 className="mb-2 text-3xl font-bold text-obsidian">{APP_BRAND_NAME}</h1>
             <p className="text-graphite">{t('loginTagline')}</p>
           </div>
 

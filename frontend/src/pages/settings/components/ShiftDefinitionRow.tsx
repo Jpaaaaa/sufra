@@ -21,12 +21,9 @@ export function ShiftDefinitionRow({
   onDelete,
 }: Props) {
   const { t } = useTranslation();
-  const displayName = shift.name.trim() || t('settings.shiftAutoName', { number: index + 1 });
-
   return (
     <div className="rounded-soft-lg border border-black/5 bg-cloud-soft-white/80 p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <span className="text-[15px] font-semibold text-obsidian">{displayName}</span>
+      <div className="mb-3 flex items-center justify-end gap-2">
         {canDelete ? (
           <button
             type="button"
@@ -37,6 +34,17 @@ export function ShiftDefinitionRow({
             {t('settings.shiftDefDelete')}
           </button>
         ) : null}
+      </div>
+      <div className="mb-3">
+        <label className="mb-1 block text-[13px] font-medium text-obsidian">{t('settings.shiftDefName')}</label>
+        <input
+          type="text"
+          value={shift.name}
+          onChange={(e) => onChange({ name: e.target.value })}
+          placeholder={t('settings.shiftNamePlaceholder', { number: index + 1 })}
+          disabled={disabled}
+          className="w-full rounded-soft border border-black/5 px-3 py-2"
+        />
       </div>
       <div className="grid gap-3 sm:grid-cols-2">
         <div>

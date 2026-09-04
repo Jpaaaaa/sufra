@@ -45,6 +45,54 @@ class ReportsService {
     );
   }
 
+  private getArabicWeekLabel(weekIndex: number): string {
+    const labels = ['الأول', 'الثاني', 'الثالث', 'الرابع'];
+    return `الأسبوع ${labels[weekIndex] ?? String(weekIndex + 1)}`;
+  }
+
+  private buildMonthlyWeekRows(
+    orders: any[],
+    monthStart: Date,
+  ): { weeklyData: any[]; ordersReport: any[] } {
+    const pad = (n: number) => String(n).padStart(2, '0');
+    const weeklyData: any[] = [];
+    for (let week = 0; week < 4; week++) {
+      const weekStart = new Date(monthStart);
+      weekStart.setDate(weekStart.getDate() + week * 7);
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 7);
+      const weekStartStr = `${weekStart.getFullYear()}-${pad(weekStart.getMonth() + 1)}-${pad(weekStart.getDate())}`;
+      const weekEndStr = `${weekEnd.getFullYear()}-${pad(weekEnd.getMonth() + 1)}-${pad(weekEnd.getDate())}`;
+      const weekOrders = orders.filter((o: any) => {
+        const key = this.orderBusinessDateKey(o);
+        return key >= weekStartStr && key < weekEndStr;
+      });
+      let weekSales = 0;
+      weekOrders.forEach((o: any) => {
+        weekSales += this.getOrderSales(o);
+      });
+      weeklyData.push({
+        id: week + 1,
+        week: this.getArabicWeekLabel(week),
+        date: weekStartStr,
+        totalSales: weekSales,
+        orderCount: weekOrders.length,
+        averageOrder: weekOrders.length > 0 ? Math.round(weekSales / weekOrders.length) : 0,
+      });
+    }
+    const ordersReport = weeklyData.map((row) => ({
+      id: row.id,
+      day: row.week,
+      date: row.date,
+      totalSales: row.totalSales,
+      orderCount: row.orderCount,
+      averageOrder: row.averageOrder,
+      totalDiscounts: 0,
+      netProfit: row.totalSales,
+    }));
+    return { weeklyData, ordersReport };
+  }
+
   async getDailySummary(): Promise<{
     totalSales: number;
     ordersCount: number;
@@ -180,6 +228,8 @@ class ReportsService {
         result.shiftBreakdown = await this.buildShiftBreakdown(orders || [], dateStr);
         result.shiftBreakdownByDay = await this.buildShiftBreakdownByDay(orders || []);
         result.shiftBreakdownTotals = result.shiftBreakdown;
+      } else {
+        await this.attachSingleShiftFields(result, orders || [], dateStr);
       }
       return result;
     }
@@ -2105,6 +2155,54 @@ class ReportsService {
     return result;
   }
 
+  private async attachShiftFields(result: any, orders: any[], dateStr?: string): Promise<any> {
+    const config = await getShiftConfig();
+    if (config.shift_mode === 'multi') {
+      return this.attachMultiShiftFields(result, orders);
+    }
+    return this.attachSingleShiftFields(result, orders, dateStr);
+  }
+
+  private async attachSingleShiftFields(result: any, orders: any[], dateStr?: string): Promise<any> {
+    const definitions = await getShiftDefinitions(true);
+    const def = definitions[0];
+
+    const makeRow = (sales: number, count: number) => ({
+      shiftId: def?.id ?? null,
+      shiftName: def?.name ?? 'وردية يومية',
+      startTime: def?.start_time ?? null,
+      endTime: def?.end_time ?? null,
+      totalSales: sales,
+      orderCount: count,
+      averageOrder: count > 0 ? Math.round(sales / count) : 0,
+    });
+
+    const totalSales = result.summary?.totalSales ?? 0;
+    const orderCount = result.summary?.orderCount ?? 0;
+    result.shiftBreakdownTotals = [makeRow(totalSales, orderCount)];
+
+    const byDate = new Map<string, { sales: number; count: number }>();
+    for (const order of orders) {
+      const key = this.orderBusinessDateKey(order);
+      if (!byDate.has(key)) byDate.set(key, { sales: 0, count: 0 });
+      const bucket = byDate.get(key)!;
+      bucket.sales += order.total || 0;
+      bucket.count += 1;
+    }
+
+    const shiftBreakdownByDay: Record<string, any[]> = {};
+    for (const [dayKey, stats] of byDate) {
+      shiftBreakdownByDay[dayKey] = [makeRow(stats.sales, stats.count)];
+    }
+    result.shiftBreakdownByDay = shiftBreakdownByDay;
+
+    if (dateStr) {
+      result.shiftBreakdown = shiftBreakdownByDay[dateStr] ?? result.shiftBreakdownTotals;
+    }
+
+    return result;
+  }
+
   /**
    * Process orders array into report format
    */
@@ -2731,7 +2829,7 @@ class ReportsService {
       employeeSummary,
       orders: ordersReport,
     };
-    return this.attachMultiShiftFields(result, orders);
+    return this.attachShiftFields(result, orders);
   }
 
   /** Process monthly report grouped by business day (multi shift mode). */
@@ -2753,67 +2851,19 @@ class ReportsService {
     const orderCount = orders.length;
     const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
 
-    const byDate = new Map<string, { sales: number; orders: any[] }>();
-    orders.forEach((o: any) => {
-      const key = this.orderBusinessDateKey(o);
-      if (!byDate.has(key)) byDate.set(key, { sales: 0, orders: [] });
-      const entry = byDate.get(key)!;
-      entry.sales += this.getOrderSales(o);
-      entry.orders.push(o);
-    });
-
-    const pad = (n: number) => String(n).padStart(2, '0');
-    const monthEnd = new Date(monthStart.getFullYear(), monthStart.getMonth() + 1, 0);
-    const graphData: any[] = [];
-    const ordersReport: any[] = [];
-    const dayDiscounts = new Map<string, number>();
-    orders.forEach((o: any) => {
-      try {
-        const amt = (typeof o.globalDiscount === 'string' ? JSON.parse(o.globalDiscount) : o.globalDiscount)?.amount || 0;
-        if (amt) {
-          const key = this.orderBusinessDateKey(o);
-          dayDiscounts.set(key, (dayDiscounts.get(key) || 0) + amt);
-        }
-      } catch (e) {}
-    });
-
-    let id = 1;
-    for (let d = new Date(monthStart); d <= monthEnd; d.setDate(d.getDate() + 1)) {
-      const key = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
-      const entry = byDate.get(key) || { sales: 0, orders: [] };
-      const dayLabel = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
-      graphData.push({
-        id,
-        day: dayLabel,
-        date: key,
-        totalSales: entry.sales,
-        orderCount: entry.orders.length,
-        averageOrder: entry.orders.length > 0 ? Math.round(entry.sales / entry.orders.length) : 0,
-      });
-      ordersReport.push({
-        id,
-        day: dayLabel,
-        date: key,
-        totalSales: entry.sales,
-        orderCount: entry.orders.length,
-        averageOrder: entry.orders.length > 0 ? Math.round(entry.sales / entry.orders.length) : 0,
-        totalDiscounts: dayDiscounts.get(key) || 0,
-        netProfit: entry.sales,
-      });
-      id += 1;
-    }
+    const { weeklyData, ordersReport } = this.buildMonthlyWeekRows(orders, monthStart);
 
     const { itemsPerformance, unsoldMenuItems } = await this.attachItemsReportFromOrders(orders);
     const employeeSummary = await this.buildEmployeeSummaryFromOrders(orders);
     const result = {
       summary: { totalSales, orderCount, averageOrder, discounts: totalDiscounts, cancellations: 0, netProfit: totalSales, salesByType },
-      graphData,
+      graphData: weeklyData,
       itemsPerformance,
       unsoldMenuItems,
       employeeSummary,
       orders: ordersReport,
     };
-    return this.attachMultiShiftFields(result, orders);
+    return this.attachShiftFields(result, orders);
   }
 
   /** Process yearly report in multi shift mode (months → days → shifts). */
@@ -2899,44 +2949,10 @@ class ReportsService {
     const orderCount = orders.length;
     const averageOrder = orderCount > 0 ? Math.round(totalSales / orderCount) : 0;
 
-    const weeklyData: any[] = [];
-    const pad = (n: number) => String(n).padStart(2, '0');
-    for (let week = 0; week < 4; week++) {
-      const weekStart = new Date(monthStart);
-      weekStart.setDate(weekStart.getDate() + (week * 7));
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekEnd.getDate() + 7);
-      const weekStartStr = `${weekStart.getFullYear()}-${pad(weekStart.getMonth() + 1)}-${pad(weekStart.getDate())}`;
-      const weekEndStr = `${weekEnd.getFullYear()}-${pad(weekEnd.getMonth() + 1)}-${pad(weekEnd.getDate())}`;
-      const weekOrders = orders.filter((o: any) => {
-        const key = this.orderBusinessDateKey(o);
-        return key >= weekStartStr && key < weekEndStr;
-      });
-      let weekSales = 0;
-      weekOrders.forEach((o: any) => { weekSales += this.getOrderSales(o); });
-      weeklyData.push({
-        id: week + 1,
-        week: `أسبوع ${week + 1}`,
-        date: weekStartStr,
-        totalSales: weekSales,
-        orderCount: weekOrders.length,
-        averageOrder: weekOrders.length > 0 ? Math.round(weekSales / weekOrders.length) : 0,
-      });
-    }
-    // Populate orders for "Days Summary" table (DailyAggregate shape: day = week label)
-    const ordersReport = weeklyData.map((row) => ({
-      id: row.id,
-      day: row.week,
-      date: row.date,
-      totalSales: row.totalSales,
-      orderCount: row.orderCount,
-      averageOrder: row.averageOrder,
-      totalDiscounts: 0,
-      netProfit: row.totalSales,
-    }));
+    const { weeklyData, ordersReport } = this.buildMonthlyWeekRows(orders, monthStart);
     const { itemsPerformance, unsoldMenuItems } = await this.attachItemsReportFromOrders(orders);
     const employeeSummary = await this.buildEmployeeSummaryFromOrders(orders);
-    return {
+    const result = {
       summary: { totalSales, orderCount, averageOrder, discounts: totalDiscounts, cancellations: 0, netProfit: totalSales, salesByType },
       graphData: weeklyData,
       itemsPerformance,
@@ -2944,6 +2960,7 @@ class ReportsService {
       employeeSummary,
       orders: ordersReport,
     };
+    return this.attachShiftFields(result, orders);
   }
 
   /** Process yearly report from orders (group by month). */
@@ -2993,7 +3010,7 @@ class ReportsService {
     }));
     const { itemsPerformance, unsoldMenuItems } = await this.attachItemsReportFromOrders(orders);
     const employeeSummary = await this.buildEmployeeSummaryFromOrders(orders);
-    return {
+    const result = {
       summary: { totalSales, orderCount, averageOrder, discounts: totalDiscounts, cancellations: 0, netProfit: totalSales, salesByType },
       graphData: monthlyData,
       itemsPerformance,
@@ -3001,6 +3018,7 @@ class ReportsService {
       employeeSummary,
       orders: ordersReport,
     };
+    return this.attachShiftFields(result, orders);
   }
 
   /**

@@ -2,6 +2,7 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useOrderMoney } from '../../hooks/useOrderMoney';
 import type { ExistingOrder } from '../../hooks/useOrderModal';
+import { OrderItemOptionLines } from './OrderItemOptionLines';
 
 interface OrderSummaryCardProps {
   order: ExistingOrder;
@@ -92,10 +93,10 @@ export const OrderSummaryCard = memo(function OrderSummaryCard({
       {showItemList && (
         <div className="mb-3 rounded-xl bg-white/60 p-3 md:mb-0 md:p-0.5 md:rounded-md xl:mb-3 xl:p-3 xl:rounded-xl">
           <div className="text-[16px] font-bold text-obsidian mb-1.5 pb-1.5 border-b border-black/10 md:text-[11px] md:mb-0 md:pb-0 xl:text-[16px] xl:mb-1.5 xl:pb-1.5">
-            {t('orders.summaryLineItems', { count: order.items.length })}
+            {t('orders.summaryLineItems', { count: order.items?.length ?? 0 })}
           </div>
           <div className="space-y-1.5 md:space-y-0 md:max-h-[44px] md:overflow-y-auto xl:space-y-1.5 xl:max-h-none xl:overflow-visible">
-            {order.items.map((item: any) => {
+            {(order.items ?? []).map((item: any) => {
               const serviceType = item.service_type || 'dine-in';
               const serviceLabel =
                 serviceType === 'pickup' ? t('orders.servicePickup') : t('orders.serviceDineIn');
@@ -103,12 +104,16 @@ export const OrderSummaryCard = memo(function OrderSummaryCard({
               return (
                 <div
                   key={item.id}
-                  className="flex items-center justify-between text-[15px] leading-tight py-1.5 gap-3 md:text-[11px] md:py-0 md:gap-0 xl:text-[15px] xl:py-1.5 xl:gap-3"
+                  className="flex items-start justify-between text-[15px] leading-tight py-1.5 gap-3 md:text-[11px] md:py-0 md:gap-0 xl:text-[15px] xl:py-1.5 xl:gap-3"
                 >
                   <span className="font-bold text-obsidian whitespace-nowrap">{fmt(itemTotal)}</span>
-                  <span className="font-medium text-obsidian/90 truncate flex-1 min-w-0">
-                    {item.item_name} ×{item.quantity}
-                  </span>
+                  <OrderItemOptionLines
+                    itemName={item.item_name}
+                    options_json={item.options_json}
+                    quantity={item.quantity}
+                    nameClassName="font-medium text-obsidian/90 truncate"
+                    subLineClassName="text-[12px] text-obsidian/60 md:text-[10px] xl:text-[12px]"
+                  />
                   <span className="text-[14px] leading-tight font-semibold text-obsidian/70 whitespace-nowrap md:text-[11px] xl:text-[14px]">
                     {serviceLabel}
                   </span>

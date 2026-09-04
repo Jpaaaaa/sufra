@@ -5,6 +5,9 @@ import { scrollBehaviourDragImageTranslateOverride } from 'mobile-drag-drop/scro
 import './i18n';
 import App from './App';
 import './globals.css';
+import { applyStoredUiScale } from './lib/uiScale';
+
+applyStoredUiScale();
 
 // Enable HTML5 drag-and-drop on touch devices (tablets, all-in-one screens)
 polyfill({

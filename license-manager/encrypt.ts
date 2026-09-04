@@ -8,7 +8,7 @@ const KEY_HEX =
 const KEY = Buffer.from(KEY_HEX, 'hex');
 
 export interface LicenseData {
-  product: 'Sufra POS';
+  product: 'sufra pos';
   license_type: 'trial' | 'monthly' | 'yearly';
   assigned_serial: string;
   issued_at: string;   // YYYY-MM-DD

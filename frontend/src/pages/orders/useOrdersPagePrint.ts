@@ -1,12 +1,14 @@
 import { getServerUrl, fetchJson, type Kitchen } from '../../utils';
 import { showToast } from '../../components/ui/Toast';
 import { showPasswordDialog } from '../../components/ui/PasswordDialog';
+import { getOrderReceiptTotals } from '../../utils/order-totals';
+import { APP_BRAND_NAME } from '../../lib/brand';
 import type { ExistingOrder } from '../../hooks/useOrderModal';
 
 type OrderType = 'pickup' | 'delivery';
 
 export function createOrdersPagePrintHandlers(
-  user: { role?: string; require_captain_approval?: boolean } | null,
+  user: { role?: string; username?: string; require_captain_approval?: boolean } | null,
   kitchens: Kitchen[]
 ) {
   const requestPasswordIfNeeded = async (title: string, message: string): Promise<boolean> => {
@@ -35,23 +37,18 @@ export function createOrdersPagePrintHandlers(
     if (!passwordOk) return;
 
     try {
-      const subtotal = order.items.reduce((sum: number, item: any) => sum + (item.price || 0) * (item.quantity || 1), 0);
-      let globalDiscount: { percent: number; amount: number } | null = null;
-      if (order.globalDiscount) {
-        try {
-          const discount = typeof order.globalDiscount === 'string' ? JSON.parse(order.globalDiscount) : order.globalDiscount;
-          if (discount?.percent !== undefined && discount?.amount !== undefined) globalDiscount = discount;
-        } catch { /* ignore */ }
-      }
+      const receiptTotals = getOrderReceiptTotals(order);
 
       const basePrintData = {
         orderId: order.id,
         table: 0,
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
-        totals: { subtotal, discount: order.discount || 0, globalDiscount, total: order.total || subtotal },
+        totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        printTime: new Date().toISOString(),
+        restaurantName: APP_BRAND_NAME,
         note: order.note || null,
+        cashier: user?.username,
         ...(orderType === 'delivery' && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
@@ -76,6 +73,7 @@ export function createOrdersPagePrintHandlers(
           price: item.price || 0,
           kitchen_id: item.kitchen_id ?? null,
           service_type: item.service_type || orderType,
+          options_json: item.options_json ?? null,
         }));
         const kitchenPrintData = {
           ...basePrintData,
@@ -154,14 +152,7 @@ export function createOrdersPagePrintHandlers(
     if (!passwordOk) return;
 
     try {
-      const subtotal = order.items.reduce((sum: number, item: any) => sum + (item.price || 0) * (item.quantity || 1), 0);
-      let globalDiscount: { percent: number; amount: number } | null = null;
-      if (order.globalDiscount) {
-        try {
-          const discount = typeof order.globalDiscount === 'string' ? JSON.parse(order.globalDiscount) : order.globalDiscount;
-          if (discount?.percent !== undefined && discount?.amount !== undefined) globalDiscount = discount;
-        } catch { /* ignore */ }
-      }
+      const receiptTotals = getOrderReceiptTotals(order);
       const receiptItems = order.items.map((item: any) => ({
         order_id: order.id,
         item_name: item.item_name || item.name || 'صنف',
@@ -171,13 +162,16 @@ export function createOrdersPagePrintHandlers(
       }));
       const receiptData = {
         orderId: order.id,
+        invoiceNumber: order.id,
         table: 0,
         hall: orderType === 'pickup' ? 'سفري' : 'توصيل',
         items: receiptItems,
-        totals: { subtotal, globalDiscount, total: order.total || subtotal },
+        totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
+        restaurantName: APP_BRAND_NAME,
         service_type: orderType,
+        thankYouMessage: 'شكراً لزيارتكم',
+        cashier: user?.username,
         ...(orderType === 'delivery' && {
           customer_name: order.customer_name || null,
           customer_phone: order.customer_phone || null,
@@ -189,8 +183,9 @@ export function createOrdersPagePrintHandlers(
         const result = await window.sufra.print.receipt(receiptData);
         const printSuccess = result?.success === true;
         if (printSuccess) {
+          const globalDiscount = receiptTotals.globalDiscount;
           const discountText = globalDiscount ? ` | خصم: ${globalDiscount.percent}% (${globalDiscount.amount} د.ع)` : '';
-          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${order.total || subtotal} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
+          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${receiptTotals.total} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
         } else showToast(`✕ فشل طباعة الفاتورة${result?.error ? `: ${result.error}` : ''}`, 'error');
       } else {
         const serverUrl = getServerUrl();
@@ -200,8 +195,9 @@ export function createOrdersPagePrintHandlers(
           body: JSON.stringify({ receiptData }),
         });
         if (result.success) {
+          const globalDiscount = receiptTotals.globalDiscount;
           const discountText = globalDiscount ? ` | خصم: ${globalDiscount.percent}% (${globalDiscount.amount} د.ع)` : '';
-          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${order.total || subtotal} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
+          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${receiptTotals.total} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
         } else showToast(`✕ فشل طباعة الفاتورة${result.error ? `: ${result.error}` : ''}`, 'error');
       }
     } catch (error: any) {
@@ -217,14 +213,7 @@ export function createOrdersPagePrintHandlers(
     if (!passwordOk) return;
 
     try {
-      const subtotal = order.items.reduce((sum: number, item: any) => sum + (item.price || 0) * (item.quantity || 1), 0);
-      let globalDiscount: { percent: number; amount: number } | null = null;
-      if (order.globalDiscount) {
-        try {
-          const discount = typeof order.globalDiscount === 'string' ? JSON.parse(order.globalDiscount) : order.globalDiscount;
-          if (discount?.percent !== undefined && discount?.amount !== undefined) globalDiscount = discount;
-        } catch { /* ignore */ }
-      }
+      const receiptTotals = getOrderReceiptTotals(order);
       const receiptItems = order.items.map((item: any) => ({
         order_id: order.id,
         item_name: item.item_name || item.name || 'صنف',
@@ -234,21 +223,26 @@ export function createOrdersPagePrintHandlers(
       }));
       const receiptData = {
         orderId: order.id,
-        table: (order as any).table_id || 0,
+        invoiceNumber: order.id,
+        table: (order as any).table_number || (order as any).table_id || 0,
         hall: (order as any).hall_name || 'الصالة',
+        floor: (order as any).floor_name || null,
         items: receiptItems,
-        totals: { subtotal, globalDiscount, total: order.total || subtotal },
+        totals: receiptTotals,
         timestamp: order.created_at || new Date().toISOString(),
-        restaurantName: 'Sufra POS',
-        service_type: 'dine-in',
+        restaurantName: APP_BRAND_NAME,
+        service_type: 'dine-in' as const,
+        thankYouMessage: 'شكراً لزيارتكم',
+        cashier: user?.username,
       };
 
       if (window.sufra?.print?.receipt) {
         const result = await window.sufra.print.receipt(receiptData);
         const printSuccess = result?.success === true;
         if (printSuccess) {
+          const globalDiscount = receiptTotals.globalDiscount;
           const discountText = globalDiscount ? ` | خصم: ${globalDiscount.percent}% (${globalDiscount.amount} د.ع)` : '';
-          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${order.total || subtotal} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
+          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${receiptTotals.total} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
         } else showToast(`✕ فشل طباعة الفاتورة${result?.error ? `: ${result.error}` : ''}`, 'error');
       } else {
         const serverUrl = getServerUrl();
@@ -258,8 +252,9 @@ export function createOrdersPagePrintHandlers(
           body: JSON.stringify({ receiptData }),
         });
         if (result.success) {
+          const globalDiscount = receiptTotals.globalDiscount;
           const discountText = globalDiscount ? ` | خصم: ${globalDiscount.percent}% (${globalDiscount.amount} د.ع)` : '';
-          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${order.total || subtotal} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
+          showToast(`✓ تم طباعة الفاتورة للعميل | المجموع: ${receiptTotals.total} د.ع (${order.items.length} صنف)${discountText}`, 'success', 4000);
         } else showToast(`✕ فشل طباعة الفاتورة${result.error ? `: ${result.error}` : ''}`, 'error');
       }
     } catch (error: any) {

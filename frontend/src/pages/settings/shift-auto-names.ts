@@ -6,6 +6,6 @@ export function applyAutoShiftNames(
 ): ShiftDraft[] {
   return rows.map((row, index) => ({
     ...row,
-    name: nameForIndex(index),
+    name: row.name.trim() ? row.name.trim() : nameForIndex(index),
   }));
 }

@@ -3,9 +3,12 @@ import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
 import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
+import { serializeOptionsJson, mapOrderItemRow } from '../../utils/order-item-options';
+import { validateOrderItemPrices } from '../../utils/order-pricing';
 
-const DELIVERY_ORDER_SELECT =
-  'id, customer_name, customer_phone, customer_address, status, total, discount, globalDiscount, note, created_at, updated_at, delivery_platform_id, delivery_platform_name, delivery_platform_commission_percent';
+function mapItemRows(rows: any[]) {
+  return rows.map((row) => mapOrderItemRow(row));
+}
 
 export interface DeliveryOrderItem {
   item_id: number | null;
@@ -14,7 +17,11 @@ export interface DeliveryOrderItem {
   price: number;
   kitchen_id?: number | null;
   shelf_item_id?: number | null;
+  options_json?: unknown[] | null;
 }
+
+const DELIVERY_ORDER_SELECT =
+  'id, customer_name, customer_phone, customer_address, status, total, discount, globalDiscount, note, created_at, updated_at, delivery_platform_id, delivery_platform_name, delivery_platform_commission_percent';
 
 export interface CreateDeliveryOrderDto {
   customer_name: string;
@@ -56,6 +63,7 @@ export interface DeliveryOrderWithItems extends DeliveryOrder {
     kitchen_id?: number | null;
     shelf_item_id?: number | null;
     order_type: string;
+    options_json?: unknown[] | null;
   }>;
 }
 
@@ -100,7 +108,7 @@ class DeliveryOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'delivery'`,
         orderIds,
@@ -109,7 +117,7 @@ class DeliveryOrdersService {
 
     const ordersWithItems: DeliveryOrderWithItems[] = orderRows.map((order: any) => ({
       ...order,
-      items: itemRows.filter((item: any) => item.order_id === order.id),
+      items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
     }));
 
     return ordersWithItems;
@@ -149,7 +157,7 @@ class DeliveryOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'delivery'`,
         orderIds,
@@ -158,7 +166,7 @@ class DeliveryOrdersService {
 
     const ordersWithItems: DeliveryOrderWithItems[] = orderRows.map((order: any) => ({
       ...order,
-      items: itemRows.filter((item: any) => item.order_id === order.id),
+      items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
     }));
 
     return ordersWithItems;
@@ -188,7 +196,7 @@ class DeliveryOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'delivery'`,
       [id],
@@ -196,7 +204,7 @@ class DeliveryOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as DeliveryOrderWithItems;
   }
 
@@ -212,6 +220,7 @@ class DeliveryOrdersService {
     }
 
     const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    await validateOrderItemPrices(this.db, data.items);
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
@@ -260,8 +269,8 @@ class DeliveryOrdersService {
 
     for (const item of data.items) {
       await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
@@ -271,6 +280,7 @@ class DeliveryOrdersService {
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
           'delivery',
+          serializeOptionsJson(item.options_json),
         ],
       );
     }
@@ -316,7 +326,7 @@ class DeliveryOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'delivery'`,
       [orderId],
@@ -326,7 +336,7 @@ class DeliveryOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as DeliveryOrderWithItems;
   }
 
@@ -386,6 +396,7 @@ class DeliveryOrdersService {
     }
 
     const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    await validateOrderItemPrices(this.db, data.items);
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
@@ -438,8 +449,8 @@ class DeliveryOrdersService {
 
     for (const item of data.items) {
       await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
@@ -449,6 +460,7 @@ class DeliveryOrdersService {
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
           'delivery',
+          serializeOptionsJson(item.options_json),
         ],
       );
     }
@@ -474,7 +486,7 @@ class DeliveryOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'delivery'`,
       [id],
@@ -482,7 +494,7 @@ class DeliveryOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as DeliveryOrderWithItems;
   }
 

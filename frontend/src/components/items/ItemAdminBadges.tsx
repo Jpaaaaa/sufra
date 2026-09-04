@@ -10,9 +10,15 @@ export default function ItemAdminBadges({ item }: { item: Item }) {
   const { t } = useTranslation();
   const hidden = item.hidden_from_menu ?? false;
   const oos = item.is_out_of_stock ?? false;
+  const hasOptions = item.has_options ?? false;
 
   return (
     <>
+      {hasOptions && (
+        <span className={pillClass} title={t('catalog.badgeHasOptionsTitle')}>
+          {t('catalog.badgeHasOptions')}
+        </span>
+      )}
       {hidden && (
         <span className={pillClass} title={t('catalog.badgeHiddenTitle')}>
           {t('catalog.badgeHidden')}

@@ -6,13 +6,42 @@ export interface PrinterDevice {
   status?: string;
 }
 
+export type PrinterConnectionType = 'network' | 'windows_spooler';
+
 export interface PrinterSettings {
   id?: number;
   kitchen_id: number | null;
-  printer_ip: string | null; // Printer IP address (e.g., "192.168.1.50")
-  printer_port: number; // Printer port (default: 9100)
+  connection_type: PrinterConnectionType;
+  printer_ip: string | null;
+  printer_port: number;
+  printer_name: string | null;
   printer_type: 'kitchen' | 'customer';
   is_active: boolean;
+}
+
+function normalizeConnectionType(value: unknown): PrinterConnectionType {
+  return value === 'windows_spooler' ? 'windows_spooler' : 'network';
+}
+
+function mapPrinterRow(row: any): PrinterSettings {
+  const connection_type = normalizeConnectionType(row.connection_type);
+  const printer_ip = row.printer_ip ?? null;
+  const printer_name = row.printer_name ?? null;
+  const printer_port = row.printer_port ?? 9100;
+  const is_active =
+    typeof row.is_active === 'boolean'
+      ? row.is_active
+      : Number(row.is_active) === 1;
+  return {
+    id: row.id,
+    kitchen_id: row.kitchen_id ?? null,
+    connection_type,
+    printer_ip,
+    printer_port,
+    printer_name,
+    printer_type: row.printer_type,
+    is_active,
+  };
 }
 
 class PrintersService {
@@ -22,98 +51,127 @@ class PrintersService {
   // Note: In Electron apps, printer detection should be done via Electron IPC
   // This endpoint returns empty array - frontend should use window.sufra.print.getPrinters()
   async getAvailablePrinters(): Promise<PrinterDevice[]> {
-    // Printer detection is now handled by Electron via IPC
-    // Return empty array - frontend will use Electron's native printer API
     console.log('[PRINTERS] Printer detection handled by Electron - returning empty array');
     return [];
   }
 
-  // Get all printer settings
   async getAllSettings(): Promise<PrinterSettings[]> {
     const rows = await this.db.all(
-      'SELECT id, kitchen_id, printer_ip, printer_port, printer_type, is_active FROM printer_settings',
+      `SELECT id, kitchen_id, connection_type, printer_ip, printer_port, printer_name, printer_type, is_active
+       FROM printer_settings`,
     );
-    // Ensure printer_port defaults to 9100 if null
-    return (rows || []).map((row: any) => ({
-      ...row,
-      printer_port: row.printer_port ?? 9100,
-    }));
+    return (rows || []).map(mapPrinterRow);
   }
 
-  // Save or update printer setting
-  // Automatically determines printer_type from kitchen_id:
-  // - If kitchen_id !== null: printer_type = 'kitchen'
-  // - If kitchen_id === null: printer_type = 'customer'
+  /**
+   * Save or update printer setting.
+   * printer_type is derived from kitchen_id (null → customer, else kitchen).
+   */
   async saveSetting(data: {
     kitchen_id: number | null;
-    printer_ip: string | null; // Can be null or empty to unassign
-    printer_port?: number; // Default: 9100
-    printer_type?: 'kitchen' | 'customer'; // Ignored - auto-determined from kitchen_id
+    connection_type?: PrinterConnectionType | string;
+    printer_ip?: string | null;
+    printer_port?: number;
+    printer_name?: string | null;
+    printer_type?: 'kitchen' | 'customer';
   }): Promise<PrinterSettings> {
-    // Automatically determine printer_type from kitchen_id
-    const printer_type: 'kitchen' | 'customer' = data.kitchen_id !== null ? 'kitchen' : 'customer';
+    const printer_type: 'kitchen' | 'customer' =
+      data.kitchen_id !== null ? 'kitchen' : 'customer';
 
-    // Normalize printer_ip: empty string becomes null
-    const printer_ip = data.printer_ip && data.printer_ip.trim() !== ''
-      ? data.printer_ip.trim()
-      : null;
+    const connection_type = normalizeConnectionType(data.connection_type);
 
-    // Normalize printer_port: default to 9100 if not provided
-    const printer_port = data.printer_port && data.printer_port > 0 ? data.printer_port : 9100;
+    const printer_ip =
+      data.printer_ip && data.printer_ip.trim() !== ''
+        ? data.printer_ip.trim()
+        : null;
 
-    // is_active = 1 if printer_ip exists, 0 if null
-    const is_active = printer_ip !== null ? 1 : 0;
+    const printer_name =
+      data.printer_name && data.printer_name.trim() !== ''
+        ? data.printer_name.trim()
+        : null;
 
-    // Check if setting exists for this kitchen_id and printer_type combination
-    // Handle NULL kitchen_id correctly (use IS NULL for NULL, = for non-NULL)
-    const checkQuery = data.kitchen_id === null
-      ? 'SELECT id FROM printer_settings WHERE kitchen_id IS NULL AND printer_type = ?'
-      : 'SELECT id FROM printer_settings WHERE kitchen_id = ? AND printer_type = ?';
+    const printer_port =
+      data.printer_port && data.printer_port > 0 ? data.printer_port : 9100;
 
-    const checkParams = data.kitchen_id === null
-      ? [printer_type]
-      : [data.kitchen_id, printer_type];
+    const is_active =
+      connection_type === 'windows_spooler'
+        ? printer_name !== null
+          ? 1
+          : 0
+        : printer_ip !== null
+          ? 1
+          : 0;
+
+    const checkQuery =
+      data.kitchen_id === null
+        ? 'SELECT id FROM printer_settings WHERE kitchen_id IS NULL AND printer_type = ?'
+        : 'SELECT id FROM printer_settings WHERE kitchen_id = ? AND printer_type = ?';
+
+    const checkParams =
+      data.kitchen_id === null ? [printer_type] : [data.kitchen_id, printer_type];
 
     const row = await this.db.get(checkQuery, checkParams);
 
     if (row) {
-      // Update existing - preserve printer_type and kitchen_id, update printer_ip, printer_port and is_active
       await this.db.run(
-        'UPDATE printer_settings SET printer_ip = ?, printer_port = ?, is_active = ?, kitchen_id = ?, printer_type = ? WHERE id = ?',
-        [printer_ip, printer_port, is_active, data.kitchen_id, printer_type, row.id],
+        `UPDATE printer_settings
+         SET connection_type = ?, printer_ip = ?, printer_port = ?, printer_name = ?,
+             is_active = ?, kitchen_id = ?, printer_type = ?
+         WHERE id = ?`,
+        [
+          connection_type,
+          printer_ip,
+          printer_port,
+          printer_name,
+          is_active,
+          data.kitchen_id,
+          printer_type,
+          row.id,
+        ],
       );
       return {
         id: row.id,
         kitchen_id: data.kitchen_id,
-        printer_ip: printer_ip,
-        printer_port: printer_port,
-        printer_type: printer_type,
-        is_active: is_active === 1,
-      };
-    } else {
-      // Insert new
-      await this.db.run(
-        'INSERT INTO printer_settings (kitchen_id, printer_ip, printer_port, printer_type, is_active) VALUES (?, ?, ?, ?, ?)',
-        [data.kitchen_id, printer_ip, printer_port, printer_type, is_active],
-      );
-      const id = await this.db.getLastInsertRowId();
-      return {
-        id: id,
-        kitchen_id: data.kitchen_id,
-        printer_ip: printer_ip,
-        printer_port: printer_port,
-        printer_type: printer_type,
+        connection_type,
+        printer_ip,
+        printer_port,
+        printer_name,
+        printer_type,
         is_active: is_active === 1,
       };
     }
+
+    await this.db.run(
+      `INSERT INTO printer_settings
+         (kitchen_id, connection_type, printer_ip, printer_port, printer_name, printer_type, is_active)
+       VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        data.kitchen_id,
+        connection_type,
+        printer_ip,
+        printer_port,
+        printer_name,
+        printer_type,
+        is_active,
+      ],
+    );
+    const id = await this.db.getLastInsertRowId();
+    return {
+      id,
+      kitchen_id: data.kitchen_id,
+      connection_type,
+      printer_ip,
+      printer_port,
+      printer_name,
+      printer_type,
+      is_active: is_active === 1,
+    };
   }
 
-  // Delete printer setting
   async deleteSetting(id: number): Promise<void> {
     await this.db.run('DELETE FROM printer_settings WHERE id = ?', [id]);
   }
 
-  // Helper: Format order for thermal printing (UTF-8 text for bitmap conversion)
   formatOrderForPrint(
     kitchenName: string,
     orderNumber: number,
@@ -132,6 +190,23 @@ class PrintersService {
       const serviceType = item.service_type || 'dine-in';
       const serviceLabel = serviceType === 'pickup' ? ' [سفري]' : '';
       output += `${item.quantity}x ${item.item_name}${serviceLabel}${LF}`;
+      const rawOpts = item.options_json;
+      const options = Array.isArray(rawOpts)
+        ? rawOpts
+        : typeof rawOpts === 'string' && rawOpts
+          ? (() => {
+              try {
+                const parsed = JSON.parse(rawOpts);
+                return Array.isArray(parsed) ? parsed : [];
+              } catch {
+                return [];
+              }
+            })()
+          : [];
+      for (const opt of options) {
+        const sub = `  ${opt.group_name ? `${opt.group_name}: ` : ''}${opt.option_name ?? ''}`.trim();
+        if (sub) output += `${sub}${LF}`;
+      }
     });
 
     output += '================================' + LF + LF;
@@ -141,7 +216,6 @@ class PrintersService {
     return output;
   }
 
-  // Helper: Format customer receipt (UTF-8 text for bitmap conversion)
   formatReceiptForPrint(
     tableNumber: number,
     hallName: string,
@@ -164,17 +238,32 @@ class PrintersService {
       order.items.forEach((item: any) => {
         const lineTotal = item.quantity * item.price;
         const serviceType = item.service_type || 'dine-in';
-        // Add service type label: "طاولة" for dine-in, "سفري" for pickup
         const serviceLabel = serviceType === 'pickup' ? ' [سفري]' : ' [طاولة]';
         output += `  ${item.quantity}x ${item.item_name}${serviceLabel}`;
         output += ' '.repeat(Math.max(1, 30 - (item.item_name.length + serviceLabel.length)));
         output += `${lineTotal} د.ع${LF}`;
+        const rawOpts = item.options_json;
+        const options = Array.isArray(rawOpts)
+          ? rawOpts
+          : typeof rawOpts === 'string' && rawOpts
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(rawOpts);
+                  return Array.isArray(parsed) ? parsed : [];
+                } catch {
+                  return [];
+                }
+              })()
+            : [];
+        for (const opt of options) {
+          const sub = `    ${opt.group_name ? `${opt.group_name}: ` : ''}${opt.option_name ?? ''}`.trim();
+          if (sub) output += `${sub}${LF}`;
+        }
       });
     });
 
     output += '================================' + LF;
 
-    // Show subtotal if discount is applied
     if (globalDiscount && subtotal) {
       output += `المجموع الفرعي: ${Math.round(subtotal).toLocaleString('ar-IQ')} د.ع${LF}`;
       output += `الخصم العام: ${globalDiscount.percent}% (${Math.round(globalDiscount.amount).toLocaleString('ar-IQ')} د.ع)${LF}`;

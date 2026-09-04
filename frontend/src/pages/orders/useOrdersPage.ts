@@ -1,12 +1,13 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { useOrders } from '../../hooks/useOrders';
-import { getServerUrl, Hall, TableEntity, fetchJson, Kitchen } from '../../utils';
+import { getServerUrl, Hall, TableEntity, fetchJson } from '../../utils';
 import { useAuth } from '../../contexts/AuthContext';
 import { showToast } from '../../components/ui/Toast';
 import { showConfirm } from '../../components/ui/ConfirmDialog';
 import { ExistingOrder } from '../../hooks/useOrderModal';
 import { useOrderSocket } from '../../hooks/useOrderSocket';
 import { useHallStore } from '../../../stores/hallStore';
+import { useKitchensStore } from '../../../stores/kitchensStore';
 import { createOrdersPagePrintHandlers } from './useOrdersPagePrint';
 import { useOrdersPageData } from './useOrdersPageData';
 import { createOrdersPageHandlers } from './useOrdersPageHandlers';
@@ -34,7 +35,7 @@ export function useOrdersPage() {
   const [pickupArchivedFilter, setPickupArchivedFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
   const [deliveryArchivedFilter, setDeliveryArchivedFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
   const [dineInArchivedFilter, setDineInArchivedFilter] = useState<'all' | 'completed' | 'cancelled'>('all');
-  const [kitchens, setKitchens] = useState<Kitchen[]>([]);
+  const kitchens = useKitchensStore((state) => state.kitchens);
   const [dropTargetId, setDropTargetId] = useState<number | null>(null);
   const [moveInProgress, setMoveInProgress] = useState(false);
   const dragSourceRef = useRef<number | null>(null);
@@ -209,15 +210,7 @@ export function useOrdersPage() {
   const { handleTableClick, handleCloseModal, handleClearArchivedDineIn, handleClearArchived } = tableHandlers;
 
   useEffect(() => {
-    const loadKitchens = async () => {
-      try {
-        const kitchensData = await fetchJson<Kitchen[]>(`${getServerUrl()}/kitchens`);
-        setKitchens(kitchensData);
-      } catch {
-        /* ignore */
-      }
-    };
-    void loadKitchens();
+    void useKitchensStore.getState().loadKitchens();
   }, []);
 
   useEffect(() => {

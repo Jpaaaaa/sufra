@@ -3,7 +3,10 @@ export function parseDiscountFromOrder(order: any): { percent: number; amount: n
   const d = order.globalDiscount;
   if (!d) return null;
   const parsed = typeof d === 'string' ? (() => { try { return JSON.parse(d); } catch { return null; } })() : d;
-  return parsed?.percent != null && parsed?.amount != null ? parsed : null;
+  if (parsed?.percent == null || parsed?.amount == null) return null;
+  // Use full table discount for UI when available; amount may be a per-order share.
+  const amount = parsed.table_discount_total ?? parsed.amount;
+  return { percent: parsed.percent, amount };
 }
 
 /** Returns orders that have a valid globalDiscount, sorted by created_at desc. */

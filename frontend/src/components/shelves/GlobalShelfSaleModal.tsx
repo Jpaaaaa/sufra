@@ -650,7 +650,7 @@ export function GlobalShelfSaleModalContainer() {
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-[15px] leading-normal font-bold text-obsidian">
                             {t('halls.priceWithCurrency', {
-                              price: price.toFixed(2),
+                              price: Math.round(price).toString(),
                               currency: t('orders.currency'),
                             })}
                           </td>
@@ -683,7 +683,7 @@ export function GlobalShelfSaleModalContainer() {
                           </td>
                           <td className="whitespace-nowrap px-4 py-3 text-[15px] leading-normal font-bold text-cyber-aqua">
                             {t('halls.priceWithCurrency', {
-                              price: subtotal.toFixed(2),
+                              price: Math.round(subtotal).toString(),
                               currency: t('orders.currency'),
                             })}
                           </td>
@@ -729,7 +729,7 @@ export function GlobalShelfSaleModalContainer() {
                   </span>
                   <span className="text-[24px] leading-tight font-bold text-cyber-aqua">
                     {t('halls.priceWithCurrency', {
-                      price: total.toFixed(2),
+                      price: Math.round(total).toString(),
                       currency: t('orders.currency'),
                     })}
                   </span>

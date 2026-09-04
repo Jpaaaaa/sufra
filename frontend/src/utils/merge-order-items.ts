@@ -6,6 +6,7 @@ export interface OrderLineItem {
   price: number;
   service_type?: string;
   shelf_item_id?: number;
+  options_json?: unknown[] | string | null;
 }
 
 export interface MergedOrderLine {
@@ -16,6 +17,7 @@ export interface MergedOrderLine {
   quantity: number;
   lineTotal: number;
   service_type: string;
+  options_json?: unknown[] | string | null;
   sourceLineIds: number[];
   sourceOrderIds: number[];
 }
@@ -24,7 +26,13 @@ function buildMergeKey(item: OrderLineItem): string {
   const itemId = item.item_id ?? item.id;
   const service = item.service_type || 'dine-in';
   const shelf = item.shelf_item_id ?? '';
-  return `${itemId}|${item.item_name}|${item.price}|${service}|${shelf}`;
+  const opts =
+    typeof item.options_json === 'string'
+      ? item.options_json
+      : item.options_json
+        ? JSON.stringify(item.options_json)
+        : '';
+  return `${itemId}|${item.item_name}|${item.price}|${service}|${shelf}|${opts}`;
 }
 
 export function mergeOrderItemsAcrossOrders(
@@ -33,7 +41,7 @@ export function mergeOrderItemsAcrossOrders(
   const map = new Map<string, MergedOrderLine>();
 
   for (const order of orders) {
-    for (const item of order.items) {
+    for (const item of order.items ?? []) {
       const key = buildMergeKey(item);
       const existing = map.get(key);
       if (existing) {
@@ -52,6 +60,7 @@ export function mergeOrderItemsAcrossOrders(
           quantity: item.quantity,
           lineTotal: item.price * item.quantity,
           service_type: item.service_type || 'dine-in',
+          options_json: item.options_json,
           sourceLineIds: [item.id],
           sourceOrderIds: [order.id],
         });

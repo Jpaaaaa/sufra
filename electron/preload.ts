@@ -52,11 +52,29 @@ contextBridge.exposeInMainWorld('sufra', {
   },
   printers: {
     getSettings: () => invoke('printers:getSettings'),
-    saveSettings: (settings: { kitchen_id: number | null; printer_ip: string | null; printer_port?: number }) =>
-      invoke('printers:saveSettings', settings),
-    test: (settings: { printer_ip: string; printer_port?: number }) =>
-      invoke('printers:test', settings),
-    available: () => invoke('printers:available'),
+    saveSettings: (settings: {
+      kitchen_id: number | null;
+      connection_type?: 'network' | 'windows_spooler';
+      printer_ip?: string | null;
+      printer_port?: number;
+      printer_name?: string | null;
+    }) => invoke('printers:saveSettings', settings),
+    test: (settings: {
+      connection_type?: 'network' | 'windows_spooler';
+      printer_ip?: string | null;
+      printer_port?: number;
+      printer_name?: string | null;
+      kitchen_id?: number | null;
+      kind?: 'customer' | 'kitchen';
+      kitchen_name?: string;
+      use_saved?: boolean;
+    }) => invoke('printers:test', settings),
+    preview: (settings?: {
+      kind?: 'customer' | 'kitchen';
+      kitchen_id?: number | null;
+      kitchen_name?: string;
+    }) => invoke('printers:preview', settings ?? {}),
+    available: (forceRefresh?: boolean) => invoke('printers:available', forceRefresh),
     scan: () => invoke('printers:scan'),
   },
   recipePrint: {
@@ -71,6 +89,20 @@ contextBridge.exposeInMainWorld('sufra', {
   support: {
     openAnyDesk: () => invoke('support:anydeskOpen'),
     openAnyDeskDownloadPage: () => invoke('support:anydeskDownloadPage'),
+    openExternalUrl: (url: string) => invoke('support:openExternalUrl', url),
+  },
+  backup: {
+    getSettings: () => invoke('backup:getSettings'),
+    updateSettings: (settings: {
+      enabled?: boolean;
+      scheduleHour?: number;
+      scheduleMinute?: number;
+      retentionCount?: number;
+    }) => invoke('backup:updateSettings', settings),
+    runNow: () => invoke('backup:runNow'),
+    list: () => invoke('backup:list'),
+    getStatus: () => invoke('backup:getStatus'),
+    restore: (backupId: string, accessToken: string) => invoke('backup:restore', backupId, accessToken),
   },
   halls: {
     findAll: () => invoke('halls:findAll'),
@@ -107,6 +139,8 @@ contextBridge.exposeInMainWorld('sufra', {
     create: (data: any) => invoke('items:create', data),
     update: (id: number, data: any) => invoke('items:update', id, data),
     remove: (id: number) => invoke('items:remove', id),
+    copyOptionsFromItem: (targetId: number, sourceId: number) =>
+      invoke('items:copyOptionsFromItem', targetId, sourceId),
   },
   categories: {
     findAll: () => invoke('categories:findAll'),
@@ -229,6 +263,7 @@ contextBridge.exposeInMainWorld('sufra', {
     getCurrent: () => invoke('business-day:getCurrent'),
     start: (data: any) => invoke('business-day:start', data),
     reset: (data?: any) => invoke('business-day:reset', data),
+    ensure: () => invoke('business-day:ensure'),
   },
   reports: {
     dailySummary: () => invoke('reports:dailySummary'),
@@ -335,14 +370,39 @@ declare global {
         getSettings: () => Promise<Array<{
           id: number;
           kitchen_id: number | null;
+          connection_type: 'network' | 'windows_spooler';
           printer_ip: string | null;
           printer_port: number;
+          printer_name: string | null;
           printer_type: 'kitchen' | 'customer';
           is_active: boolean;
         }>>;
-        saveSettings: (settings: { kitchen_id: number | null; printer_ip: string | null; printer_port?: number }) => Promise<any>;
-        test: (settings: { printer_ip: string; printer_port?: number }) => Promise<{ success: boolean; error?: string; message?: string }>;
-        available: () => Promise<Array<{ name: string; isDefault: boolean }>>;
+        saveSettings: (settings: {
+          kitchen_id: number | null;
+          connection_type?: 'network' | 'windows_spooler';
+          printer_ip?: string | null;
+          printer_port?: number;
+          printer_name?: string | null;
+        }) => Promise<any>;
+        test: (settings: {
+          connection_type?: 'network' | 'windows_spooler';
+          printer_ip?: string | null;
+          printer_port?: number;
+          printer_name?: string | null;
+          kitchen_id?: number | null;
+          kind?: 'customer' | 'kitchen';
+          kitchen_name?: string;
+          use_saved?: boolean;
+        }) => Promise<{ success: boolean; error?: string; message?: string }>;
+        preview: (settings?: {
+          kind?: 'customer' | 'kitchen';
+          kitchen_id?: number | null;
+          kitchen_name?: string;
+        }) => Promise<
+          | { success: true; imageBase64: string; kind: 'customer' | 'kitchen' }
+          | { success: false; error: string }
+        >;
+        available: (forceRefresh?: boolean) => Promise<Array<{ name: string; isDefault: boolean; status?: string }>>;
         scan: () => Promise<Array<{ ip: string; port: number }>>;
       };
       recipePrint: {
@@ -368,6 +428,51 @@ declare global {
           { ok: true; action: 'launched' | 'openedDownloadPage' } | { ok: false; error: string }
         >;
         openAnyDeskDownloadPage: () => Promise<{ ok: true } | { ok: false; error: string }>;
+        openExternalUrl: (url: string) => Promise<{ ok: true } | { ok: false; error: string }>;
+      };
+      backup?: {
+        getSettings: () => Promise<{
+          enabled: boolean;
+          scheduleHour: number;
+          scheduleMinute: number;
+          retentionCount: number;
+          lastRunAt: string | null;
+          lastRunSizeBytes: number | null;
+          lastBackupId: string | null;
+          lastError: string | null;
+          nextRunAt: string | null;
+        }>;
+        updateSettings: (settings: {
+          enabled?: boolean;
+          scheduleHour?: number;
+          scheduleMinute?: number;
+          retentionCount?: number;
+        }) => Promise<unknown>;
+        runNow: () => Promise<
+          { ok: true; backupId: string; sizeBytes: number } | { ok: false; error: string }
+        >;
+        list: () => Promise<
+          Array<{ id: string; createdAt: string; sizeBytes: number; storeName: string }>
+        >;
+        getStatus: () => Promise<{
+          settings: {
+            enabled: boolean;
+            scheduleHour: number;
+            scheduleMinute: number;
+            retentionCount: number;
+            lastRunAt: string | null;
+            lastRunSizeBytes: number | null;
+            lastBackupId: string | null;
+            lastError: string | null;
+            nextRunAt: string | null;
+          };
+          inProgress: boolean;
+          backups: Array<{ id: string; createdAt: string; sizeBytes: number; storeName: string }>;
+        }>;
+        restore: (
+          backupId: string,
+          accessToken: string,
+        ) => Promise<{ ok: true } | { ok: false; error: string }>;
       };
       orders: {
         findActive: () => Promise<any[]>;
@@ -563,6 +668,7 @@ declare global {
         getCurrent: () => Promise<any>;
         start: (data: any) => Promise<any>;
         reset: (data?: any) => Promise<any>;
+        ensure: () => Promise<any>;
       };
       export: {
         pdf: (exportData: {

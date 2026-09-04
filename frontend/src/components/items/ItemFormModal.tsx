@@ -4,17 +4,8 @@ import { useTranslation } from 'react-i18next';
 import { getServerUrl } from '../../lib/server-config';
 import { useGlobalNumericField } from '../../contexts/GlobalNumericKeypadContext';
 
-interface ItemFormState {
-  id?: number;
-  name: string;
-  price: string;
-  categoryId: string;
-  kitchen_id: string;
-  image_url?: string;
-  description: string;
-  is_out_of_stock: boolean;
-  hidden_from_menu: boolean;
-}
+import ItemOptionsSection from './ItemOptionsSection';
+import type { Item } from '../../hooks/useItems';
 
 interface Category {
   id: number;
@@ -29,12 +20,25 @@ interface Kitchen {
 interface ItemFormModalProps {
   isOpen: boolean;
   onClose: () => void;
-  formState: ItemFormState;
-  setFormState: React.Dispatch<React.SetStateAction<ItemFormState>>;
+  formState: {
+    id?: number;
+    name: string;
+    price: string;
+    categoryId: string;
+    kitchen_id: string;
+    image_url?: string;
+    description: string;
+    is_out_of_stock: boolean;
+    hidden_from_menu: boolean;
+    has_options: boolean;
+    option_groups: import('../../lib/item-options').ItemOptionGroupDraft[];
+  };
+  setFormState: React.Dispatch<React.SetStateAction<ItemFormModalProps['formState']>>;
   handleSubmit: (e: React.FormEvent) => Promise<void>;
   loading: boolean;
   categories: Category[];
   kitchens: Kitchen[];
+  allItems: Item[];
 }
 
 function getItemImageUrl(imageUrl?: string | null) {
@@ -56,6 +60,7 @@ export default function ItemFormModal({
   loading,
   categories,
   kitchens,
+  allItems,
 }: ItemFormModalProps) {
   const { t, i18n } = useTranslation();
   const priceField = useGlobalNumericField(formState.price, (next) =>
@@ -241,6 +246,12 @@ export default function ItemFormModal({
                 )}
               </div>
             </div>
+            <ItemOptionsSection
+              formState={formState}
+              setFormState={setFormState}
+              allItems={allItems}
+              loading={loading}
+            />
             <div className="md:col-span-4">
               <label className="flex cursor-pointer items-center gap-3">
                 <input

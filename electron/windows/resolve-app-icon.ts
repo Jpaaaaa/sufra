@@ -101,7 +101,7 @@ export function applyWindowsTaskbarIcon(
       appIconPath: icon.icoPath,
       appIconIndex: 0,
       relaunchCommand: process.argv.join(' '),
-      relaunchDisplayName: 'Sufra Lite POS',
+      relaunchDisplayName: 'sufra pos',
     });
   } catch (e) {
     console.warn('[WINDOW] setAppDetails failed:', e);

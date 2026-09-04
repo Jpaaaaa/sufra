@@ -3,6 +3,9 @@ import { showConfirm } from '../ui/ConfirmDialog';
 import { showToast } from '../ui/Toast';
 import { getServerUrl } from '../../lib/server-config';
 import { useGlobalNumericField } from '../../contexts/GlobalNumericKeypadContext';
+import { useHallsStore } from '../../../stores/hallsStore';
+import { useTablesStore } from '../../../stores/tablesStore';
+import { dispatchHallsChanged, dispatchRefreshTables } from '../../lib/structure-events';
 
 interface SalatWindowProps {
   onClose: () => void;
@@ -59,12 +62,14 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
     setLoading(true);
     resetMessages();
     try {
-      const res = await fetch(`${getServerUrl()}/halls`);
-      if (!res.ok) {
-        throw new Error('Failed to load halls');
-      }
-      const data: Hall[] = await res.json();
-      setHalls(data);
+      const loaded = await useHallsStore.getState().loadHalls();
+      setHalls(
+        loaded.map((h) => ({
+          id: h.id,
+          name: h.name,
+          hall_number: h.number,
+        })),
+      );
     } catch (err) {
       console.error(err);
       setError('حدث خطأ أثناء تحميل الصالات');
@@ -91,14 +96,16 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
     setLoading(true);
     resetMessages();
     try {
-      const res = await fetch(
-        `${getServerUrl()}/tables?hall_id=${hallId}`,
+      const loaded = await useTablesStore.getState().loadTablesForHall(hallId, true);
+      setTables(
+        loaded.map((t) => ({
+          id: t.id,
+          name: t.name || '',
+          hall_id: t.hall_id ?? hallId,
+          created_at: '',
+          updated_at: '',
+        })),
       );
-      if (!res.ok) {
-        throw new Error('Failed to load tables');
-      }
-      const data: TableEntity[] = await res.json();
-      setTables(data);
     } catch (err) {
       console.error(err);
       setError('حدث خطأ أثناء تحميل الطاولات');
@@ -197,6 +204,7 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
         setTimeout(() => setSuccessMessage(null), 3000);
         setSelectedHallId(saved.id);
         await fetchHalls();
+        dispatchHallsChanged();
       } catch (err) {
         console.error(err);
         setError('حدث خطأ أثناء حفظ بيانات الصالة.');
@@ -245,7 +253,10 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
         setSuccessMessage('تمت العملية بنجاح');
         setTimeout(() => setSuccessMessage(null), 3000);
         setSelectedTableId(saved.id);
+        useTablesStore.getState().invalidateHall(selectedHallId);
         await fetchTables(selectedHallId);
+        dispatchRefreshTables(selectedHallId);
+        dispatchHallsChanged();
       } catch (err) {
         console.error(err);
         setError('حدث خطأ أثناء حفظ بيانات الطاولة.');
@@ -275,8 +286,9 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
 
       try {
         setLoading(true);
+        const deletedHallId = selectedHallId;
         const res = await fetch(
-          `${getServerUrl()}/halls/${selectedHallId}`,
+          `${getServerUrl()}/halls/${deletedHallId}`,
           {
             method: 'DELETE',
           },
@@ -293,6 +305,11 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
         setForm({ name: '', hall_number: '' });
         await fetchHalls();
         await fetchTables(null);
+        if (deletedHallId != null) {
+          useTablesStore.getState().invalidateHall(deletedHallId);
+        }
+        dispatchHallsChanged();
+        dispatchRefreshTables();
       } catch (err) {
         console.error(err);
         setError('حدث خطأ أثناء حذف الصالة.');
@@ -334,7 +351,14 @@ const SalatWindow: FC<SalatWindowProps> = ({ onClose }) => {
         showToast('تم حذف الطاولة بنجاح', 'success');
         setSelectedTableId(null);
         setTableForm({ name: '' });
+        if (selectedHallId != null) {
+          useTablesStore.getState().invalidateHall(selectedHallId);
+        }
         await fetchTables(selectedHallId);
+        if (selectedHallId != null) {
+          dispatchRefreshTables(selectedHallId);
+          dispatchHallsChanged();
+        }
       } catch (err) {
         console.error(err);
         setError('حدث خطأ أثناء حذف الطاولة.');

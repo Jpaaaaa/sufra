@@ -1,10 +1,12 @@
 /**
  * Alternate electron-builder config (mirrors electron-builder.json).
- * Live backend: electron/backend → packaged as resources/backend/
+ * Live backend: ncc bundle + minimal native runtime node_modules.
  */
+const path = require('path');
+
 module.exports = {
   appId: 'com.sufra.lite.pos',
-  productName: 'Sufra Lite POS',
+  productName: 'sufra pos',
   icon: 'build/icon.ico',
   forceCodeSigning: false,
 
@@ -14,8 +16,9 @@ module.exports = {
   },
 
   asar: true,
+  compression: 'normal',
 
-  files: ['dist/**/*', 'package.json', 'build/**/*'],
+  files: ['dist/**/*', '!dist/backend/**', 'package.json', 'build/**/*'],
 
   extraResources: [
     {
@@ -24,12 +27,12 @@ module.exports = {
       filter: ['**/*'],
     },
     {
-      from: 'backend/dist',
+      from: 'backend/dist-bundle',
       to: 'backend/dist',
       filter: ['**/*'],
     },
     {
-      from: 'backend/node_modules',
+      from: 'backend/runtime-node_modules',
       to: 'backend/node_modules',
       filter: [
         '**/*',
@@ -41,15 +44,10 @@ module.exports = {
         '!**/__tests__/**',
         '!**/.github/**',
         '!**/docs/**',
+        '!**/*.ts',
+        '!**/*.map',
+        '!**/src/**',
       ],
-    },
-    {
-      from: 'backend/package.json',
-      to: 'backend/package.json',
-    },
-    {
-      from: './node',
-      to: 'node',
     },
     {
       from: 'build/icon.ico',
@@ -59,8 +57,10 @@ module.exports = {
 
   win: {
     target: ['nsis'],
+    executableName: 'sufra-pos',
     icon: 'build/icon.ico',
     sign: null,
+    signAndEditExecutable: false,
     forceCodeSigning: false,
     signingHashAlgorithms: [],
   },
@@ -71,17 +71,22 @@ module.exports = {
     oneClick: false,
     perMachine: true,
     allowToChangeInstallationDirectory: false,
+    allowElevation: true,
+    runAfterFinish: true,
     createDesktopShortcut: true,
     createStartMenuShortcut: true,
+    shortcutName: 'sufra pos',
+    include: 'build/installer.nsh',
     installerSidebar: 'build/installerSidebar.bmp',
     installerHeader: 'build/installerHeader.bmp',
     installerIcon: 'build/icon.ico',
     uninstallerIcon: 'build/icon.ico',
+    uninstallDisplayName: 'sufra pos',
+    artifactName: 'sufra pos Setup ${version}.${ext}',
+    warningsAsErrors: false,
   },
 
-  afterPack: async () => {
-    console.log('[BUILD] Skipping code signing as requested');
-  },
+  afterPack: require('./scripts/after-pack-win.js').default,
 
   afterSign: async () => {
     console.log('[BUILD] Skipping code signing as requested');

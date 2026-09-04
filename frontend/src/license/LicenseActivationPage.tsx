@@ -329,7 +329,7 @@ export function LicenseActivationPage() {
   return (
     <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-cloud-soft-white via-white to-cyber-aqua/10 p-6">
       <div className="w-full max-w-lg rounded-2xl border border-black/10 bg-white p-8 shadow-soft ring-1 ring-black/5">
-        <h1 className="text-2xl font-bold tracking-tight text-obsidian">Activate Sufra Lite</h1>
+        <h1 className="text-2xl font-bold tracking-tight text-obsidian">Activate sufra pos</h1>
         <p className="mt-3 text-sm leading-relaxed text-graphite">
           Connect to your license server (LM), then activate this machine ID on the server or import a license file.
         </p>
@@ -338,7 +338,7 @@ export function LicenseActivationPage() {
           <p className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">License server URL</p>
           <p className="mt-2 text-xs text-graphite">
             Example local LM: {DEFAULT_LICENSE_PLATFORM_URL}. In production, use your hosted license manager HTTPS origin
-            (activate this device under <span className="font-mono text-obsidian/70">Sufra</span> in LM).
+            (activate this device under <span className="font-mono text-obsidian/70">sufra pos</span> in LM).
           </p>
           {platformUrlEnvActive ? (
             <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
@@ -528,7 +528,7 @@ export function LicenseActivationPage() {
         ) : null}
 
         <p className="mt-6 text-xs leading-relaxed text-obsidian/55">
-          Sufra Lite talks to <span className="font-mono text-obsidian/70">amaan-platform</span> for licenses (product{' '}
+          sufra pos talks to <span className="font-mono text-obsidian/70">amaan-platform</span> for licenses (product{' '}
           <span className="font-mono text-obsidian/70">sufra_lite</span>) and loads updates from{' '}
           <span className="font-mono text-obsidian/70">…/updates/sufra_lite/</span> on that host. Set{' '}
           <span className="font-mono text-obsidian/70">AMAAN_PLATFORM_URL</span> or embed URLs in the Electron build for production.

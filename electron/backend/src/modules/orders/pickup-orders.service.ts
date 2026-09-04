@@ -3,6 +3,12 @@ import { DatabaseService } from '../../database/database.service';
 import { requireShelves, ShelvesService } from '../shelves/shelves.service';
 import { resolveOrderShiftFields } from '../settings/resolve-order-shift';
 import { resolveOrderItemInsertId } from '../../utils/order-item-insert';
+import { serializeOptionsJson, mapOrderItemRow } from '../../utils/order-item-options';
+import { validateOrderItemPrices } from '../../utils/order-pricing';
+
+function mapItemRows(rows: any[]) {
+  return rows.map((row) => mapOrderItemRow(row));
+}
 
 export interface PickupOrderItem {
   item_id: number | null;
@@ -11,6 +17,7 @@ export interface PickupOrderItem {
   price: number;
   kitchen_id?: number | null;
   shelf_item_id?: number | null;
+  options_json?: unknown[] | null;
 }
 
 export interface CreatePickupOrderDto {
@@ -49,6 +56,7 @@ export interface PickupOrderWithItems extends PickupOrder {
     kitchen_id?: number | null;
     shelf_item_id?: number | null;
     order_type: string;
+    options_json?: unknown[] | null;
   }>;
 }
 
@@ -93,7 +101,7 @@ class PickupOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'pickup'`,
         orderIds,
@@ -102,7 +110,7 @@ class PickupOrdersService {
 
     const ordersWithItems: PickupOrderWithItems[] = orderRows.map((order: any) => ({
       ...order,
-      items: itemRows.filter((item: any) => item.order_id === order.id),
+      items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
     }));
 
     return ordersWithItems;
@@ -142,7 +150,7 @@ class PickupOrdersService {
       const placeholders = orderIds.map(() => '?').join(',');
       // CRITICAL: Always filter by order_type to ensure domain separation
       itemRows = await this.db.all(
-        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+        `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
          FROM order_items 
          WHERE order_id IN (${placeholders}) AND order_type = 'pickup'`,
         orderIds,
@@ -151,7 +159,7 @@ class PickupOrdersService {
 
     const ordersWithItems: PickupOrderWithItems[] = orderRows.map((order: any) => ({
       ...order,
-      items: itemRows.filter((item: any) => item.order_id === order.id),
+      items: mapItemRows(itemRows.filter((item: any) => item.order_id === order.id)),
     }));
 
     return ordersWithItems;
@@ -181,7 +189,7 @@ class PickupOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'pickup'`,
       [id],
@@ -189,7 +197,7 @@ class PickupOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as PickupOrderWithItems;
   }
 
@@ -205,6 +213,7 @@ class PickupOrdersService {
     }
 
     const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    await validateOrderItemPrices(this.db, data.items);
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
@@ -232,8 +241,8 @@ class PickupOrdersService {
 
     for (const item of data.items) {
       await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderId,
           resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
@@ -243,6 +252,7 @@ class PickupOrdersService {
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
           'pickup',
+          serializeOptionsJson(item.options_json),
         ],
       );
     }
@@ -288,7 +298,7 @@ class PickupOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'pickup'`,
       [orderId],
@@ -298,7 +308,7 @@ class PickupOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as PickupOrderWithItems;
   }
 
@@ -356,6 +366,7 @@ class PickupOrdersService {
     }
 
     const subtotal = data.items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+    await validateOrderItemPrices(this.db, data.items);
     const discountAmount = data.globalDiscount?.amount ?? 0;
     const total = Math.max(0, subtotal - discountAmount);
     const globalDiscountJson = data.globalDiscount ? JSON.stringify(data.globalDiscount) : null;
@@ -374,8 +385,8 @@ class PickupOrdersService {
 
     for (const item of data.items) {
       await this.db.run(
-        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type) 
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO order_items (order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json) 
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           id,
           resolveOrderItemInsertId(item.item_id, item.shelf_item_id),
@@ -385,6 +396,7 @@ class PickupOrdersService {
           item.kitchen_id ?? null,
           item.shelf_item_id ?? null,
           'pickup',
+          serializeOptionsJson(item.options_json),
         ],
       );
     }
@@ -410,7 +422,7 @@ class PickupOrdersService {
 
     // CRITICAL: Always filter by order_type to ensure domain separation
     const itemRows = await this.db.all(
-      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type
+      `SELECT id, order_id, item_id, item_name, quantity, price, kitchen_id, shelf_item_id, order_type, options_json
        FROM order_items 
        WHERE order_id = ? AND order_type = 'pickup'`,
       [id],
@@ -418,7 +430,7 @@ class PickupOrdersService {
 
     return {
       ...orderRow,
-      items: itemRows,
+      items: mapItemRows(itemRows),
     } as PickupOrderWithItems;
   }
 

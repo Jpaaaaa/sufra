@@ -25,7 +25,7 @@ async function main() {
   const expiresAt = new Date(now.getTime() + 5 * 60 * 1000); // 5 minutes from now
 
   const data: LicenseData = {
-    product: 'Sufra POS',
+    product: 'sufra pos',
     license_type: 'trial', // Use trial type for test
     assigned_serial: usbSerial.toUpperCase(),
     issued_at: now.toISOString(), // Store full timestamp for test licenses

@@ -1,5 +1,13 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_APP_VERSION: string
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv
+}
+
 export type AmaanPreloadApi = {
   apiPort: number
   getApiPort: () => Promise<number>
