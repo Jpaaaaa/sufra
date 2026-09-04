@@ -195,7 +195,10 @@
     "reports": "التقارير",
     "finance": "المالية",
     "settings": "الإعدادات",
-    "pos": "نقطة البيع"
+    "pos": "نقطة البيع",
+    "groupOps": "التشغيل",
+    "groupCatalog": "القائمة",
+    "groupInsights": "التحليل"
   },
   "settings": {
     "systemHeading": "إعدادات النظام",
@@ -428,6 +431,8 @@
     "zoomOut": "تصغير",
     "zoomIn": "تكبير",
     "reload": "إعادة تحميل",
+    "pinSidebar": "تثبيت القائمة مفتوحة",
+    "unpinSidebar": "طي القائمة تلقائياً",
     "footerVersion": "الإصدار {{version}} · يعمل بدون اتصال"
   },
   "home": {

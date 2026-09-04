@@ -195,7 +195,10 @@
     "reports": "Reports",
     "finance": "Finance",
     "settings": "Settings",
-    "pos": "POS"
+    "pos": "POS",
+    "groupOps": "Operations",
+    "groupCatalog": "Catalog",
+    "groupInsights": "Insights"
   },
   "settings": {
     "systemHeading": "System settings",
@@ -428,6 +431,8 @@
     "zoomOut": "Zoom out",
     "zoomIn": "Zoom in",
     "reload": "Reload",
+    "pinSidebar": "Keep sidebar open",
+    "unpinSidebar": "Auto-collapse sidebar",
     "footerVersion": "Version {{version}} · Offline"
   },
   "home": {

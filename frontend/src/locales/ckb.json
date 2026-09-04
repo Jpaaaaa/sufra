@@ -195,7 +195,10 @@
     "reports": "ڕاپۆرتەکان",
     "finance": "دارایی",
     "settings": "ڕێکخستنەکان",
-    "pos": "POS"
+    "pos": "POS",
+    "groupOps": "کارکردن",
+    "groupCatalog": "لیست",
+    "groupInsights": "شیکاری"
   },
   "settings": {
     "systemHeading": "ڕێکخستنی سیستەم",
@@ -428,6 +431,8 @@
     "zoomOut": "بچووککردنەوە",
     "zoomIn": "گەورەکردن",
     "reload": "بارکردنەوە",
+    "pinSidebar": "لیستەکە بکەرەوە بە جێگیری",
+    "unpinSidebar": "خۆکار بچووککردنەوەی لیست",
     "footerVersion": "وەشان {{version}} · بێ پەیوەندی"
   },
   "home": {
