@@ -10,13 +10,14 @@ import {
   BarChart3,
   Wallet,
   Settings2,
+  type LucideIcon,
 } from 'lucide-react';
 
 export interface NavItem {
   href: string;
   /** i18n key under `nav.*` (e.g. nav.home) */
   labelKey: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: LucideIcon;
   roles: UserRole[];
 }
 
