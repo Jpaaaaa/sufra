@@ -23,6 +23,13 @@ jobs:
           # better-sqlite3 12 requires Node 20+; Node 18 has no prebuilt binaries.
           node-version: 20
 
+      # node-gyp's bundled gyp imports distutils, removed from Python in 3.12.
+      # The runner ships 3.14, so pin an older Python for the native builds.
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
       # --ignore-scripts skips the native build here. These modules load inside
       # Electron, not Node, so they are built once by electron-rebuild below.
       - name: Install backend deps
