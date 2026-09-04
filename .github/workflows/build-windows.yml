@@ -9,7 +9,9 @@ on:
 
 jobs:
   build:
-    runs-on: windows-latest
+    # VS 2022 is present here. windows-latest ships VS 2026, which node-gyp 10
+    # cannot detect, so any source build fails.
+    runs-on: windows-2022
 
     steps:
       - name: Checkout repo
@@ -18,8 +20,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
+          # better-sqlite3 12 requires Node 20+; Node 18 has no prebuilt binaries.
           node-version: 20
 
+      # --ignore-scripts skips the native build here. These modules load inside
+      # Electron, not Node, so they are built once by electron-rebuild below.
       - name: Install backend deps
         working-directory: electron/backend
         run: npm install --ignore-scripts
