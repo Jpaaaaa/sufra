@@ -36,7 +36,13 @@ export interface Item {
   hidden_from_menu?: boolean;
   has_options?: boolean;
   option_groups?: ItemOptionGroup[];
-  _comboProducts?: Array<{ id: number; name: string; price: number }>;
+  _comboProducts?: Array<{
+    id: number;
+    name: string;
+    price: number;
+    quantity?: number;
+    kitchen_id?: number | null;
+  }>;
 }
 
 export type { ItemFormState };

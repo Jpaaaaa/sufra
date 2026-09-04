@@ -1,6 +1,6 @@
 /**
- * Optional production URLs (same role as Bazar's Vite `define` embeds).
- * For sufra pos release builds, set your LM origin and optional full update feed URL here or via CI patch.
+ * Production license-manager origin (ping: POST {origin}/api/platform/v1/ping).
+ * The LM web UI lives at /updates/; the API is on the origin.
  */
-export const AMAAN_PLATFORM_URL_EMBEDDED = ''
-export const AMAAN_UPDATE_FEED_URL_EMBEDDED = ''
+export const AMAAN_PLATFORM_URL_EMBEDDED = 'https://bazarone.amaantechnology.com'
+export const AMAAN_UPDATE_FEED_URL_EMBEDDED = 'https://bazarone.amaantechnology.com/updates/sufra_lite/'

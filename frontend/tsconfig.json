@@ -30,6 +30,12 @@
     "paths": {
       "@/*": [
         "./src/*"
+      ],
+      "@sufra-offers": [
+        "../electron/shared/offers/index.ts"
+      ],
+      "@sufra-offers/*": [
+        "../electron/shared/offers/*"
       ]
     },
     "allowJs": true,
@@ -47,6 +53,7 @@
     }
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "src/**/*.test.ts"
   ]
 }

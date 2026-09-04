@@ -103,15 +103,15 @@ export function createOrderModalHandlers(
     }
   };
 
-  const handleSubmitOrder = async () => {
-    if (selectedItems.length === 0) return;
+  const handleSubmitOrder = async (): Promise<number | null> => {
+    if (selectedItems.length === 0) return null;
     if (selectedItems.some((si) => si.lineKind === 'tray' && !(si.children?.length))) {
       showToast('المجموعة يجب أن تحتوي على منتج واحد على الأقل', 'error');
-      return;
+      return null;
     }
     if (!table.hall_id) {
       showToast('خطأ: الطاولة لا تحتوي على معرف الصالة', 'error');
-      return;
+      return null;
     }
     try {
       const payload = withOrderCreator(
@@ -163,8 +163,10 @@ export function createOrderModalHandlers(
       setSelectedItems([]);
       setNote('');
       showToast(`تم إنشاء الطلب بنجاح (${selectedItems.length} صنف)`, 'success');
+      return newlyCreated[0]?.id ?? null;
     } catch (e: any) {
       showToast('حدث خطأ أثناء إنشاء الطلب: ' + (e.message || 'خطأ غير معروف'), 'error');
+      return null;
     }
   };
 
@@ -263,15 +265,17 @@ export function createOrderModalHandlers(
     showToast('لا يمكن تغيير نوع طلب الصالة', 'info');
   };
 
-  const handleCancelOrder = async (orderId: number) => {
-    const confirmed = await showConfirm({
-      title: 'إلغاء الطلب',
-      message: 'هل أنت متأكد من إلغاء هذا الطلب؟',
-      confirmText: 'إلغاء الطلب',
-      cancelText: 'تراجع',
-      confirmColor: 'danger',
-    });
-    if (!confirmed) return;
+  const handleCancelOrder = async (orderId: number, opts?: { skipConfirm?: boolean }) => {
+    if (!opts?.skipConfirm) {
+      const confirmed = await showConfirm({
+        title: 'إلغاء الطلب',
+        message: 'هل أنت متأكد من إلغاء هذا الطلب؟',
+        confirmText: 'إلغاء الطلب',
+        cancelText: 'تراجع',
+        confirmColor: 'danger',
+      });
+      if (!confirmed) return;
+    }
     try {
       const serverUrl = getServerUrl();
       await fetchJson(`${serverUrl}/orders/dine-in/${orderId}/status`, {

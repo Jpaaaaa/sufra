@@ -29,7 +29,18 @@ declare global {
       updateInstallNow: () => Promise<{ ok: true } | { ok: false; error: string }>;
       updateOnStateChange?: (cb: (state: unknown) => void) => () => void;
     };
-    sufra?: {
+    sufra: {
+      health?: () => Promise<{
+        status?: string;
+        backendReady?: boolean;
+        database?: string;
+        electron?: {
+          packaged?: boolean;
+          runtime?: string;
+          version?: string;
+          uploadReady?: boolean;
+        };
+      }>;
       license?: {
         getStatus: () => Promise<{
           valid: boolean;
@@ -55,6 +66,7 @@ declare global {
         me: (userId: number) => Promise<any>;
         verifyToken: (token: string) => Promise<any>;
         verifyPassword: (userId: number, password: string) => Promise<{ valid: boolean }>;
+        setSessionUser?: (user: { id: number; username: string; role: string } | null) => void;
       };
       print: {
         order: (orderData: any, kitchenId?: number | null) => Promise<{ success: boolean; error?: string }>;
@@ -308,18 +320,26 @@ declare global {
         createDailyDeal: (data: any) => Promise<any>;
         updateDailyDeal: (id: number, data: any) => Promise<any>;
         deleteDailyDeal: (id: number) => Promise<any>;
+        archiveDailyDeal?: (id: number) => Promise<any>;
+        duplicateDailyDeal?: (id: number) => Promise<any>;
         combos: () => Promise<any[]>;
         createCombo: (data: any) => Promise<any>;
         updateCombo: (id: number, data: any) => Promise<any>;
         deleteCombo: (id: number) => Promise<any>;
+        archiveCombo?: (id: number) => Promise<any>;
+        duplicateCombo?: (id: number) => Promise<any>;
         scheduledOffers: () => Promise<any[]>;
         createScheduledOffer: (data: any) => Promise<any>;
         updateScheduledOffer: (id: number, data: any) => Promise<any>;
         deleteScheduledOffer: (id: number) => Promise<any>;
+        archiveScheduledOffer?: (id: number) => Promise<any>;
+        duplicateScheduledOffer?: (id: number) => Promise<any>;
         happyHour: () => Promise<any[]>;
         createHappyHour: (data: any) => Promise<any>;
         updateHappyHour: (id: number, data: any) => Promise<any>;
         deleteHappyHour: (id: number) => Promise<any>;
+        archiveHappyHour?: (id: number) => Promise<any>;
+        duplicateHappyHour?: (id: number) => Promise<any>;
         featuredItems: () => Promise<any[]>;
         createFeaturedItem: (data: any) => Promise<any>;
         setFeatured: (productId: number, featured: boolean) => Promise<any>;
@@ -371,6 +391,11 @@ declare global {
         getReport: (period: string, date: string) => Promise<any>;
       };
       settings: {
+        getLanAddresses?: () => Promise<{
+          wifi: { kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string } | null;
+          ethernet: { kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string } | null;
+          other: Array<{ kind: 'wifi' | 'ethernet' | 'other'; name: string; ipv4: string; url: string }>;
+        }>;
         getShiftHours: () => Promise<{
           shift_mode: 'single' | 'multi';
           business_day_start_time: string;

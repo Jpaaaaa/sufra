@@ -32,7 +32,7 @@ export const CategoryTabs = memo(function CategoryTabs({
   return (
     <div 
       data-scrollable
-      className="flex flex-nowrap gap-3 overflow-x-auto overflow-y-hidden pb-3 -mx-0.5 px-0.5 md:gap-1 md:pb-1 xl:gap-3 xl:pb-3 scroll-smooth touch-pan-x"
+      className="flex flex-nowrap gap-3 overflow-x-auto overflow-y-hidden pb-3 -mx-0.5 px-0.5 scroll-smooth touch-pan-x"
       style={{
         scrollbarWidth: 'thin',
         scrollbarColor: 'rgba(0, 0, 0, 0.15) transparent',
@@ -45,7 +45,7 @@ export const CategoryTabs = memo(function CategoryTabs({
       <button
         type="button"
         onClick={() => onSelectCategory(null)}
-        className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[17px] sm:text-[18px] md:rounded-md md:px-1 md:py-0 md:text-[11px] xl:rounded-xl xl:px-2 xl:py-1 xl:text-[12px] leading-tight font-semibold ${
+        className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[16px] font-semibold leading-tight xl:px-4 xl:py-3 xl:text-[18px] ${
           selectedCategory === null
             ? 'bg-cyber-aqua text-white shadow-sm'
             : 'border border-black/5 bg-white text-obsidian hover:bg-cloud-soft-white'
@@ -57,7 +57,7 @@ export const CategoryTabs = memo(function CategoryTabs({
         <button
           type="button"
           onClick={() => onSelectCategory(OFFERS_CATEGORY_ID)}
-          className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[17px] sm:text-[18px] md:rounded-md md:px-1 md:py-0 md:text-[11px] xl:rounded-xl xl:px-4 xl:py-3 xl:text-[18px] leading-tight font-semibold ${
+          className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[16px] font-semibold leading-tight xl:text-[18px] ${
             selectedCategory === OFFERS_CATEGORY_ID
               ? 'bg-amber-500 text-white shadow-sm'
               : 'border border-amber-300 bg-amber-50 text-amber-900 hover:bg-amber-100'
@@ -70,7 +70,7 @@ export const CategoryTabs = memo(function CategoryTabs({
         <button
           type="button"
           onClick={() => onSelectCategory(SHELF_CATEGORY_ID)}
-          className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[17px] sm:text-[18px] md:rounded-md md:px-1 md:py-0 md:text-[11px] xl:rounded-xl xl:px-4 xl:py-3 xl:text-[18px] leading-tight font-semibold ${
+          className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[16px] font-semibold leading-tight xl:text-[18px] ${
             selectedCategory === SHELF_CATEGORY_ID
               ? 'bg-emerald-600 text-white shadow-sm'
               : 'border border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100'
@@ -87,7 +87,7 @@ export const CategoryTabs = memo(function CategoryTabs({
             type="button"
             onClick={() => onSelectCategory(cat.id)}
             title={inactive ? t('orders.categoryInactiveTitle') : undefined}
-            className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[17px] sm:text-[18px] md:rounded-md md:px-1 md:py-0 md:text-[11px] xl:rounded-xl xl:px-4 xl:py-3 xl:text-[18px] leading-tight font-semibold ${
+            className={`flex-shrink-0 snap-start rounded-xl px-4 py-3 text-[16px] font-semibold leading-tight xl:text-[18px] ${
               selectedCategory === cat.id
                 ? inactive
                   ? 'bg-amber-600/90 text-white shadow-sm ring-2 ring-amber-300/50'

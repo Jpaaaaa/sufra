@@ -13,11 +13,10 @@ import type { ExistingOrder } from './useOrderModalTypes';
 import { useDebounce } from './useDebounce';
 import { showToast } from '../components/ui/Toast';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
-import { isHappyHourActiveNow } from '../utils/offer-pricing';
-import { isWeekdayIncluded } from '../utils/weekdays';
 import type { TableEntity } from '../utils';
 import type { useOffers } from './useOffers';
 import { useKitchensStore } from '../../stores/kitchensStore';
+import { buildOffersCategoryItems } from '../lib/offers/build-offers-category-items';
 
 function parseOrdersWithDiscount(loadedOrders: any[]) {
   return loadedOrders
@@ -114,63 +113,7 @@ export function useOrderModalData(
     const hasSearch = searchLower.length > 0;
 
     if (selectedCategory === OFFERS_CATEGORY_ID) {
-      const allOffersItems: Item[] = [];
-      const featuredItemIds = new Set(offers.featuredItems.map((fi) => fi.product_id));
-      const featuredItems = menuItems.filter((item) => featuredItemIds.has(item.id));
-      allOffersItems.push(...featuredItems);
-
-      const activeDailyDeal = offers.getActiveDailyDeal();
-      const activeScheduledOffers = offers.getActiveScheduledOffers();
-      const activeHappyHours = offers.happyHours.filter((hh) => isHappyHourActiveNow(hh));
-
-      const offerItemIds = new Set<number>();
-      if (activeDailyDeal) offerItemIds.add(activeDailyDeal.product_id);
-      activeScheduledOffers.forEach((so) => {
-        if (so.product_id) offerItemIds.add(so.product_id);
-      });
-      activeHappyHours.forEach((hh) => offerItemIds.add(hh.product_id));
-
-      const offerItems = menuItems.filter((item) => offerItemIds.has(item.id) && !featuredItemIds.has(item.id));
-      allOffersItems.push(...offerItems);
-
-      const activeCombos = offers.combos.filter(
-        (c) => c.is_active === 1 && isWeekdayIncluded(c.weekdays),
-      );
-      const comboItems: any[] = activeCombos.map((combo) => {
-        const productList = combo.products?.length
-          ? combo.products
-          : (combo.product_ids || []).map((pid: number) => {
-              const it = menuItems.find((i) => i.id === pid);
-              return { id: pid, name: it?.name ?? '?', price: it?.price ?? 0 };
-            });
-        const originalTotal = productList.reduce((sum: number, p: any) => sum + (p.price || 0), 0) || combo.combo_price;
-        return {
-          id: -combo.id,
-          name: combo.combo_name,
-          price: combo.combo_price,
-          categoryId: OFFERS_CATEGORY_ID,
-          kitchen_id: null,
-          original_price: originalTotal > combo.combo_price ? originalTotal : undefined,
-          is_featured: false,
-          _comboProducts: productList,
-          _isCombo: true,
-        };
-      });
-      allOffersItems.push(...comboItems);
-
-      const uniqueItems = Array.from(new Map(allOffersItems.map((item) => [item.id, item])).values());
-      uniqueItems.sort((a, b) => {
-        const aFeatured = a.is_featured || false;
-        const bFeatured = b.is_featured || false;
-        const aCombo = a.id < 0;
-        const bCombo = b.id < 0;
-        if (aFeatured && !bFeatured) return -1;
-        if (!aFeatured && bFeatured) return 1;
-        if (!aCombo && bCombo) return -1;
-        if (aCombo && !bCombo) return 1;
-        return a.name.localeCompare(b.name, 'ar');
-      });
-
+      const uniqueItems = buildOffersCategoryItems(menuItems, offers);
       if (hasSearch) {
         return uniqueItems.filter((item) => item.name.toLowerCase().includes(searchLower));
       }

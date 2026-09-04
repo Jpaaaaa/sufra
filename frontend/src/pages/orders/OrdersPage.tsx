@@ -2,7 +2,6 @@ import { lazy, Suspense } from 'react';
 import { useTranslation } from 'react-i18next';
 import Header from '../../components/layout/Header';
 import NotificationPanel from '../../components/dashboard/NotificationPanel';
-import Footer from '../../components/layout/Footer';
 import { ArchivedDineInOrderCard } from '../../components/orders/ArchivedDineInOrderCard';
 import { ArchivedStatusFilter } from '../../components/orders/ArchivedStatusFilter';
 import { PackageIcon, TruckIcon, TrashIcon, UtensilsIcon } from '../../components/icons';
@@ -11,6 +10,8 @@ import { DeliveryOrdersSection } from './DeliveryOrdersSection';
 import { useOrdersPage } from './useOrdersPage';
 import { DineInOrdersSection } from './DineInOrdersSection';
 import { TablesGrid } from './TablesGrid';
+import { ordersSegBtn, ordersSegWrap } from './orders-floor-chrome';
+import './orders-workbench.css';
 
 const OrderModal = lazy(() => import('../../components/orders/OrderModal'));
 const PickupOrderModal = lazy(() => import('../../components/orders/PickupOrderModal'));
@@ -30,6 +31,7 @@ export default function OrdersPage() {
     floors,
     selectedHall,
     tablesWithStatus,
+    occupancy,
     loading,
     error,
     activeTab,
@@ -89,38 +91,41 @@ export default function OrdersPage() {
   } = orders;
 
   return (
-    <div className="flex flex-1 flex-col bg-cloud-soft-white">
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-cloud-soft-white" data-orders-wb>
       <Header title={t('orders.pageTitle')} actions={<NotificationPanel />} />
 
-      <main className="flex-1 p-6 texture-surface">
-        <section className="mx-auto max-w-7xl space-y-6">
-          {error && (
-            <div className="rounded-soft-lg border border-red-300 bg-red-50 px-4 py-3 text-[15px] leading-normal font-bold text-red-700 shadow-soft">
-              {error}
-            </div>
-          )}
-
-          <div className="mb-6 flex justify-center">
-            <div className="inline-flex gap-2 rounded-soft-xl border-2 border-cyber-aqua/30 bg-white p-1 shadow-soft">
-              {(['dine-in', 'pickup', 'delivery'] as const).map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => setActiveTab(tab)}
-                  className={`flex items-center gap-2 rounded-soft-lg px-6 py-3 text-[15px] leading-normal font-bold ${
-                    activeTab === tab ? 'bg-cyber-aqua text-charcoal-graphite shadow-soft' : 'text-obsidian/70 hover:bg-cloud-soft-white hover:text-obsidian'
-                  }`}
-                >
-                  {tab === 'dine-in' && <UtensilsIcon className="w-5 h-5" />}
-                  {tab === 'pickup' && <PackageIcon className="w-5 h-5" />}
-                  {tab === 'delivery' && <TruckIcon className="w-5 h-5" />}
-                  <span>
-                    {tab === 'dine-in' ? t('orders.tabDineIn') : tab === 'pickup' ? t('orders.tabPickup') : t('orders.tabDelivery')}
-                  </span>
-                </button>
-              ))}
-            </div>
+      <main className="flex min-h-0 flex-1 flex-col gap-2 p-3 pb-24 xl:p-4 xl:pb-4">
+        {error && (
+          <div className="flex-shrink-0 rounded-soft-lg border border-red-300 bg-red-50 px-4 py-3 text-[15px] leading-normal font-bold text-red-700 shadow-soft">
+            {error}
           </div>
+        )}
+
+        <div className="ow-toolbar">
+          <div className={ordersSegWrap}>
+            {(['dine-in', 'pickup', 'delivery'] as const).map((tab) => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => setActiveTab(tab)}
+                className={ordersSegBtn(activeTab === tab)}
+              >
+                {tab === 'dine-in' && <UtensilsIcon className="h-4 w-4 xl:h-5 xl:w-5" />}
+                {tab === 'pickup' && <PackageIcon className="h-4 w-4 xl:h-5 xl:w-5" />}
+                {tab === 'delivery' && <TruckIcon className="h-4 w-4 xl:h-5 xl:w-5" />}
+                <span>
+                  {tab === 'dine-in' ? t('orders.tabDineIn') : tab === 'pickup' ? t('orders.tabPickup') : t('orders.tabDelivery')}
+                </span>
+                {tab === 'pickup' && pickupOrderCounts.pending > 0 && (
+                  <span className="tabular-nums">({pickupOrderCounts.pending})</span>
+                )}
+                {tab === 'delivery' && deliveryOrderCounts.pending > 0 && (
+                  <span className="tabular-nums">({deliveryOrderCounts.pending})</span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
 
           {activeTab === 'dine-in' && (
             <DineInOrdersSection
@@ -180,27 +185,33 @@ export default function OrdersPage() {
               }
             >
               {selectedHall && (
-                <div className="rounded-soft-xl border border-black/5 bg-cloud-soft-white p-6 shadow-soft mt-6">
-                  <h2 className="text-[20px] leading-tight font-semibold text-obsidian flex items-center gap-2 flex-wrap mb-4">
-                    <span>{t('orders.tablesTitle')}</span>
-                    {tablesWithStatus.some((tb) => tb.orderStatus !== 'none') && (
-                      <span className="text-[13px] font-normal text-obsidian/60">{t('orders.tablesDragHint')}</span>
-                    )}
-                    {selectedHall.floor && (
-                      <span
-                        className="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[15px] font-medium tabular-nums"
-                        style={{
-                          backgroundColor: `${floors.find((f) => f.id === selectedHall.floor?.id) ? '#06b6d420' : '#64748b20'}`,
-                          color: floors.find((f) => f.id === selectedHall.floor?.id) ? '#06b6d4' : '#64748b',
-                        }}
-                      >
-                        {selectedHall.floor.number} · {selectedHall.number}
+                <div className="ow-map">
+                  <div className="ow-map-head">
+                    <h2 className="text-[15px] font-semibold text-obsidian">
+                      {t('orders.tablesTitle')}
+                      <span className="ms-2 font-normal text-obsidian/70">— {selectedHall.name}</span>
+                      {tablesWithStatus.some((tb) => tb.orderStatus !== 'none') && (
+                        <span className="ms-2 text-[12px] font-normal text-obsidian/50">{t('orders.tablesDragHint')}</span>
+                      )}
+                    </h2>
+                    <div className="ow-legend">
+                      <span className="ow-legend-i">
+                        <span className="ow-swatch is-free" aria-hidden />
+                        {t('orders.legendFree')}
                       </span>
-                    )}
-                    <span className="text-obsidian/80 font-normal">— {selectedHall.name}</span>
-                  </h2>
+                      <span className="ow-legend-i">
+                        <span className="ow-swatch is-wait" aria-hidden />
+                        {t('orders.hallStatusWaiting')}
+                      </span>
+                      <span className="ow-legend-i">
+                        <span className="ow-swatch is-sent" aria-hidden />
+                        {t('orders.hallStatusPrinted')}
+                      </span>
+                    </div>
+                  </div>
                   <TablesGrid
                     tables={tablesWithStatus}
+                    occupancy={occupancy}
                     loading={loading}
                     dropTargetId={dropTargetId}
                     moveInProgress={orders.moveInProgress}
@@ -215,6 +226,7 @@ export default function OrdersPage() {
           )}
 
           {activeTab === 'pickup' && (
+            <div className="min-h-0 flex-1 overflow-auto">
             <PickupOrdersSection
               pickupFilter={pickupFilter}
               onFilterChange={setPickupFilter}
@@ -234,9 +246,11 @@ export default function OrdersPage() {
               onPrintCustomer={handlePrintCustomerReceipt}
               onClearArchived={handleClearArchived}
             />
+            </div>
           )}
 
           {activeTab === 'delivery' && (
+            <div className="min-h-0 flex-1 overflow-auto">
             <DeliveryOrdersSection
               deliverySubTab={deliverySubTab}
               onDeliverySubTabChange={setDeliverySubTab}
@@ -258,11 +272,9 @@ export default function OrdersPage() {
               onPrintCustomer={handlePrintCustomerReceipt}
               onClearArchived={handleClearArchived}
             />
+            </div>
           )}
-        </section>
       </main>
-
-      <Footer />
 
       {showOrderModal && orderTable && selectedHall && (
         <Suspense fallback={<OrderModalLoading />}>

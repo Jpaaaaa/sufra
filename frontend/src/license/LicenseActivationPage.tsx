@@ -14,8 +14,8 @@ import { useLicenseCountdownFormat } from './useLicenseCountdownFormat'
 
 const LICENSE_POLL_STORAGE_KEY = 'amaan-license-poll-interval-ms'
 const DEFAULT_LICENSE_POLL_MS = 8_000
-/** Default LM origin when none is saved (local dev; set your hosted HTTPS origin in production). */
-const DEFAULT_LICENSE_PLATFORM_URL = 'http://127.0.0.1:3850'
+/** Default LM origin (API ping is on origin; /updates/ is the LM web UI). */
+const DEFAULT_LICENSE_PLATFORM_URL = 'https://bazarone.amaantechnology.com'
 
 function readStoredLicensePollMs(): number | null {
   try {

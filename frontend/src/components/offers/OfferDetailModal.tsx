@@ -4,8 +4,8 @@ import { useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import type {
   Combo,
+  ComboProductRef,
   DailyDeal,
-  FeaturedItem,
   HappyHour,
   ScheduledOffer,
 } from '../../hooks/useOffers';
@@ -16,7 +16,6 @@ export type OfferDetailState =
   | { kind: 'daily-deal'; deal: DailyDeal }
   | { kind: 'scheduled'; offer: ScheduledOffer }
   | { kind: 'combo'; combo: Combo; productLines: string[] }
-  | { kind: 'featured'; item: FeaturedItem }
   | { kind: 'happy-hour'; hh: HappyHour };
 
 interface OfferDetailModalProps {
@@ -32,6 +31,13 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
       <div className="min-w-0 text-[15px] text-obsidian">{children}</div>
     </div>
   );
+}
+
+function productLines(products?: ComboProductRef[]): string[] {
+  return (products || []).map((p) => {
+    const q = Math.max(1, Number(p.quantity) || 1);
+    return q > 1 ? `${q}× ${p.name}` : p.name;
+  });
 }
 
 export default function OfferDetailModal({ open, onClose, detail }: OfferDetailModalProps) {
@@ -59,9 +65,19 @@ export default function OfferDetailModal({ open, onClose, detail }: OfferDetailM
         ? t('offers.detailTitleScheduled')
         : detail.kind === 'combo'
           ? t('offers.detailTitleCombo')
-          : detail.kind === 'featured'
-            ? t('offers.detailTitleFeatured')
-            : t('offers.detailTitleHappyHour');
+          : t('offers.detailTitleHappyHour');
+
+  const renderProducts = (products?: ComboProductRef[]) => {
+    const lines = productLines(products);
+    if (!lines.length) return emDash;
+    return (
+      <ul className="list-inside list-disc space-y-1 text-right">
+        {lines.map((line, i) => (
+          <li key={i}>{line}</li>
+        ))}
+      </ul>
+    );
+  };
 
   return (
     <div
@@ -92,8 +108,12 @@ export default function OfferDetailModal({ open, onClose, detail }: OfferDetailM
           {detail.kind === 'daily-deal' && (
             <>
               <Row label={t('offers.rowId')}>{detail.deal.id}</Row>
-              <Row label={t('offers.rowProductName')}>{detail.deal.product_name ?? emDash}</Row>
-              <Row label={t('offers.rowProductId')}>{detail.deal.product_id}</Row>
+              <Row label={t('offers.rowProducts')}>{renderProducts(detail.deal.products)}</Row>
+              <Row label={t('offers.comboPricingModeLabel')}>
+                {detail.deal.pricing_mode === 'sum'
+                  ? t('offers.comboPricingSum')
+                  : t('offers.comboPricingFixed')}
+              </Row>
               <Row label={t('offers.rowSpecialPrice')}>{priceWith(detail.deal.special_price)}</Row>
               <Row label={t('offers.rowDate')}>{detail.deal.date}</Row>
               <Row label={t('offers.rowStatus')}>
@@ -105,22 +125,16 @@ export default function OfferDetailModal({ open, onClose, detail }: OfferDetailM
           {detail.kind === 'scheduled' && (
             <>
               <Row label={t('offers.rowId')}>{detail.offer.id}</Row>
-              <Row label={t('offers.rowType')}>
-                {detail.offer.product_id != null
-                  ? t('offers.typeProduct')
-                  : detail.offer.combo_id != null
-                    ? t('offers.typeCombo')
-                    : emDash}
+              <Row label={t('offers.rowProducts')}>
+                {detail.offer.products?.length
+                  ? renderProducts(detail.offer.products)
+                  : detail.offer.product_name || detail.offer.combo_name || emDash}
               </Row>
-              <Row label={t('offers.rowProductOrComboName')}>
-                {detail.offer.product_name || detail.offer.combo_name || emDash}
+              <Row label={t('offers.comboPricingModeLabel')}>
+                {detail.offer.pricing_mode === 'sum'
+                  ? t('offers.comboPricingSum')
+                  : t('offers.comboPricingFixed')}
               </Row>
-              {detail.offer.product_id != null && (
-                <Row label={t('offers.rowProductId')}>{detail.offer.product_id}</Row>
-              )}
-              {detail.offer.combo_id != null && (
-                <Row label={t('offers.rowComboId')}>{detail.offer.combo_id}</Row>
-              )}
               <Row label={t('offers.rowSpecialPrice')}>{priceWith(detail.offer.special_price)}</Row>
               <Row label={t('offers.rowFrom')}>{formatDateTimeAmPm(detail.offer.start_datetime)}</Row>
               <Row label={t('offers.rowTo')}>{formatDateTimeAmPm(detail.offer.end_datetime)}</Row>
@@ -135,6 +149,11 @@ export default function OfferDetailModal({ open, onClose, detail }: OfferDetailM
               <Row label={t('offers.rowId')}>{detail.combo.id}</Row>
               <Row label={t('offers.rowName')}>{detail.combo.combo_name}</Row>
               <Row label={t('offers.rowPrice')}>{priceWith(detail.combo.combo_price)}</Row>
+              <Row label={t('offers.comboPricingModeLabel')}>
+                {detail.combo.pricing_mode === 'sum'
+                  ? t('offers.comboPricingSum')
+                  : t('offers.comboPricingFixed')}
+              </Row>
               <Row label={t('offers.rowOfferDays')}>{formatWeekdaysOffer(detail.combo.weekdays)}</Row>
               <Row label={t('offers.rowStatus')}>
                 {detail.combo.is_active === 1 ? t('offers.statusOn') : t('offers.statusOff')}
@@ -154,22 +173,15 @@ export default function OfferDetailModal({ open, onClose, detail }: OfferDetailM
               </Row>
             </>
           )}
-          {detail.kind === 'featured' && (
-            <>
-              <Row label={t('offers.rowId')}>{detail.item.id}</Row>
-              <Row label={t('offers.rowProductName')}>{detail.item.product_name ?? emDash}</Row>
-              <Row label={t('offers.rowProductId')}>{detail.item.product_id}</Row>
-              <Row label={t('offers.rowFeatured')}>
-                {detail.item.featured === 1 ? t('offers.yes') : t('offers.no')}
-              </Row>
-              <Row label={t('offers.rowAdded')}>{detail.item.created_at ?? emDash}</Row>
-            </>
-          )}
           {detail.kind === 'happy-hour' && (
             <>
               <Row label={t('offers.rowId')}>{detail.hh.id}</Row>
-              <Row label={t('offers.rowProductName')}>{detail.hh.product_name ?? emDash}</Row>
-              <Row label={t('offers.rowProductId')}>{detail.hh.product_id}</Row>
+              <Row label={t('offers.rowProducts')}>{renderProducts(detail.hh.products)}</Row>
+              <Row label={t('offers.comboPricingModeLabel')}>
+                {detail.hh.pricing_mode === 'sum'
+                  ? t('offers.comboPricingSum')
+                  : t('offers.comboPricingFixed')}
+              </Row>
               <Row label={t('offers.rowHappyPrice')}>{priceWith(detail.hh.happy_hour_price)}</Row>
               <Row label={t('offers.rowFrom')}>{formatClockTimeAmPm(detail.hh.time_start)}</Row>
               <Row label={t('offers.rowTo')}>{formatClockTimeAmPm(detail.hh.time_end)}</Row>

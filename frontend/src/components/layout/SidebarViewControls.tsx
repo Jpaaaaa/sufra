@@ -40,7 +40,9 @@ function SidebarViewControls({ collapsed = false }: SidebarViewControlsProps) {
     <div
       role="group"
       aria-label={t('layout.viewControls')}
-      className={`border-t border-black/5 px-3 py-2 ${collapsed ? 'space-y-1' : 'space-y-0.5'}`}
+      className={`flex items-center border-t border-black/5 ${
+        collapsed ? 'flex-col gap-0.5 px-1 py-1.5' : 'justify-around px-2 py-1.5'
+      }`}
     >
       {controls.map(({ key, label, icon: Icon, onClick }) => (
         <button
@@ -49,14 +51,9 @@ function SidebarViewControls({ collapsed = false }: SidebarViewControlsProps) {
           onClick={onClick}
           aria-label={label}
           title={label}
-          className={`flex w-full items-center rounded-soft-lg text-sm font-medium text-obsidian/65 transition-colors hover:bg-cyber-aqua/10 hover:text-obsidian ${
-            collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'
-          }`}
+          className="flex h-8 w-8 items-center justify-center rounded-soft-lg text-graphite transition-colors hover:bg-cyber-aqua/10 hover:text-obsidian/80"
         >
-          <span className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-soft text-obsidian/55">
-            <Icon className="h-4 w-4" aria-hidden="true" />
-          </span>
-          {!collapsed && <span className="truncate">{label}</span>}
+          <Icon className="h-4 w-4" aria-hidden />
         </button>
       ))}
     </div>

@@ -23,8 +23,12 @@ function readStoredScale(): number {
 
 export function applyUiScale(scale: number): number {
   const next = clampScale(scale);
-  document.documentElement.style.fontSize = `${next * 100}%`;
-  document.documentElement.style.zoom = '';
+  const root = document.documentElement;
+  // Scale #root via --sufra-ui-scale (see globals.css). Do not zoom <html>:
+  // viewport units ignore html zoom, which left a gap under the POS floor.
+  root.style.fontSize = '';
+  root.style.zoom = '';
+  root.style.setProperty('--sufra-ui-scale', String(next));
   try {
     localStorage.setItem(STORAGE_KEY, String(next));
   } catch {

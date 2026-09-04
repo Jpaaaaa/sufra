@@ -12,7 +12,12 @@ import { GlobalShelfSaleModalContainer } from './components/shelves/GlobalShelfS
 import { BarcodeSaleHandler } from './components/shelves/BarcodeSaleHandler';
 import LayoutWrapper from './components/layout/LayoutWrapper';
 import { ProtectedRoute } from './components/auth/ProtectedRoute';
+import { RequireRole } from './components/auth/RequireRole';
 import { LicenseRouteGuard } from './license/LicenseRouteGuard';
+
+const PosLayout = lazy(() => import('./pages/pos/PosLayout'));
+const PosFloorPage = lazy(() => import('./pages/pos/PosFloorPage'));
+const PosTablePage = lazy(() => import('./pages/pos/PosTablePage'));
 
 // Lazy-loaded pages for smaller initial bundle (better for low-end devices)
 const LicenseActivationPage = lazy(() => import('./license/LicenseActivationPage'));
@@ -84,6 +89,20 @@ function App() {
                 <Route element={<LicenseRouteGuard />}>
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/setup/server" element={<SettingsServerPage />} />
+
+                  <Route
+                    element={
+                      <ProtectedRoute>
+                        <RequireRole allow={['waiter', 'cashier', 'manager', 'admin']}>
+                          <PosLayout />
+                        </RequireRole>
+                      </ProtectedRoute>
+                    }
+                  >
+                    <Route path="/pos" element={<Navigate to="/pos/floor" replace />} />
+                    <Route path="/pos/floor" element={<PosFloorPage />} />
+                    <Route path="/pos/table/:hallId/:tableId" element={<PosTablePage />} />
+                  </Route>
 
                   <Route
                     element={

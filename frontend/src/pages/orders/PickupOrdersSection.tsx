@@ -61,18 +61,9 @@ export function PickupOrdersSection({
         />
       )}
       {pickupFilter === 'pending' && (
-        <button
-          type="button"
-          onClick={onNewOrder}
-          className="flex items-center justify-center gap-3 rounded-soft-xl border-2 border-cyber-aqua bg-cyber-aqua/10 p-8 shadow-soft hover:bg-cyber-aqua/20 w-full mb-6"
-        >
-          <div className="flex h-20 w-20 items-center justify-center rounded-soft-lg bg-cyber-aqua text-white shadow-soft">
-            <PackageIcon className="w-10 h-10" />
-          </div>
-          <div className="text-right">
-            <h3 className="text-[20px] leading-tight font-bold text-obsidian">{t('orders.newPickupCta')}</h3>
-            <p className="text-[14px] leading-relaxed text-obsidian/70">{t('orders.newPickupHint')}</p>
-          </div>
+        <button type="button" onClick={onNewOrder} className="ow-cta">
+          <PackageIcon className="h-5 w-5" />
+          {t('orders.newPickupCta')}
         </button>
       )}
       {loading ? (

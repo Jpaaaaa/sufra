@@ -2,6 +2,36 @@
 
 User-visible changes by version. Newest first.
 
+## [0.1.35] — 2026-08-31
+
+### Added
+
+- POS session sheet: English / Arabic / Kurdish (Sorani); same persisted language as login and dashboard
+- Desktop Orders workbench: hall chips instead of square gallery, table map fills the pane, compact takeaway/delivery new-order button
+- Orders table map: color legend swatches; occupied tables show wait time, item count, and total
+
+### Fixed
+
+- Desktop header: taller bar, centered logo, language and support on one row
+- Zoom in/out now scales the POS floor and other px layouts (CSS `zoom`, not root `fontSize` only)
+- Zooming out no longer leaves an empty band under the POS floor (`#root` inverse size + zoom)
+- POS meal cards shrink and pack tighter when zooming out
+- Orders table tiles no longer stretch to fill the row, so zoom in/out changes card size
+- Desktop zoom no longer adds a page scrollbar (shell height matches waiter POS: `100dvh / scale`)
+- Home system status: live API mode/version, LAN IP, configured printer, and real device/user
+- Home billboard default slide: BAZAR ONE hero artwork
+
+## [0.1.34] — 2026-08-27
+
+### Added
+
+- Waiter Point of Sale (`#/pos`): landscape touch floor and table ordering, separate confirm and kitchen print, table discount sheet, offer details and new groups, edit confirmed table orders
+
+### Fixed
+
+- Desktop header logo no longer overflows the top bar
+- POS cart list, square item grid, compact top bar zoom/refresh
+
 ## [0.1.28] — 2026-08-09
 
 ### Fixed

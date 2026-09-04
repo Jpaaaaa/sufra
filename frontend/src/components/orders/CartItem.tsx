@@ -2,13 +2,15 @@ import { memo } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useOrderMoney } from '../../hooks/useOrderMoney';
 import { formatOptionsSuffix } from '../../lib/item-options';
-import { trayUnitPrice } from '../../hooks/cart-item-utils';
+import { traySaleUnitPrice } from '../../hooks/cart-item-utils';
 import type { CartItem as CartItemData } from '../../hooks/useOrderModalTypes';
 
 interface CartItemProps {
   cartItem: CartItemData;
   isDelivery: boolean;
   nested?: boolean;
+  /** Parent tray is locked (fixed combo) — nested children are read-only. */
+  nestedLocked?: boolean;
   isActiveTray?: boolean;
   onSelectTray?: (cartLineId: string | null) => void;
   onUpdateQuantity: (cartLineId: string, quantity: number) => void;
@@ -101,6 +103,7 @@ export const CartItem = memo(function CartItem({
   cartItem,
   isDelivery,
   nested = false,
+  nestedLocked = false,
   isActiveTray = false,
   onSelectTray,
   onUpdateQuantity,
@@ -113,53 +116,81 @@ export const CartItem = memo(function CartItem({
 
   if (cartItem.lineKind === 'tray') {
     const children = cartItem.children ?? [];
-    const unit = trayUnitPrice(children);
+    const locked = Boolean(cartItem.trayLocked);
+    const unit = traySaleUnitPrice(cartItem);
     const effectiveOrderType = cartItem.order_type || 'dine-in';
     const total = unit * cartItem.quantity;
 
     return (
       <div
         className={`overflow-hidden rounded-xl border ${
-          isActiveTray
+          isActiveTray && !locked
             ? 'border-cyber-aqua/50 bg-cyber-aqua/[0.04]'
-            : 'border-black/[0.08] bg-white'
+            : locked
+              ? 'border-purple-300/60 bg-purple-50/40'
+              : 'border-black/[0.08] bg-white'
         }`}
       >
         <div
           className={`flex items-center gap-2 border-b border-black/[0.06] px-3 py-2.5 ${
-            isActiveTray ? 'bg-cyber-aqua/[0.08]' : 'bg-black/[0.02]'
+            isActiveTray && !locked
+              ? 'bg-cyber-aqua/[0.08]'
+              : locked
+                ? 'bg-purple-50/80'
+                : 'bg-black/[0.02]'
           }`}
         >
-          <div className="h-8 w-1 shrink-0 rounded-full bg-cyber-aqua" aria-hidden />
-          <button
-            type="button"
-            className="min-w-0 flex-1 text-right"
-            onClick={() => onSelectTray?.(cartItem.cartLineId)}
-            title={isActiveTray ? t('orders.trayDeselectHint') : t('orders.traySelectHint')}
-          >
-            <div className="flex items-center justify-end gap-2">
-              <span className="truncate text-[14px] font-bold text-obsidian">
-                {cartItem.trayName || cartItem.item.name}
-              </span>
-              <span className="shrink-0 rounded-md bg-obsidian px-1.5 py-0.5 text-[10px] font-bold text-white">
-                {t('orders.trayBadge')}
-              </span>
+          <div
+            className={`h-8 w-1 shrink-0 rounded-full ${locked ? 'bg-purple-500' : 'bg-cyber-aqua'}`}
+            aria-hidden
+          />
+          {locked ? (
+            <div className="min-w-0 flex-1 text-right">
+              <div className="flex items-center justify-end gap-2">
+                <span className="truncate text-[14px] font-bold text-obsidian">
+                  {cartItem.trayName || cartItem.item.name}
+                </span>
+                <span className="shrink-0 rounded-md bg-purple-700 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {t('orders.trayLockedBadge', { defaultValue: 'صينية ثابتة' })}
+                </span>
+              </div>
+              <div className="mt-0.5 text-[12px] text-obsidian/50">
+                {t('orders.trayItemsCount', { count: children.length })}
+                <span className="mx-1 text-obsidian/25">·</span>
+                <span className="font-semibold text-cyber-aqua">{fmt(total)}</span>
+              </div>
             </div>
-            <div className="mt-0.5 text-[12px] text-obsidian/50">
-              {children.length === 0 ? (
-                t('orders.trayEmpty')
-              ) : (
-                <>
-                  {t('orders.trayItemsCount', { count: children.length })}
-                  <span className="mx-1 text-obsidian/25">·</span>
-                  <span className="font-semibold text-cyber-aqua">{fmt(total)}</span>
-                </>
-              )}
-              {isActiveTray ? (
-                <span className="mr-1.5 font-semibold text-cyber-aqua"> · {t('orders.trayActive')}</span>
-              ) : null}
-            </div>
-          </button>
+          ) : (
+            <button
+              type="button"
+              className="min-w-0 flex-1 text-right"
+              onClick={() => onSelectTray?.(cartItem.cartLineId)}
+              title={isActiveTray ? t('orders.trayDeselectHint') : t('orders.traySelectHint')}
+            >
+              <div className="flex items-center justify-end gap-2">
+                <span className="truncate text-[14px] font-bold text-obsidian">
+                  {cartItem.trayName || cartItem.item.name}
+                </span>
+                <span className="shrink-0 rounded-md bg-obsidian px-1.5 py-0.5 text-[10px] font-bold text-white">
+                  {t('orders.trayBadge')}
+                </span>
+              </div>
+              <div className="mt-0.5 text-[12px] text-obsidian/50">
+                {children.length === 0 ? (
+                  t('orders.trayEmpty')
+                ) : (
+                  <>
+                    {t('orders.trayItemsCount', { count: children.length })}
+                    <span className="mx-1 text-obsidian/25">·</span>
+                    <span className="font-semibold text-cyber-aqua">{fmt(total)}</span>
+                  </>
+                )}
+                {isActiveTray ? (
+                  <span className="mr-1.5 font-semibold text-cyber-aqua"> · {t('orders.trayActive')}</span>
+                ) : null}
+              </div>
+            </button>
+          )}
           <QtyControls
             quantity={cartItem.quantity}
             onDec={() => onUpdateQuantity(cartItem.cartLineId, cartItem.quantity - 1)}
@@ -174,7 +205,7 @@ export const CartItem = memo(function CartItem({
               value={effectiveOrderType}
               onChange={(v) => onUpdateOrderType(cartItem.cartLineId, v)}
             />
-            {isActiveTray ? (
+            {isActiveTray && !locked ? (
               <button
                 type="button"
                 onClick={() => onSelectTray?.(null)}
@@ -196,10 +227,11 @@ export const CartItem = memo(function CartItem({
                 cartItem={{ ...child, order_type: cartItem.order_type }}
                 isDelivery
                 nested
+                nestedLocked={locked}
                 onUpdateQuantity={onUpdateQuantity}
                 onRemove={onRemove}
                 onUpdateOrderType={onUpdateOrderType}
-                onEditOptions={onEditOptions}
+                onEditOptions={locked ? undefined : onEditOptions}
               />
             ))
           )}
@@ -211,34 +243,47 @@ export const CartItem = memo(function CartItem({
   const effectiveOrderType = cartItem.order_type || 'dine-in';
   const optionsSuffix = formatOptionsSuffix(cartItem.selectedOptions);
   const canEditOptions =
-    onEditOptions && cartItem.selectedOptions.length > 0 && !cartItem.shelfItem;
+    !nestedLocked &&
+    onEditOptions &&
+    cartItem.selectedOptions.length > 0 &&
+    !cartItem.shelfItem;
   const displayName = cartItem.offerDisplayName ?? cartItem.item.name;
   const lineTotal = cartItem.linePrice * cartItem.quantity;
 
   if (nested) {
     return (
       <div className="flex items-center gap-2 bg-white py-2 pr-3 pl-5">
-        <button
-          type="button"
-          className={`min-w-0 flex-1 text-right ${canEditOptions ? 'cursor-pointer' : 'cursor-default'}`}
-          onClick={() => canEditOptions && onEditOptions?.(cartItem.cartLineId)}
-        >
+        <div className="min-w-0 flex-1 text-right">
           <div className="truncate text-[13px] font-semibold text-obsidian">{displayName}</div>
           {optionsSuffix ? (
             <div className="truncate text-[11px] text-obsidian/45">{optionsSuffix}</div>
           ) : null}
           <div className="text-[12px] tabular-nums text-obsidian/50">
-            {fmt(cartItem.linePrice)}
-            <span className="mx-1 text-obsidian/25">·</span>
-            <span className="font-semibold text-cyber-aqua">{fmt(lineTotal)}</span>
+            {nestedLocked ? (
+              <>
+                × {cartItem.quantity}
+              </>
+            ) : (
+              <>
+                {fmt(cartItem.linePrice)}
+                <span className="mx-1 text-obsidian/25">·</span>
+                <span className="font-semibold text-cyber-aqua">{fmt(lineTotal)}</span>
+              </>
+            )}
           </div>
-        </button>
-        <QtyControls
-          quantity={cartItem.quantity}
-          onDec={() => onUpdateQuantity(cartItem.cartLineId, cartItem.quantity - 1)}
-          onInc={() => onUpdateQuantity(cartItem.cartLineId, cartItem.quantity + 1)}
-          onRemove={() => onRemove(cartItem.cartLineId)}
-        />
+        </div>
+        {nestedLocked ? (
+          <span className="shrink-0 rounded-md bg-black/[0.04] px-2 py-1 text-[12px] font-bold tabular-nums text-obsidian/70">
+            {cartItem.quantity}
+          </span>
+        ) : (
+          <QtyControls
+            quantity={cartItem.quantity}
+            onDec={() => onUpdateQuantity(cartItem.cartLineId, cartItem.quantity - 1)}
+            onInc={() => onUpdateQuantity(cartItem.cartLineId, cartItem.quantity + 1)}
+            onRemove={() => onRemove(cartItem.cartLineId)}
+          />
+        )}
       </div>
     );
   }

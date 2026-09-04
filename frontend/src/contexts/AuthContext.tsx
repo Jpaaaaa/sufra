@@ -27,6 +27,18 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 const TOKEN_KEY = 'sufra_auth_token';
 const USER_KEY = 'sufra_auth_user';
 
+function syncIpcSessionUser(user: User | null) {
+  try {
+    window.sufra?.auth?.setSessionUser?.(
+      user
+        ? { id: user.id, username: user.username, role: user.role }
+        : null,
+    );
+  } catch {
+    /* ignore */
+  }
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [token, setToken] = useState<string | null>(null);
@@ -40,7 +52,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (storedToken && storedUser) {
       setToken(storedToken);
       try {
-        setUser(JSON.parse(storedUser));
+        const parsed = JSON.parse(storedUser) as User;
+        setUser(parsed);
+        syncIpcSessionUser(parsed);
         // Verify token by calling /auth/me
         verifyToken(storedToken);
       } catch (e) {
@@ -59,6 +73,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         try {
           const userData = await window.sufra.auth.verifyToken(tokenToVerify);
           setUser(userData);
+          syncIpcSessionUser(userData);
           localStorage.setItem(USER_KEY, JSON.stringify(userData));
           setIsLoading(false);
           return;
@@ -93,6 +108,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (response.ok) {
         const userData = await response.json();
         setUser(userData);
+        syncIpcSessionUser(userData);
         localStorage.setItem(USER_KEY, JSON.stringify(userData));
         setIsLoading(false);
         
@@ -114,7 +130,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       console.log('[AUTH] Ensuring business day exists...');
 
-      if (window.sufra?.['business-day']?.ensure) {
+      if (window.sufra?.['business-day']) {
         const businessDay = await window.sufra['business-day'].ensure();
         console.log('[AUTH] Business day ensured, ID:', businessDay?.id);
         return;
@@ -158,6 +174,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           localStorage.setItem(USER_KEY, JSON.stringify(userData));
           setToken(accessToken);
           setUser(userData);
+          syncIpcSessionUser(userData);
           
           // Ensure business day exists (best-effort, don't block login)
           ensureBusinessDayExists(accessToken);
@@ -217,6 +234,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.setItem(USER_KEY, JSON.stringify(userData));
       setToken(accessToken);
       setUser(userData);
+      syncIpcSessionUser(userData);
       
       // Ensure business day exists (best-effort, don't block login)
       ensureBusinessDayExists(accessToken);
@@ -246,6 +264,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const clearAuth = () => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(USER_KEY);
+    syncIpcSessionUser(null);
     setToken(null);
     setUser(null);
     setIsLoading(false);

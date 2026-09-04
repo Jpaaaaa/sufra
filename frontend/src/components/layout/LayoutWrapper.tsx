@@ -18,20 +18,31 @@ export default function LayoutWrapper({
   }
 
   return (
-    <main className="flex h-screen w-full overflow-hidden">
+    <main
+      className="flex w-full overflow-hidden"
+      style={{
+        height: 'calc(100dvh / var(--sufra-ui-scale, 1))',
+        maxHeight: 'calc(100dvh / var(--sufra-ui-scale, 1))',
+      }}
+    >
       {/* Sidebar - visible only on desktop (xl: 1280px+) */}
       <div className="hidden xl:block xl:flex-shrink-0">
         <Sidebar isOpen={true} />
       </div>
 
-      <div className="flex flex-1 flex-col overflow-hidden bg-cloud-soft-white">
-        <div className="flex-1 overflow-y-auto pb-24 xl:pb-0">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-cloud-soft-white">
+        <div
+          className={
+            location.pathname.startsWith('/orders')
+              ? 'flex min-h-0 flex-1 flex-col overflow-hidden'
+              : 'flex-1 overflow-y-auto pb-24 xl:pb-0'
+          }
+        >
           {children}
         </div>
 
-        {/* Bottom nav bar - visible only on mobile/tablet */}
         <BottomNav />
-        <TabletZoomControls />
+        {location.pathname.startsWith('/pos') ? null : <TabletZoomControls />}
       </div>
     </main>
   );

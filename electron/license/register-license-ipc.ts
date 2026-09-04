@@ -308,9 +308,11 @@ export function registerLicenseIpc(): void {
     if (off.ok) {
       const graceBlocksFile = isOfflineGraceExceeded(platformUrl, userData, machineId, graceMs)
       if (!graceBlocksFile) {
+        let platform = snapshotUnreachableWithDeadline(platformUrl, userData, machineId)
         if (platformUrl) {
-          void pingLicensePlatform(platformUrl, machineId).then((pingOutcome) => {
-            if (!pingOutcome.reachable) return
+          const pingOutcome = await pingLicensePlatform(platformUrl, machineId)
+          platform = snapshotFromPing(pingOutcome)
+          if (pingOutcome.reachable) {
             const b = pingOutcome.body
             writeRollingSyncCache(userData, {
               nextRequiredSyncBeforeMs: b.nextRequiredSyncBeforeMs ?? null,
@@ -321,7 +323,7 @@ export function registerLicenseIpc(): void {
             })
             if (b.ok) writePlatformGrantCacheFromPing(userData, b)
             else clearPlatformGrantCache(userData)
-          })
+          }
         }
         return {
           enforced: true,
@@ -330,7 +332,7 @@ export function registerLicenseIpc(): void {
           reason: 'valid',
           tier: off.tier,
           expiresAtMs: off.expiresAtMs,
-          platform: snapshotUnreachableWithDeadline(platformUrl, userData, machineId),
+          platform,
           effectiveNowMs,
         }
       }

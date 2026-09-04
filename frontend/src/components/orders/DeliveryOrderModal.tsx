@@ -122,7 +122,7 @@ function DeliveryOrderModal({ onClose, orderToEdit }: DeliveryOrderModalProps) {
       <style>{DELIVERY_ORDER_MODAL_EMBEDDED_CSS}</style>
       <div 
         ref={backdropRef}
-        className="fixed z-50 bg-obsidian/70 md:p-0.5 xl:p-4"
+        className="fixed z-50 bg-obsidian/70 xl:p-4"
         style={{ 
           position: 'fixed',
           top: '0',
@@ -172,14 +172,14 @@ function DeliveryOrderModal({ onClose, orderToEdit }: DeliveryOrderModalProps) {
                   <TruckIcon className="h-6 w-6 md:h-3 md:w-3 xl:h-6 xl:w-6" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-[18px] font-bold leading-tight text-obsidian sm:text-[20px] md:text-[11px] xl:text-[20px]">{t('orders.deliveryTitle')}</h2>
-                  <p className="text-[12px] leading-relaxed text-obsidian/70 sm:text-[13px] md:text-[11px] xl:text-[13px]">{t('orders.newDeliveryCta')}</p>
+                  <h2 className="text-[18px] font-bold leading-tight text-obsidian sm:text-[20px] xl:text-[20px]">{t('orders.deliveryTitle')}</h2>
+                  <p className="text-[12px] leading-relaxed text-obsidian/70 sm:text-[13px] xl:text-[13px]">{t('orders.newDeliveryCta')}</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={onClose}
-                className="flex-shrink-0 rounded-soft-lg border border-black/5 bg-white px-3 py-1.5 text-[12px] font-bold leading-normal text-obsidian shadow-soft hover:bg-cloud-soft-white sm:px-4 sm:py-2 sm:text-[13px] md:rounded-md md:px-1 md:py-0 md:text-[11px] xl:px-4 xl:py-2 xl:text-[13px] whitespace-nowrap"
+                className="flex-shrink-0 rounded-soft-lg border border-black/5 bg-white px-3 py-1.5 text-[12px] font-bold leading-normal text-obsidian shadow-soft hover:bg-cloud-soft-white sm:px-4 sm:py-2 sm:text-[13px] xl:px-4 xl:py-2 xl:text-[13px] whitespace-nowrap"
               >
                 {t('orders.btnClose')}
               </button>
@@ -190,7 +190,7 @@ function DeliveryOrderModal({ onClose, orderToEdit }: DeliveryOrderModalProps) {
                 onClick={() => setDeliveryPlatformModalOpen(true)}
                 className="flex w-full max-w-full items-center justify-between gap-2 rounded-soft-lg border border-cyber-aqua/40 bg-cyber-aqua/10 px-3 py-2 text-right shadow-sm transition-colors hover:bg-cyber-aqua/15 md:py-1.5 xl:px-4 xl:py-2.5"
               >
-                <span className="text-[14px] font-bold text-cyber-aqua md:text-[11px] xl:text-[14px]">{t('orders.deliveryPlatformLabel')}</span>
+                <span className="text-[14px] font-bold text-cyber-aqua xl:text-[14px]">{t('orders.deliveryPlatformLabel')}</span>
                 <span className="min-w-0 flex-1 truncate text-left text-[13px] font-semibold text-obsidian/85 md:text-[10px] xl:text-[13px]">
                   {deliveryPlatformSummary}
                 </span>

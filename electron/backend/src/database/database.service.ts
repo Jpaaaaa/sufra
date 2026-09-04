@@ -258,6 +258,145 @@ export class DatabaseService {
         console.error('[DB] Failed to add parent_order_item_id to order_items', error);
       }
     }
+
+    const snapshotCols: Array<{ name: string; ddl: string }> = [
+      { name: 'combo_id', ddl: 'ALTER TABLE order_items ADD COLUMN combo_id INTEGER' },
+      { name: 'tray_locked', ddl: 'ALTER TABLE order_items ADD COLUMN tray_locked INTEGER DEFAULT 0' },
+      { name: 'offer_source_type', ddl: 'ALTER TABLE order_items ADD COLUMN offer_source_type TEXT' },
+      { name: 'offer_source_id', ddl: 'ALTER TABLE order_items ADD COLUMN offer_source_id INTEGER' },
+    ];
+    for (const col of snapshotCols) {
+      const check = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('order_items') WHERE name='${col.name}'`,
+      );
+      if (check && check.cnt === 0) {
+        try {
+          this.runSync(col.ddl);
+          console.log(`[DB] ✅ Added ${col.name} column to order_items table`);
+        } catch (error) {
+          console.error(`[DB] Failed to add ${col.name} to order_items`, error);
+        }
+      }
+    }
+  }
+
+  /** Offers V2: archived_at + audit log. Safe to call repeatedly. */
+  private ensureOffersV2Columns(): void {
+    const tables = ['daily_deals', 'combos', 'scheduled_offers', 'happy_hour', 'featured_items'] as const;
+    for (const table of tables) {
+      const check = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name='archived_at'`,
+      );
+      if (check && check.cnt === 0) {
+        try {
+          this.runSync(`ALTER TABLE ${table} ADD COLUMN archived_at TEXT`);
+          console.log(`[DB] ✅ Added archived_at to ${table}`);
+        } catch (error) {
+          console.error(`[DB] Failed to add archived_at to ${table}`, error);
+        }
+      }
+    }
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS offer_audit_log (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event TEXT NOT NULL,
+        offer_type TEXT NOT NULL,
+        offer_id INTEGER,
+        user_id INTEGER,
+        username TEXT,
+        before_json TEXT,
+        after_json TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )`,
+    );
+
+    this.ensureOfferBundleColumns();
+  }
+
+  /**
+   * Bundle contents for daily / happy hour / scheduled (like combo_items).
+   * Safe to call repeatedly.
+   */
+  private ensureOfferBundleColumns(): void {
+    const addPricingMode = (table: string) => {
+      const check = this.getSync(
+        `SELECT COUNT(*) as cnt FROM pragma_table_info('${table}') WHERE name='pricing_mode'`,
+      );
+      if (check && check.cnt === 0) {
+        try {
+          this.runSync(`ALTER TABLE ${table} ADD COLUMN pricing_mode TEXT DEFAULT 'fixed'`);
+          this.runSync(`UPDATE ${table} SET pricing_mode = 'fixed' WHERE pricing_mode IS NULL`);
+          console.log(`[DB] ✅ Added pricing_mode to ${table}`);
+        } catch (error) {
+          console.error(`[DB] Failed to add pricing_mode to ${table}`, error);
+        }
+      }
+    };
+
+    addPricingMode('daily_deals');
+    addPricingMode('happy_hour');
+    addPricingMode('scheduled_offers');
+
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS daily_deal_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        daily_deal_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        FOREIGN KEY(daily_deal_id) REFERENCES daily_deals(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS happy_hour_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        happy_hour_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        FOREIGN KEY(happy_hour_id) REFERENCES happy_hour(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS scheduled_offer_items (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        scheduled_offer_id INTEGER NOT NULL,
+        product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
+        FOREIGN KEY(scheduled_offer_id) REFERENCES scheduled_offers(id) ON DELETE CASCADE,
+        FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
+      )`,
+    );
+
+    try {
+      this.runSync(
+        `INSERT INTO daily_deal_items (daily_deal_id, product_id, quantity)
+         SELECT d.id, d.product_id, 1 FROM daily_deals d
+         WHERE d.product_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM daily_deal_items i WHERE i.daily_deal_id = d.id
+         )`,
+      );
+      this.runSync(
+        `INSERT INTO happy_hour_items (happy_hour_id, product_id, quantity)
+         SELECT h.id, h.product_id, 1 FROM happy_hour h
+         WHERE h.product_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM happy_hour_items i WHERE i.happy_hour_id = h.id
+         )`,
+      );
+      this.runSync(
+        `INSERT INTO scheduled_offer_items (scheduled_offer_id, product_id, quantity)
+         SELECT s.id, s.product_id, 1 FROM scheduled_offers s
+         WHERE s.product_id IS NOT NULL
+         AND NOT EXISTS (
+           SELECT 1 FROM scheduled_offer_items i WHERE i.scheduled_offer_id = s.id
+         )`,
+      );
+    } catch (error) {
+      console.error('[DB] Failed to backfill offer bundle items', error);
+    }
   }
 
   private createTablesTable() {
@@ -1514,6 +1653,7 @@ export class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         combo_name TEXT NOT NULL,
         combo_price INTEGER NOT NULL,
+        pricing_mode TEXT DEFAULT 'fixed',
         is_active INTEGER DEFAULT 1,
         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
         updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -1526,6 +1666,7 @@ export class DatabaseService {
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         combo_id INTEGER NOT NULL,
         product_id INTEGER NOT NULL,
+        quantity INTEGER DEFAULT 1,
         FOREIGN KEY(combo_id) REFERENCES combos(id) ON DELETE CASCADE,
         FOREIGN KEY(product_id) REFERENCES items(id) ON DELETE CASCADE
       )`,
@@ -1596,6 +1737,34 @@ export class DatabaseService {
         console.error('[DB] Failed to add weekdays to combos', error);
       }
     }
+
+    const combosPricingModeCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('combos') WHERE name='pricing_mode'",
+    );
+    if (combosPricingModeCheck && combosPricingModeCheck.cnt === 0) {
+      try {
+        this.runSync("ALTER TABLE combos ADD COLUMN pricing_mode TEXT DEFAULT 'fixed'");
+        this.runSync("UPDATE combos SET pricing_mode = 'fixed' WHERE pricing_mode IS NULL");
+        console.log('[DB] ✅ Added pricing_mode column to combos');
+      } catch (error) {
+        console.error('[DB] Failed to add pricing_mode to combos', error);
+      }
+    }
+
+    const comboItemsQtyCheck = this.getSync(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('combo_items') WHERE name='quantity'",
+    );
+    if (comboItemsQtyCheck && comboItemsQtyCheck.cnt === 0) {
+      try {
+        this.runSync('ALTER TABLE combo_items ADD COLUMN quantity INTEGER DEFAULT 1');
+        this.runSync('UPDATE combo_items SET quantity = 1 WHERE quantity IS NULL OR quantity < 1');
+        console.log('[DB] ✅ Added quantity column to combo_items');
+      } catch (error) {
+        console.error('[DB] Failed to add quantity to combo_items', error);
+      }
+    }
+
+    this.ensureOffersV2Columns();
 
     // Seed basic categories/items if empty
     const categoriesCount = this.getSync('SELECT COUNT(*) as count FROM categories');

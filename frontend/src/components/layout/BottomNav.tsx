@@ -32,7 +32,7 @@ function BottomNav() {
             <Link
               key={item.href}
               to={item.href}
-              className={`flex min-w-0 flex-col items-center gap-1 rounded-lg px-3 py-2 transition-colors ${
+              className={`flex min-w-[4.25rem] flex-col items-center gap-1 rounded-lg px-2 py-2 transition-colors ${
                 active
                   ? 'bg-cyber-aqua/15 text-cyber-aqua'
                   : 'text-obsidian/60 hover:bg-cloud-soft-white hover:text-obsidian'

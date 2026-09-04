@@ -53,26 +53,23 @@ function HeaderSupportAnyDesk() {
   };
 
   return (
-    <div className="relative flex flex-col items-end gap-1.5">
-      <span className="text-[11px] font-semibold uppercase tracking-wide text-[#4A5668]/90">{t('layout.supportTitle')}</span>
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
-        <button
-          type="button"
-          onClick={() => void openAnyDesk()}
-          disabled={busy}
-          className="rounded-lg bg-[#2EE7C9] px-2.5 py-1.5 text-[12px] font-semibold text-[#1A1F25] shadow-sm hover:opacity-90 disabled:opacity-50"
-        >
-          {busy ? t('layout.supportBusy') : t('layout.openAnyDesk')}
-        </button>
-        <button
-          type="button"
-          onClick={() => void openDownloadOnly()}
-          disabled={busy}
-          className="rounded-lg border border-[#4A5668]/25 bg-white/80 px-2.5 py-1.5 text-[12px] font-medium text-[#1A1F25] hover:bg-white disabled:opacity-50"
-        >
-          {t('layout.download')}
-        </button>
-      </div>
+    <div className="flex items-center gap-1.5" role="group" aria-label={t('layout.supportTitle')}>
+      <button
+        type="button"
+        onClick={() => void openAnyDesk()}
+        disabled={busy}
+        className="h-9 rounded-lg bg-[#2EE7C9] px-2.5 text-[12px] font-semibold text-[#1A1F25] shadow-sm hover:opacity-90 disabled:opacity-50"
+      >
+        {busy ? t('layout.supportBusy') : t('layout.openAnyDesk')}
+      </button>
+      <button
+        type="button"
+        onClick={() => void openDownloadOnly()}
+        disabled={busy}
+        className="h-9 rounded-lg border border-[#4A5668]/25 bg-white px-2.5 text-[12px] font-medium text-[#1A1F25] hover:bg-cloud-soft-white disabled:opacity-50"
+      >
+        {t('layout.download')}
+      </button>
     </div>
   );
 }

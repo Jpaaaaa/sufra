@@ -12,6 +12,12 @@ import { createOrdersPagePrintHandlers } from './useOrdersPagePrint';
 import { useOrdersPageData } from './useOrdersPageData';
 import { createOrdersPageHandlers } from './useOrdersPageHandlers';
 
+export type OrdersTableOccupancy = {
+  since: string;
+  itemCount: number;
+  total: number;
+};
+
 export function useOrdersPage() {
   const { user } = useAuth();
   const { subscribeToOrders } = useOrderSocket();
@@ -39,6 +45,7 @@ export function useOrdersPage() {
   const [dropTargetId, setDropTargetId] = useState<number | null>(null);
   const [moveInProgress, setMoveInProgress] = useState(false);
   const dragSourceRef = useRef<number | null>(null);
+  const [occupancy, setOccupancy] = useState<Record<number, OrdersTableOccupancy>>({});
 
   const printHandlers = useMemo(
     () => createOrdersPagePrintHandlers(user, kitchens),
@@ -53,6 +60,39 @@ export function useOrdersPage() {
       })),
     [tables]
   );
+
+  const loadOccupancy = useCallback(async (hallId: number) => {
+    try {
+      const serverUrl = getServerUrl();
+      const hallOrders = await fetchJson<Record<string, unknown>[]>(
+        `${serverUrl}/orders/dine-in/hall/${hallId}`,
+      );
+      const map: Record<number, OrdersTableOccupancy> = {};
+      for (const order of hallOrders) {
+        const status = order.status as string;
+        if (status !== 'pending' && status !== 'printed') continue;
+        const tableId = order.table_id as number;
+        const items = (order.items as { quantity?: number }[]) || [];
+        const itemCount = items.reduce((n, it) => n + Number(it.quantity || 0), 0);
+        const created = String(order.created_at || '');
+        const total = Number(order.total || 0);
+        if (!map[tableId]) {
+          map[tableId] = { since: created, itemCount, total };
+        } else {
+          map[tableId].itemCount += itemCount;
+          map[tableId].total += total;
+          if (created && created < map[tableId].since) map[tableId].since = created;
+        }
+      }
+      setOccupancy(map);
+    } catch {
+      setOccupancy({});
+    }
+  }, []);
+
+  useEffect(() => {
+    if (selectedHall) void loadOccupancy(selectedHall.id);
+  }, [selectedHall, tables, loadOccupancy]);
 
   const handleHallClick = useCallback(
     (hall: Hall) => {
@@ -220,6 +260,16 @@ export function useOrdersPage() {
   }, [selectedFloorId, halls, activeHallId, setActiveHallId]);
 
   useEffect(() => {
+    if (activeTab !== 'dine-in' || dineInSubtab !== 'active') return;
+    if (selectedHall || halls.length === 0) return;
+    const visible =
+      selectedFloorId != null ? halls.filter((h) => h.floor_id === selectedFloorId) : halls;
+    const pick =
+      visible.find((h) => h.hasPendingOrders || h.hasPrintedOrders) ?? visible[0];
+    if (pick) handleHallClick(pick);
+  }, [activeTab, dineInSubtab, selectedHall, halls, selectedFloorId, handleHallClick]);
+
+  useEffect(() => {
     if (activeTab === 'pickup') void loadPickupOrders();
     else if (activeTab === 'delivery') void loadDeliveryOrders();
     else if (activeTab === 'dine-in' && dineInSubtab === 'archived') void loadArchivedDineInOrders();
@@ -243,6 +293,7 @@ export function useOrdersPage() {
     selectedHall,
     tables,
     tablesWithStatus,
+    occupancy,
     loading,
     error,
     activeTab,

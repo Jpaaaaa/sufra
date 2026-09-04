@@ -37,6 +37,13 @@ export interface CartItem {
   trayName?: string;
   /** Products inside a tray (only when lineKind === 'tray'). */
   children?: CartItem[];
+  /**
+   * Locked tray (e.g. fixed combo): children are read-only in the cart.
+   * Sale price lives on the tray header (`linePrice`) only.
+   */
+  trayLocked?: boolean;
+  /** Source combo id when this tray was built from a fixed combo. */
+  comboId?: number;
   item: Item;
   quantity: number;
   selectedOptions: SelectedItemOptions;

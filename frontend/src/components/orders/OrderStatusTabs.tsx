@@ -34,8 +34,8 @@ export const OrderStatusTabs = memo(function OrderStatusTabs({
   );
 
   return (
-    <div className="mb-6 flex justify-center">
-      <div className="inline-flex gap-1 rounded-soft-xl bg-cloud-soft-white p-1 shadow-soft">
+    <div className="mb-3 flex justify-center xl:mb-6">
+      <div className="inline-flex w-full gap-1 overflow-x-auto rounded-soft-xl bg-cloud-soft-white p-1 shadow-soft scrollbar-hide xl:w-auto">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = tab.key === activeFilter;
@@ -46,9 +46,9 @@ export const OrderStatusTabs = memo(function OrderStatusTabs({
               type="button"
               onClick={() => onFilterChange(tab.key)}
               className={`
-                flex items-center gap-2 rounded-soft-lg px-4 py-2.5 text-[14px] leading-normal font-medium
+                flex min-h-11 flex-shrink-0 items-center gap-2 rounded-soft-lg px-3 py-2.5 text-[13px] leading-normal font-medium xl:px-4 xl:text-[14px]
                 ${isActive
-                  ? 'bg-white text-obsidian shadow-soft'
+                  ? 'bg-white text-obsidian/80 shadow-soft'
                   : 'text-obsidian/60 hover:text-obsidian/80'
                 }
               `}
