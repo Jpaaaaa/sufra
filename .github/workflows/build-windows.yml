@@ -18,14 +18,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 18.20.8
+          node-version: 20
 
-      - name: Install & build backend
+      - name: Install backend deps
         working-directory: electron/backend
-        run: |
-          npm install
-          npm rebuild --runtime=node --target=18.20.8
-          npm run build
+        run: npm install --ignore-scripts
 
       - name: Install electron deps
         working-directory: electron
@@ -34,6 +31,14 @@ jobs:
       - name: Install frontend deps
         working-directory: frontend
         run: npm install
+
+      - name: Rebuild natives for Electron
+        working-directory: electron
+        run: npx electron-rebuild -f -w better-sqlite3,bcrypt,@thiagoelg/node-printer -m ./backend
+
+      - name: Build backend
+        working-directory: electron/backend
+        run: npm run build
 
       - name: Build Electron installer
         working-directory: electron
