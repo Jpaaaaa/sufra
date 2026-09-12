@@ -21,6 +21,18 @@ export type PlatformDevicePublicStatus =
   | 'sync_required'
   | 'unknown_device'
 
+export type PlatformActivationStatus = 'none' | 'pending' | 'declined'
+
+export type PlatformStoreSnapshot = {
+  storeName: string
+  phone: string | null
+  addressLine: string | null
+  city: string | null
+  storeType: string | null
+  storeTypeOther: string | null
+  ownerContactName: string | null
+}
+
 export type PlatformPingResponse = {
   ok: boolean
   status: PlatformDevicePublicStatus
@@ -31,4 +43,5 @@ export type PlatformPingResponse = {
   nextRequiredSyncBeforeMs: number | null
   serverTimeMs: number
   message?: string
+  activationStatus?: PlatformActivationStatus
 }

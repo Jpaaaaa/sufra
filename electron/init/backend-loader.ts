@@ -169,6 +169,8 @@ export let settingsCreateShiftDefinition: (...args: any[]) => Promise<any>;
 export let settingsUpdateShiftDefinition: (...args: any[]) => Promise<any>;
 export let settingsRemoveShiftDefinition: (...args: any[]) => Promise<any>;
 export let settingsReplaceShiftDefinitions: (...args: any[]) => Promise<any>;
+export let restaurantProfileGet: () => Promise<any>;
+export let restaurantProfileUpsert: (...args: any[]) => Promise<any>;
 
 function loadPackagedBackendModules(): void {
   try {
@@ -343,6 +345,8 @@ function loadPackagedBackendModules(): void {
     settingsUpdateShiftDefinition = b.shiftDefinitionsService.updateShiftDefinition;
     settingsRemoveShiftDefinition = b.shiftDefinitionsService.removeShiftDefinition;
     settingsReplaceShiftDefinitions = b.shiftDefinitionsService.replaceShiftDefinitions;
+    restaurantProfileGet = b.restaurantProfileService.getProfile;
+    restaurantProfileUpsert = b.restaurantProfileService.upsertProfile;
     console.log('[MAIN] ✓ Packaged backend bundle loaded successfully');
   } catch (error: any) {
     console.error('[MAIN] ✗ Failed to load packaged backend bundle:', error);
@@ -544,6 +548,11 @@ export function loadBackendModules(): void {
     settingsUpdateShiftDefinition = shiftDefsModule.updateShiftDefinition;
     settingsRemoveShiftDefinition = shiftDefsModule.removeShiftDefinition;
     settingsReplaceShiftDefinitions = shiftDefsModule.replaceShiftDefinitions;
+    const restaurantProfileModule = requireBackendModule(
+      'modules/restaurant-profile/restaurant-profile.service',
+    );
+    restaurantProfileGet = restaurantProfileModule.getProfile;
+    restaurantProfileUpsert = restaurantProfileModule.upsertProfile;
     console.log('[MAIN] ✓ Backend modules loaded successfully');
   } catch (error: any) {
     console.error('[MAIN] ✗ Failed to load backend modules:', error);

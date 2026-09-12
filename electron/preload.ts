@@ -370,6 +370,21 @@ contextBridge.exposeInMainWorld('amaan', {
   licensePickAndImport: () => ipcRenderer.invoke('license-pick-and-import'),
   licenseImportJson: (jsonText: string) => ipcRenderer.invoke('license-import-json', jsonText),
   licenseCopyMachineId: () => ipcRenderer.invoke('license-copy-machine-id'),
+  licenseGetRestaurantProfile: () => ipcRenderer.invoke('license-get-restaurant-profile'),
+  licenseSaveRestaurantProfile: (body: {
+    restaurantName: string;
+    phone?: string | null;
+    addressLine?: string | null;
+    city?: string | null;
+    ownerContactName?: string | null;
+  }) => ipcRenderer.invoke('license-save-restaurant-profile', body),
+  licenseSubmitActivation: (body: {
+    restaurantName: string;
+    phone?: string | null;
+    addressLine?: string | null;
+    city?: string | null;
+    ownerContactName?: string | null;
+  }) => ipcRenderer.invoke('license-submit-activation', body),
   updateGetState: () => ipcRenderer.invoke('amaan-update-get-state'),
   updateCheckNow: () => ipcRenderer.invoke('amaan-update-check-now'),
   updateDownload: () => ipcRenderer.invoke('amaan-update-download'),
@@ -776,6 +791,21 @@ declare global {
       licensePickAndImport: () => Promise<{ ok: true } | { ok: false; error: string }>;
       licenseImportJson: (jsonText: string) => Promise<{ ok: true } | { ok: false; error: string }>;
       licenseCopyMachineId: () => Promise<string>;
+      licenseGetRestaurantProfile: () => Promise<unknown>;
+      licenseSaveRestaurantProfile: (body: {
+        restaurantName: string;
+        phone?: string | null;
+        addressLine?: string | null;
+        city?: string | null;
+        ownerContactName?: string | null;
+      }) => Promise<{ ok: true; profile: unknown } | { ok: false; error: string }>;
+      licenseSubmitActivation: (body: {
+        restaurantName: string;
+        phone?: string | null;
+        addressLine?: string | null;
+        city?: string | null;
+        ownerContactName?: string | null;
+      }) => Promise<{ ok: true; status: 'pending' } | { ok: false; error: string }>;
       updateGetState: () => Promise<unknown>;
       updateCheckNow: () => Promise<{ ok: true } | { ok: false; error: string }>;
       updateDownload: () => Promise<{ ok: true } | { ok: false; error: string }>;

@@ -24,6 +24,10 @@ import {
 import { readRollingSyncCache, getEffectiveNowMs, seedRollingCacheAfterLicenseImport, writeRollingSyncCache } from './rolling-sync-cache'
 import { licenseFilePath, verifyLicenseAtPath, verifyLicenseFileContents } from './verify-license'
 import { getMachineId } from './machine-id'
+import { submitActivationRequest } from './platform-activation'
+import type { RestaurantProfileSaveBody } from '../shared/types/restaurant-profile'
+import { getBackendApp } from '../state'
+import { restaurantProfileGet, restaurantProfileUpsert } from '../init/backend-loader'
 
 function shouldEnforceLicense(): boolean {
   if (!app.isPackaged) return false
@@ -164,6 +168,49 @@ function snapshotFromPing(outcome: PlatformPingOutcome): LicensePlatformSnapshot
     expiresAtMs: b.expiresAtMs,
     daysUntilExpiry: b.daysUntilExpiry,
     nextRequiredSyncBeforeMs: b.nextRequiredSyncBeforeMs,
+    activationStatus: b.activationStatus,
+  }
+}
+
+function parseRestaurantProfileSaveBody(raw: unknown): RestaurantProfileSaveBody | null {
+  if (raw == null || typeof raw !== 'object') return null
+  const o = raw as Record<string, unknown>
+  if (typeof o.restaurantName !== 'string') return null
+  return {
+    restaurantName: o.restaurantName,
+    phone: typeof o.phone === 'string' ? o.phone : o.phone === null ? null : undefined,
+    addressLine:
+      typeof o.addressLine === 'string' ? o.addressLine : o.addressLine === null ? null : undefined,
+    city: typeof o.city === 'string' ? o.city : o.city === null ? null : undefined,
+    ownerContactName:
+      typeof o.ownerContactName === 'string'
+        ? o.ownerContactName
+        : o.ownerContactName === null
+          ? null
+          : undefined,
+  }
+}
+
+async function tryGetRestaurantProfile() {
+  if (!getBackendApp()) return null
+  try {
+    return await restaurantProfileGet()
+  } catch {
+    return null
+  }
+}
+
+async function tryUpsertRestaurantProfile(body: RestaurantProfileSaveBody) {
+  if (!getBackendApp()) return { ok: false as const, error: 'BACKEND_NOT_READY' }
+  try {
+    const profile = await restaurantProfileUpsert(body)
+    return { ok: true as const, profile }
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    if (msg.includes('RESTAURANT_NAME_REQUIRED')) {
+      return { ok: false as const, error: 'NO_STORE_NAME' }
+    }
+    return { ok: false as const, error: 'SAVE_FAILED' }
   }
 }
 
@@ -228,6 +275,9 @@ export function registerLicenseIpc(): void {
   ipcMain.removeHandler('license-get-platform-url-settings')
   ipcMain.removeHandler('license-set-platform-url')
   ipcMain.removeHandler('license-get-poll-interval-ms')
+  ipcMain.removeHandler('license-get-restaurant-profile')
+  ipcMain.removeHandler('license-save-restaurant-profile')
+  ipcMain.removeHandler('license-submit-activation')
 
   ipcMain.handle(
     'license-import-json',
@@ -276,6 +326,34 @@ export function registerLicenseIpc(): void {
         return { ok: false, error: 'WRITE_FAILED' }
       }
       return { ok: true }
+    },
+  )
+
+  ipcMain.handle('license-get-restaurant-profile', async () => tryGetRestaurantProfile())
+
+  ipcMain.handle(
+    'license-save-restaurant-profile',
+    async (_e, raw: unknown): Promise<{ ok: true; profile: unknown } | { ok: false; error: string }> => {
+      const body = parseRestaurantProfileSaveBody(raw)
+      if (!body?.restaurantName.trim()) {
+        return { ok: false, error: 'NO_STORE_NAME' }
+      }
+      return tryUpsertRestaurantProfile(body)
+    },
+  )
+
+  ipcMain.handle(
+    'license-submit-activation',
+    async (_e, raw: unknown): Promise<
+      { ok: true; status: 'pending' } | { ok: false; error: string }
+    > => {
+      const body = parseRestaurantProfileSaveBody(raw)
+      if (!body?.restaurantName.trim()) {
+        return { ok: false, error: 'NO_STORE_NAME' }
+      }
+      const saved = await tryUpsertRestaurantProfile(body)
+      if (!saved.ok) return saved
+      return submitActivationRequest(body)
     },
   )
 

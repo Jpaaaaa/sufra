@@ -23,6 +23,16 @@ declare global {
       licensePickAndImport: () => Promise<{ ok: true } | { ok: false; error: string }>;
       licenseImportJson: (jsonText: string) => Promise<{ ok: true } | { ok: false; error: string }>;
       licenseCopyMachineId: () => Promise<string>;
+      licenseGetRestaurantProfile: () => Promise<import('./src/license/types').RestaurantProfileDto | null>;
+      licenseSaveRestaurantProfile: (
+        body: import('./src/license/types').RestaurantProfileSaveBody,
+      ) => Promise<
+        | { ok: true; profile: import('./src/license/types').RestaurantProfileDto }
+        | { ok: false; error: string }
+      >;
+      licenseSubmitActivation: (
+        body: import('./src/license/types').RestaurantProfileSaveBody,
+      ) => Promise<{ ok: true; status: 'pending' } | { ok: false; error: string }>;
       updateGetState: () => Promise<unknown>;
       updateCheckNow: () => Promise<{ ok: true } | { ok: false; error: string }>;
       updateDownload: () => Promise<{ ok: true } | { ok: false; error: string }>;
