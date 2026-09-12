@@ -29,10 +29,23 @@ export async function pingLicensePlatform(
       signal: ac.signal,
     })
     const text = await res.text()
+    console.warn('[license-ping]', {
+      url,
+      machineId: `${machineId.slice(0, 8)}…`,
+      httpStatus: res.status,
+      ok: res.ok,
+      bodyPreview: text.slice(0, 500),
+    })
     let parsed: unknown
     try {
       parsed = JSON.parse(text) as unknown
     } catch {
+      console.warn('[license-ping] UNREACHABLE:', {
+        url,
+        reason: 'invalid_json',
+        httpStatus: res.status,
+        preview: text.slice(0, 200),
+      })
       return {
         reachable: false,
         error: !res.ok ? `HTTP ${res.status}` : 'Invalid JSON from license server',
@@ -40,6 +53,14 @@ export async function pingLicensePlatform(
     }
     const body = parsed as Partial<PlatformPingResponse>
     if (typeof body.ok !== 'boolean' || typeof body.machineId !== 'string') {
+      console.warn('[license-ping] UNREACHABLE:', {
+        url,
+        reason: 'unexpected_shape',
+        httpStatus: res.status,
+        preview: text.slice(0, 200),
+        parsedOk: typeof body.ok,
+        parsedMachineId: typeof body.machineId,
+      })
       return {
         reachable: false,
         error: !res.ok ? `HTTP ${res.status}` : 'Unexpected license server response',
@@ -57,9 +78,19 @@ export async function pingLicensePlatform(
       ...(body as PlatformPingResponse),
       serverTimeMs,
     }
+    console.warn('[license-ping] REACHABLE:', {
+      ok: normalized.ok,
+      status: normalized.status,
+      machineId: normalized.machineId,
+    })
     return { reachable: true, body: normalized }
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e)
+    const cause =
+      e instanceof Error && 'cause' in e
+        ? (e as Error & { cause?: unknown }).cause
+        : undefined
+    console.warn('[license-ping] FETCH_THROW:', { url, error: msg, cause })
     return { reachable: false, error: msg }
   } finally {
     clearTimeout(timer)

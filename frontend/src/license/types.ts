@@ -22,6 +22,24 @@ export type LicensePlatformSnapshot = {
   daysUntilExpiry?: number | null
   nextRequiredSyncBeforeMs?: number | null
   networkError?: string
+  activationStatus?: 'none' | 'pending' | 'declined'
+}
+
+export type RestaurantProfileDto = {
+  restaurantName: string
+  phone: string | null
+  addressLine: string | null
+  city: string | null
+  ownerContactName: string | null
+  updatedAtMs: number
+}
+
+export type RestaurantProfileSaveBody = {
+  restaurantName: string
+  phone?: string | null
+  addressLine?: string | null
+  city?: string | null
+  ownerContactName?: string | null
 }
 
 export type LicenseGetStatusResponse = {

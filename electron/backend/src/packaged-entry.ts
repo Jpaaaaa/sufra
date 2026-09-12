@@ -28,6 +28,7 @@ import * as financeService from './modules/finance/finance.service';
 import * as businessDayService from './modules/business-day/business-day.service';
 import * as settingsService from './modules/settings/settings.service';
 import * as shiftDefinitionsService from './modules/settings/shift-definitions.service';
+import * as restaurantProfileService from './modules/restaurant-profile/restaurant-profile.service';
 
 export const packagedBackend = {
   initializeBackend,
@@ -57,4 +58,5 @@ export const packagedBackend = {
   businessDayService,
   settingsService,
   shiftDefinitionsService,
+  restaurantProfileService,
 };

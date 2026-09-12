@@ -83,6 +83,14 @@ export function SettingsLicenseCard() {
             {lic.platform?.enabled && lic.platform.reachable === false ? (
               <div className="rounded-soft-lg border border-amber-200/80 bg-amber-50/80 px-4 py-3">
                 <p className="text-[14px] font-medium text-amber-950">{t('settings.licensePlatformOffline')}</p>
+                {lic.platform.networkError ? (
+                  <p
+                    dir="ltr"
+                    className="mt-2 break-all font-mono text-[12px] font-medium text-amber-900/90"
+                  >
+                    {lic.platform.networkError}
+                  </p>
+                ) : null}
               </div>
             ) : null}
             <MetaBox label={t('settings.licenseMachineId')}>
@@ -99,6 +107,14 @@ export function SettingsLicenseCard() {
             {lic.platform?.enabled && lic.platform.reachable === false ? (
               <div className="rounded-soft-lg border border-amber-200/80 bg-amber-50/80 px-4 py-3">
                 <p className="text-[14px] font-medium text-amber-950">{t('settings.licensePlatformOffline')}</p>
+                {lic.platform.networkError ? (
+                  <p
+                    dir="ltr"
+                    className="mt-2 break-all font-mono text-[12px] font-medium text-amber-900/90"
+                  >
+                    {lic.platform.networkError}
+                  </p>
+                ) : null}
               </div>
             ) : null}
 

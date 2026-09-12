@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import LanguageSwitcher from '../components/i18n/LanguageSwitcher'
 import {
   LICENSE_POLL_MS_MAX,
   LICENSE_POLL_MS_MIN,
@@ -8,7 +10,12 @@ import {
   isPresetPollMs,
 } from './license-poll'
 import { formatLicenseCountdownDisplay, type LicenseCountdownDisplayFormat } from './format-license-countdown'
-import type { LicenseDenyReason, LicenseGetStatusResponse } from './types'
+import type {
+  LicenseDenyReason,
+  LicenseGetStatusResponse,
+  RestaurantProfileDto,
+  RestaurantProfileSaveBody,
+} from './types'
 import { useLicenseMonotonicNow } from './useLicenseMonotonicNow'
 import { useLicenseCountdownFormat } from './useLicenseCountdownFormat'
 
@@ -29,40 +36,60 @@ function readStoredLicensePollMs(): number | null {
   }
 }
 
-function importErrorMessage(code: string): string {
-  const m: Record<string, string> = {
-    EMPTY: 'Paste the license JSON first.',
-    CLIPBOARD_EMPTY: 'Clipboard is empty.',
-    CLIPBOARD_DENIED: 'Clipboard access denied.',
-    NO_WINDOW: 'Could not open file dialog.',
-    CANCELLED: 'Cancelled.',
-    NOT_FOUND: 'File not found.',
-    READ_FAILED: 'Could not read file.',
-    WRITE_FAILED: 'Could not save license file.',
-    no_file: 'No license file yet.',
-    invalid_file: 'Invalid license file.',
-    bad_signature: 'Invalid license signature.',
-    wrong_machine: 'This license is for another machine.',
-    expired: 'This license has expired.',
-  }
-  return m[code] ?? 'Invalid license.'
+function importErrorMessage(t: (key: string) => string, code: string): string {
+  const key = `licenseActivation.importErr_${code}`
+  const s = t(key)
+  return s === key ? t('licenseActivation.importErr_default') : s
 }
 
-function gateDenyReasonMessage(reason: LicenseDenyReason): string {
-  const m: Partial<Record<LicenseDenyReason, string>> = {
-    platform_denied: 'The license server denied access.',
-    no_file: 'No license file yet.',
-    invalid_file: 'Invalid license file.',
-    bad_signature: 'Invalid license signature.',
-    wrong_machine: 'This license is for another machine.',
-    expired: 'This license has expired.',
-    rolling_deadline_passed: 'Offline period ended — connect and sync with the license server.',
+function activationErrorMessage(t: (key: string) => string, code: string): string {
+  if (code === 'RATE_LIMITED') return t('licenseActivation.errRateLimited')
+  if (code === 'NO_STORE_NAME') return t('licenseActivation.errStoreNameRequired')
+  if (code === 'NO_PLATFORM_URL') return t('licenseActivation.errNoUrl')
+  if (code === 'BACKEND_NOT_READY') return t('licenseActivation.errBackendNotReady')
+  return t('licenseActivation.errFailed')
+}
+
+function denyReasonMessage(
+  t: (key: string) => string,
+  reason: LicenseDenyReason,
+  platformMessage?: string | null,
+): string {
+  if (reason === 'platform_denied' && platformMessage?.trim()) {
+    return platformMessage.trim()
   }
-  return m[reason] ?? 'License check failed.'
+  const key = `settings.licenseReason_${reason}`
+  const s = t(key)
+  return s === key ? t('settings.licenseReason_unknown') : s
+}
+
+type ActivationUiState = 'idle' | 'submitting' | 'pending' | 'declined' | 'approved'
+
+function LicensePageShell({
+  dir,
+  children,
+  className = 'bg-gradient-to-br from-cloud-soft-white via-white to-cyber-aqua/10',
+}: {
+  dir: string
+  children: ReactNode
+  className?: string
+}) {
+  return (
+    <div dir={dir} className={`relative h-full min-h-0 overflow-y-auto overscroll-contain ${className}`}>
+      <div className="pointer-events-none absolute end-4 top-4 z-10 rounded-xl border border-black/5 bg-white p-2 shadow-soft">
+        <div className="pointer-events-auto">
+          <LanguageSwitcher className="[&_span]:text-obsidian/80 [&_select]:border-black/10 [&_select]:bg-white" />
+        </div>
+      </div>
+      <div className="flex min-h-full flex-col items-center justify-start px-6 pb-8 pt-16">{children}</div>
+    </div>
+  )
 }
 
 export function LicenseActivationPage() {
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
+  const pageDir = i18n.dir()
   const [status, setStatus] = useState<'load' | 'ready' | 'dev'>('load')
   const [machineId, setMachineId] = useState('')
   const [pasteText, setPasteText] = useState('')
@@ -78,6 +105,38 @@ export function LicenseActivationPage() {
   const [gateSnapshot, setGateSnapshot] = useState<LicenseGetStatusResponse | null>(null)
   const nowTick = useLicenseMonotonicNow(gateSnapshot?.effectiveNowMs)
   const [countdownFormat, setCountdownFormat] = useLicenseCountdownFormat()
+  const [restaurantName, setRestaurantName] = useState('')
+  const [phone, setPhone] = useState('')
+  const [addressLine, setAddressLine] = useState('')
+  const [city, setCity] = useState('')
+  const [ownerContactName, setOwnerContactName] = useState('')
+  const [activationSubmitting, setActivationSubmitting] = useState(false)
+  const [profileLoaded, setProfileLoaded] = useState(false)
+
+  const activationStatus = gateSnapshot?.platform?.activationStatus ?? 'none'
+  const activationUi: ActivationUiState = useMemo(() => {
+    if (activationSubmitting) return 'submitting'
+    if (gateSnapshot?.platform?.ok === true && gateSnapshot.platform.status === 'active') {
+      return 'approved'
+    }
+    if (activationStatus === 'pending') return 'pending'
+    if (activationStatus === 'declined') return 'declined'
+    return 'idle'
+  }, [activationSubmitting, gateSnapshot, activationStatus])
+
+  const profilePayload = useCallback((): RestaurantProfileSaveBody => {
+    const trimOrNull = (v: string) => {
+      const x = v.trim()
+      return x ? x : null
+    }
+    return {
+      restaurantName: restaurantName.trim(),
+      phone: trimOrNull(phone),
+      addressLine: trimOrNull(addressLine),
+      city: trimOrNull(city),
+      ownerContactName: trimOrNull(ownerContactName),
+    }
+  }, [restaurantName, phone, addressLine, city, ownerContactName])
 
   const refresh = useCallback(
     (opts?: { silent?: boolean }) => {
@@ -100,15 +159,12 @@ export function LicenseActivationPage() {
           void navigate('/', { replace: true })
           return
         }
-        const msg =
-          r.reason === 'platform_denied' && r.platform?.message?.trim()
-            ? r.platform.message.trim()
-            : gateDenyReasonMessage(r.reason)
+        const msg = denyReasonMessage(t, r.reason, r.platform?.message)
         setErrorBanner(msg)
         setStatus('ready')
       })
     },
-    [navigate],
+    [navigate, t],
   )
 
   useEffect(() => {
@@ -180,6 +236,48 @@ export function LicenseActivationPage() {
   }
 
   useEffect(() => {
+    if (status !== 'ready' || profileLoaded) return
+    let cancelled = false
+
+    void (async () => {
+      const api = window.amaan
+      let profile: RestaurantProfileDto | null = null
+      if (api?.licenseGetRestaurantProfile) {
+        profile = (await api.licenseGetRestaurantProfile()) as RestaurantProfileDto | null
+      }
+
+      if (cancelled) return
+
+      if (profile?.restaurantName?.trim()) {
+        setRestaurantName(profile.restaurantName)
+        setPhone(profile.phone ?? '')
+        setAddressLine(profile.addressLine ?? '')
+        setCity(profile.city ?? '')
+        setOwnerContactName(profile.ownerContactName ?? '')
+        setProfileLoaded(true)
+        return
+      }
+
+      if (window.sufra?.recipePrint?.getSettings) {
+        try {
+          const branding = await window.sufra.recipePrint.getSettings()
+          if (cancelled) return
+          if (branding.restaurantName?.trim()) setRestaurantName(branding.restaurantName.trim())
+          if (branding.mobileNumber?.trim()) setPhone(branding.mobileNumber.trim())
+        } catch {
+          /* optional pre-fill */
+        }
+      }
+
+      if (!cancelled) setProfileLoaded(true)
+    })()
+
+    return () => {
+      cancelled = true
+    }
+  }, [status, profileLoaded])
+
+  useEffect(() => {
     if (status !== 'ready') return
     const api = window.amaan
     if (!api?.licenseGetPlatformUrlSettings) return
@@ -199,14 +297,14 @@ export function LicenseActivationPage() {
     try {
       const r = await api.licenseSetPlatformUrl(platformUrlInput)
       if (r.ok) {
-        setInfoBanner('License server URL saved.')
+        setInfoBanner(t('licenseActivation.urlSaved'))
         refresh()
       } else if (r.error === 'ENV_OVERRIDES') {
-        setErrorBanner('AMAAN_PLATFORM_URL is set in the environment — change it there instead.')
+        setErrorBanner(t('licenseActivation.envOverrides'))
       } else if (r.error === 'INVALID_URL') {
-        setErrorBanner('Enter a valid http(s) URL.')
+        setErrorBanner(t('licenseActivation.invalidUrl'))
       } else {
-        setErrorBanner('Could not save URL.')
+        setErrorBanner(t('licenseActivation.urlSaveFailed'))
       }
     } finally {
       setBusy(false)
@@ -224,7 +322,7 @@ export function LicenseActivationPage() {
       if (r.ok) {
         refresh()
       } else {
-        setErrorBanner(importErrorMessage(r.error))
+        setErrorBanner(importErrorMessage(t, r.error))
       }
     } finally {
       setBusy(false)
@@ -239,13 +337,13 @@ export function LicenseActivationPage() {
     try {
       const text = await navigator.clipboard.readText()
       if (!text?.trim()) {
-        setErrorBanner(importErrorMessage('CLIPBOARD_EMPTY'))
+        setErrorBanner(importErrorMessage(t, 'CLIPBOARD_EMPTY'))
         return
       }
       setPasteText(text.trim())
       await tryImportText(text.trim())
     } catch {
-      setErrorBanner(importErrorMessage('CLIPBOARD_DENIED'))
+      setErrorBanner(importErrorMessage(t, 'CLIPBOARD_DENIED'))
     }
   }
 
@@ -260,10 +358,34 @@ export function LicenseActivationPage() {
       if (r.ok) {
         refresh()
       } else {
-        setErrorBanner(importErrorMessage(r.error))
+        setErrorBanner(importErrorMessage(t, r.error))
       }
     } finally {
       setBusy(false)
+    }
+  }
+
+  const submitActivation = async () => {
+    const api = window.amaan
+    if (!api?.licenseSubmitActivation) return
+    const payload = profilePayload()
+    if (!payload.restaurantName) {
+      setErrorBanner(t('licenseActivation.errStoreNameRequired'))
+      return
+    }
+    setActivationSubmitting(true)
+    setErrorBanner(null)
+    setInfoBanner(null)
+    try {
+      const r = await api.licenseSubmitActivation(payload)
+      if (r.ok) {
+        setInfoBanner(t('licenseActivation.sent'))
+        refresh({ silent: true })
+      } else {
+        setErrorBanner(activationErrorMessage(t, r.error))
+      }
+    } finally {
+      setActivationSubmitting(false)
     }
   }
 
@@ -274,7 +396,7 @@ export function LicenseActivationPage() {
     } else if (machineId) {
       await navigator.clipboard.writeText(machineId)
     }
-    setInfoBanner('Machine ID copied.')
+    setInfoBanner(t('licenseActivation.machineIdCopied'))
     window.setTimeout(() => setInfoBanner(null), 2500)
   }
 
@@ -305,44 +427,50 @@ export function LicenseActivationPage() {
 
   if (status === 'load') {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-cloud-soft-white text-obsidian">
-        <p className="text-lg font-semibold text-cyber-aqua">Checking license…</p>
-      </div>
+      <LicensePageShell dir={pageDir} className="bg-cloud-soft-white">
+        <div className="flex flex-1 items-center justify-center py-16 text-obsidian">
+          <p className="text-lg font-semibold text-cyber-aqua">{t('licenseActivation.checking')}</p>
+        </div>
+      </LicensePageShell>
     )
   }
 
   if (status === 'dev') {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-4 bg-cloud-soft-white p-6 text-center text-graphite">
-        <p className="max-w-md font-medium text-obsidian">License is not enforced in this build (dev / web).</p>
-        <button
-          type="button"
-          className="rounded-xl bg-cyber-aqua px-8 py-3 text-sm font-semibold text-charcoal-graphite shadow-soft hover:opacity-90"
-          onClick={() => void navigate('/', { replace: true })}
-        >
-          Continue to app
-        </button>
-      </div>
+      <LicensePageShell dir={pageDir} className="bg-cloud-soft-white">
+        <div className="flex w-full max-w-md flex-col items-center gap-4 py-8 text-center text-graphite">
+          <p className="font-medium text-obsidian">{t('settings.licenseNotEnforced')}</p>
+          <button
+            type="button"
+            className="rounded-xl bg-cyber-aqua px-8 py-3 text-sm font-semibold text-charcoal-graphite shadow-soft hover:opacity-90"
+            onClick={() => void navigate('/', { replace: true })}
+          >
+            {t('licenseActivation.devContinue')}
+          </button>
+        </div>
+      </LicensePageShell>
     )
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center gap-8 bg-gradient-to-br from-cloud-soft-white via-white to-cyber-aqua/10 p-6">
+    <LicensePageShell dir={pageDir}>
       <div className="w-full max-w-lg rounded-2xl border border-black/10 bg-white p-8 shadow-soft ring-1 ring-black/5">
-        <h1 className="text-2xl font-bold tracking-tight text-obsidian">Activate sufra pos</h1>
-        <p className="mt-3 text-sm leading-relaxed text-graphite">
-          Connect to your license server (LM), then activate this machine ID on the server or import a license file.
-        </p>
+        <h1 className="text-start text-2xl font-bold tracking-tight text-obsidian">{t('licenseActivation.pageTitle')}</h1>
+        <p className="mt-3 text-start text-sm leading-relaxed text-graphite">{t('licenseActivation.pageIntro')}</p>
 
         <div className="mt-6 rounded-xl border border-black/10 bg-cloud-soft-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">License server URL</p>
-          <p className="mt-2 text-xs text-graphite">
-            Example local LM: {DEFAULT_LICENSE_PLATFORM_URL}. In production, use your hosted license manager HTTPS origin
-            (activate this device under <span className="font-mono text-obsidian/70">sufra pos</span> in LM).
+          <p className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+            {t('licenseActivation.serverUrlLabel')}
+          </p>
+          <p className="mt-2 text-start text-xs text-graphite">
+            {t('licenseActivation.serverUrlHelp', {
+              defaultUrl: DEFAULT_LICENSE_PLATFORM_URL,
+              productName: 'sufra pos',
+            })}
           </p>
           {platformUrlEnvActive ? (
-            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-900 ring-1 ring-amber-200">
-              AMAAN_PLATFORM_URL is set in the environment — change it there instead.
+            <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-start text-xs text-amber-900 ring-1 ring-amber-200">
+              {t('licenseActivation.envOverrides')}
             </p>
           ) : null}
           <input
@@ -362,12 +490,14 @@ export function LicenseActivationPage() {
             className="mt-3 w-full rounded-lg bg-obsidian px-5 py-3 text-sm font-semibold text-white hover:bg-obsidian/90 disabled:opacity-60"
             onClick={() => void savePlatformUrl()}
           >
-            {busy ? 'Saving…' : 'Save & check license'}
+            {busy ? t('licenseActivation.savingUrl') : t('licenseActivation.saveUrl')}
           </button>
         </div>
 
         <div className="mt-8 rounded-xl border border-black/10 bg-cloud-soft-white p-5">
-          <p className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">Machine ID</p>
+          <p className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+            {t('settings.licenseMachineId')}
+          </p>
           <p dir="ltr" className="mt-2 break-all font-mono text-lg font-semibold tracking-tight text-cyber-aqua">
             {machineId}
           </p>
@@ -376,7 +506,7 @@ export function LicenseActivationPage() {
             className="mt-4 rounded-lg border border-black/10 bg-white px-4 py-2 text-xs font-semibold uppercase tracking-wider text-cyber-aqua shadow-soft hover:bg-cloud-soft-white"
             onClick={() => void copyId()}
           >
-            Copy machine ID
+            {t('licenseActivation.copyMachineId')}
           </button>
           <button
             type="button"
@@ -384,10 +514,12 @@ export function LicenseActivationPage() {
             className="mt-2 w-full rounded-lg border border-black/10 bg-white py-2 text-xs font-semibold text-obsidian hover:bg-cloud-soft-white disabled:opacity-60"
             onClick={() => refresh()}
           >
-            Check license again
+            {t('licenseActivation.checkAgain')}
           </button>
           <label className="mt-4 block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">Auto-check interval</span>
+            <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+              {t('licenseActivation.autoCheckInterval')}
+            </span>
             <select
               className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian focus:border-cyber-aqua focus:outline-none"
               value={pollSelectValue}
@@ -396,49 +528,166 @@ export function LicenseActivationPage() {
             >
               {LICENSE_POLL_PRESET_MS.map((opt) => (
                 <option key={opt} value={String(opt)}>
-                  {opt / 1000}s
+                  {t('licenseActivation.pollSeconds', { seconds: opt / 1000 })}
                 </option>
               ))}
-              <option value="custom">Custom (seconds)</option>
+              <option value="custom">{t('licenseActivation.pollCustomOption')}</option>
             </select>
             {pollSelectValue === 'custom' ? (
-              <>
-                <input
-                  type="number"
-                  dir="ltr"
-                  min={LICENSE_POLL_MS_MIN / 1000}
-                  max={LICENSE_POLL_MS_MAX / 1000}
-                  step={1}
-                  disabled={busy}
-                  className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 font-mono text-sm text-obsidian"
-                  value={customPollSeconds}
-                  onChange={(e) => setCustomPollSeconds(e.target.value)}
-                  onBlur={() => commitCustomPollSeconds()}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
-                  }}
-                />
-              </>
+              <input
+                type="number"
+                dir="ltr"
+                min={LICENSE_POLL_MS_MIN / 1000}
+                max={LICENSE_POLL_MS_MAX / 1000}
+                step={1}
+                disabled={busy}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 font-mono text-sm text-obsidian"
+                value={customPollSeconds}
+                onChange={(e) => setCustomPollSeconds(e.target.value)}
+                onBlur={() => commitCustomPollSeconds()}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') (e.target as HTMLInputElement).blur()
+                }}
+              />
             ) : null}
           </label>
           <label className="mt-4 block">
-            <span className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">Countdown display</span>
+            <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+              {t('settings.licenseCountdownFormatLabel')}
+            </span>
             <select
               className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian"
               value={countdownFormat}
               onChange={(e) => setCountdownFormat(e.target.value as LicenseCountdownDisplayFormat)}
             >
-              <option value="days_minutes">Days + minutes</option>
-              <option value="stopwatch">Stopwatch</option>
+              <option value="days_minutes">{t('settings.licenseCountdownFormatDaysMinutes')}</option>
+              <option value="stopwatch">{t('settings.licenseCountdownFormatStopwatch')}</option>
             </select>
           </label>
+        </div>
+
+        <div className="mt-6 rounded-xl border border-cyber-aqua/30 bg-cyber-aqua/5 p-5">
+          <p className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+            {t('licenseActivation.title')}
+          </p>
+          <p className="mt-2 text-start text-sm leading-relaxed text-graphite">{t('licenseActivation.body')}</p>
+
+          <div className="mt-4 space-y-3">
+            <label className="block">
+              <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                {t('licenseActivation.restaurantName')} *
+              </span>
+              <input
+                type="text"
+                dir="auto"
+                value={restaurantName}
+                onChange={(e) => setRestaurantName(e.target.value)}
+                disabled={busy || activationSubmitting || activationUi === 'pending'}
+                maxLength={120}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/30 disabled:opacity-60"
+              />
+            </label>
+            <label className="block">
+              <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                {t('licenseActivation.phone')}
+              </span>
+              <input
+                type="text"
+                dir="ltr"
+                value={phone}
+                onChange={(e) => setPhone(e.target.value)}
+                disabled={busy || activationSubmitting || activationUi === 'pending'}
+                maxLength={40}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/30 disabled:opacity-60"
+              />
+            </label>
+            <label className="block">
+              <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                {t('licenseActivation.address')}
+              </span>
+              <input
+                type="text"
+                dir="auto"
+                value={addressLine}
+                onChange={(e) => setAddressLine(e.target.value)}
+                disabled={busy || activationSubmitting || activationUi === 'pending'}
+                maxLength={200}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/30 disabled:opacity-60"
+              />
+            </label>
+            <label className="block">
+              <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                {t('licenseActivation.city')}
+              </span>
+              <input
+                type="text"
+                dir="auto"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                disabled={busy || activationSubmitting || activationUi === 'pending'}
+                maxLength={80}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/30 disabled:opacity-60"
+              />
+            </label>
+            <label className="block">
+              <span className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                {t('licenseActivation.ownerName')}
+              </span>
+              <input
+                type="text"
+                dir="auto"
+                value={ownerContactName}
+                onChange={(e) => setOwnerContactName(e.target.value)}
+                disabled={busy || activationSubmitting || activationUi === 'pending'}
+                maxLength={120}
+                className="mt-2 w-full rounded-lg border border-gray-300 bg-white px-4 py-3 text-sm text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/30 disabled:opacity-60"
+              />
+            </label>
+          </div>
+
+          {activationUi === 'pending' ? (
+            <p className="mt-3 text-start text-sm font-semibold text-indigo-800" role="status">
+              {t('licenseActivation.pending')}
+            </p>
+          ) : null}
+          {activationUi === 'declined' ? (
+            <p className="mt-3 text-start text-sm font-semibold text-rose-800" role="status">
+              {t('licenseActivation.declined')}
+            </p>
+          ) : null}
+          {activationUi === 'approved' ? (
+            <p className="mt-3 text-start text-sm font-semibold text-emerald-800" role="status">
+              {t('licenseActivation.approved')}
+            </p>
+          ) : null}
+
+          <button
+            type="button"
+            disabled={
+              busy ||
+              activationSubmitting ||
+              !restaurantName.trim() ||
+              activationUi === 'pending' ||
+              activationUi === 'approved'
+            }
+            onClick={() => void submitActivation()}
+            className="mt-4 w-full rounded-lg bg-cyber-aqua px-5 py-3 text-sm font-semibold text-charcoal-graphite hover:opacity-90 disabled:opacity-60"
+          >
+            {activationUi === 'submitting'
+              ? t('licenseActivation.submitting')
+              : activationUi === 'pending'
+                ? t('licenseActivation.pending')
+                : t('licenseActivation.send')}
+          </button>
         </div>
 
         {gateSnapshot ? (
           <div className="mt-6 space-y-4 rounded-xl border border-black/10 bg-cloud-soft-white p-5">
             {gateSnapshot.expiresAtMs != null && Number.isFinite(gateSnapshot.expiresAtMs) ? (
               <div className="space-y-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">Time until license expiry</p>
+                <p className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                  {t('settings.licenseCountdownExpires')}
+                </p>
                 <p dir="ltr" className="font-mono text-2xl font-bold tabular-nums text-obsidian" aria-live="polite">
                   {formatLicenseCountdownDisplay(gateSnapshot.expiresAtMs - nowTick, countdownFormat)}
                 </p>
@@ -454,7 +703,9 @@ export function LicenseActivationPage() {
                     : 'space-y-1'
                 }
               >
-                <p className="text-xs font-semibold uppercase tracking-wider text-obsidian/55">Next sync required by</p>
+                <p className="text-start text-xs font-semibold uppercase tracking-wider text-obsidian/55">
+                  {t('settings.licenseCountdownSync')}
+                </p>
                 <p dir="ltr" className="font-mono text-xl font-bold tabular-nums text-amber-700" aria-live="polite">
                   {formatLicenseCountdownDisplay(
                     gateSnapshot.platform.nextRequiredSyncBeforeMs - nowTick,
@@ -467,12 +718,14 @@ export function LicenseActivationPage() {
         ) : null}
 
         <div className="mt-8">
-          <p className="text-sm font-semibold uppercase tracking-wider text-obsidian/55">Paste license JSON</p>
+          <p className="text-start text-sm font-semibold uppercase tracking-wider text-obsidian/55">
+            {t('licenseActivation.pasteJsonLabel')}
+          </p>
           <textarea
             className="mt-3 min-h-[120px] w-full rounded-lg border border-gray-300 bg-white p-4 font-mono text-xs leading-relaxed text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/30"
             dir="ltr"
             spellCheck={false}
-            placeholder="{ ... }"
+            placeholder={t('licenseActivation.jsonPlaceholder')}
             value={pasteText}
             onChange={(e) => setPasteText(e.target.value)}
           />
@@ -483,7 +736,7 @@ export function LicenseActivationPage() {
               className="inline-flex min-w-[140px] flex-1 items-center justify-center rounded-lg bg-cyber-aqua px-5 py-3 text-sm font-semibold text-charcoal-graphite hover:opacity-90 disabled:opacity-60 sm:flex-none"
               onClick={() => void applyPaste()}
             >
-              {busy ? 'Importing…' : 'Apply pasted license'}
+              {busy ? t('licenseActivation.importing') : t('licenseActivation.applyPasted')}
             </button>
             <button
               type="button"
@@ -491,7 +744,7 @@ export function LicenseActivationPage() {
               className="inline-flex items-center justify-center rounded-lg border border-black/10 bg-white px-5 py-3 text-xs font-semibold text-obsidian hover:bg-cloud-soft-white disabled:opacity-60"
               onClick={() => void pasteFromClipboard()}
             >
-              Paste from clipboard
+              {t('licenseActivation.pasteFromClipboard')}
             </button>
           </div>
         </div>
@@ -504,7 +757,7 @@ export function LicenseActivationPage() {
           onDragLeave={onDragLeave}
           onDrop={onDrop}
         >
-          <p className="text-sm font-semibold text-graphite">Drop license.json here</p>
+          <p className="text-sm font-semibold text-graphite">{t('licenseActivation.dropZone')}</p>
         </div>
 
         <button
@@ -513,28 +766,29 @@ export function LicenseActivationPage() {
           className="mt-6 inline-flex h-12 w-full items-center justify-center rounded-lg border border-black/10 bg-white px-6 text-sm font-semibold text-obsidian hover:border-cyber-aqua hover:bg-cloud-soft-white disabled:opacity-60"
           onClick={() => void pickFile()}
         >
-          {busy ? 'Importing…' : 'Choose license file…'}
+          {busy ? t('licenseActivation.importing') : t('licenseActivation.chooseFile')}
         </button>
 
         {errorBanner ? (
-          <p className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-sm font-medium text-rose-800 ring-1 ring-rose-200" role="alert">
+          <p
+            className="mt-4 rounded-lg bg-rose-50 px-4 py-3 text-start text-sm font-medium text-rose-800 ring-1 ring-rose-200"
+            role="alert"
+          >
             {errorBanner}
           </p>
         ) : null}
         {infoBanner ? (
-          <p className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 ring-1 ring-emerald-200" role="status">
+          <p
+            className="mt-4 rounded-lg bg-emerald-50 px-4 py-3 text-start text-sm font-medium text-emerald-900 ring-1 ring-emerald-200"
+            role="status"
+          >
             {infoBanner}
           </p>
         ) : null}
 
-        <p className="mt-6 text-xs leading-relaxed text-obsidian/55">
-          sufra pos talks to <span className="font-mono text-obsidian/70">amaan-platform</span> for licenses (product{' '}
-          <span className="font-mono text-obsidian/70">sufra_lite</span>) and loads updates from{' '}
-          <span className="font-mono text-obsidian/70">…/updates/sufra_lite/</span> on that host. Set{' '}
-          <span className="font-mono text-obsidian/70">AMAAN_PLATFORM_URL</span> or embed URLs in the Electron build for production.
-        </p>
+        <p className="mt-6 text-start text-xs leading-relaxed text-obsidian/55">{t('licenseActivation.footerNote')}</p>
       </div>
-    </div>
+    </LicensePageShell>
   )
 }
 

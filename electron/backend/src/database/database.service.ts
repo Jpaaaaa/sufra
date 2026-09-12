@@ -1309,6 +1309,18 @@ export class DatabaseService {
       }
     }
 
+    this.runSync(
+      `CREATE TABLE IF NOT EXISTS restaurant_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        restaurant_name TEXT NOT NULL DEFAULT '',
+        phone TEXT,
+        address_line TEXT,
+        city TEXT,
+        owner_contact_name TEXT,
+        updated_at_ms INTEGER NOT NULL DEFAULT 0
+      )`,
+    );
+
     // Finance tables
     this.runSync(
       `CREATE TABLE IF NOT EXISTS revenues (

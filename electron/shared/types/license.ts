@@ -38,6 +38,7 @@ export type LicensePlatformSnapshot = {
   daysUntilExpiry?: number | null
   nextRequiredSyncBeforeMs?: number | null
   networkError?: string
+  activationStatus?: 'none' | 'pending' | 'declined'
 }
 
 export type LicensePlatformUrlSettings = {

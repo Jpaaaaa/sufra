@@ -20,6 +20,7 @@ import { initializeOffers } from './modules/offers/offers.service';
 import { initializeShifts } from './modules/shifts/shifts.service';
 import { initializeSettings } from './modules/settings/settings.service';
 import { initializeShiftDefinitions } from './modules/settings/shift-definitions.service';
+import { initializeRestaurantProfile } from './modules/restaurant-profile/restaurant-profile.service';
 
 /** Wire all domain services after database is ready. */
 export function initializeAllServices(db: DatabaseService): void {
@@ -35,6 +36,7 @@ export function initializeAllServices(db: DatabaseService): void {
   initializeKitchens(db);
   initializeSettings(db);
   initializeShiftDefinitions(db);
+  initializeRestaurantProfile(db);
   initializeShelves(db);
   initializeOrdersCluster(db);
   initializePrinters(db);
