@@ -153,15 +153,6 @@ function snapshotUnreachableWithDeadline(
   }
 }
 
-function logLicenseStatusPing(pingOutcome: PlatformPingOutcome, platform: LicensePlatformSnapshot | undefined): void {
-  console.warn('[license-status]', {
-    reachable: pingOutcome.reachable,
-    error: pingOutcome.reachable === false ? pingOutcome.error : undefined,
-    platformOk: platform?.ok,
-    grantCleared: pingOutcome.reachable === true && pingOutcome.body.ok === false,
-  })
-}
-
 function snapshotFromPing(outcome: PlatformPingOutcome): LicensePlatformSnapshot {
   if (!outcome.reachable) {
     return { enabled: true, reachable: false, networkError: outcome.error }
@@ -399,7 +390,6 @@ export function registerLicenseIpc(): void {
         if (platformUrl) {
           const pingOutcome = await pingLicensePlatform(platformUrl, machineId)
           platform = snapshotFromPing(pingOutcome)
-          logLicenseStatusPing(pingOutcome, platform)
           if (pingOutcome.reachable) {
             const b = pingOutcome.body
             writeRollingSyncCache(userData, {
@@ -431,7 +421,6 @@ export function registerLicenseIpc(): void {
     if (platformUrl) {
       pingOutcome = await pingLicensePlatform(platformUrl, machineId)
       platform = snapshotFromPing(pingOutcome)
-      logLicenseStatusPing(pingOutcome, platform)
       if (platformUrl && platform?.reachable && pingOutcome?.reachable) {
         const b = pingOutcome.body
         writeRollingSyncCache(userData, {
