@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { DailyAggregate } from '@/lib/reports/types';
 import { formatCurrency } from '@/lib/reports/utils';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
+import { collatorLocale } from '../../lib/app-locale';
 
 interface DailySummaryTableProps {
   data: DailyAggregate[];
@@ -16,7 +17,7 @@ type SortDirection = 'asc' | 'desc';
 export default function DailySummaryTable({ data }: DailySummaryTableProps) {
   const { t, i18n } = useTranslation();
   const { numberLocale } = useOrderLocale();
-  const sortLocale = useMemo(() => (i18n.language?.startsWith('en') ? 'en' : 'ar'), [i18n.language]);
+  const sortLocale = useMemo(() => collatorLocale(i18n.language), [i18n.language]);
 
   const [sortField, setSortField] = useState<SortField>('date');
   const [sortDirection, setSortDirection] = useState<SortDirection>('asc');

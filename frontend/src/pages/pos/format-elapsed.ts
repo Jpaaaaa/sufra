@@ -11,6 +11,7 @@ export function formatElapsedShort(since: string, locale: string): string {
   if (mins < 60) {
     if (useAr) return `${n(mins)}د`;
     if (locale.startsWith('ckb')) return `${mins} خ`;
+    if (locale.startsWith('tr')) return `${mins} dk`;
     return `${mins}m`;
   }
 

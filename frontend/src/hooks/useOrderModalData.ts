@@ -17,6 +17,8 @@ import type { TableEntity } from '../utils';
 import type { useOffers } from './useOffers';
 import { useKitchensStore } from '../../stores/kitchensStore';
 import { buildOffersCategoryItems } from '../lib/offers/build-offers-category-items';
+import i18n from '../i18n';
+import { collatorLocale } from '../lib/app-locale';
 
 function parseOrdersWithDiscount(loadedOrders: any[]) {
   return loadedOrders
@@ -113,7 +115,7 @@ export function useOrderModalData(
     const hasSearch = searchLower.length > 0;
 
     if (selectedCategory === OFFERS_CATEGORY_ID) {
-      const uniqueItems = buildOffersCategoryItems(menuItems, offers);
+      const uniqueItems = buildOffersCategoryItems(menuItems, offers, i18n.language);
       if (hasSearch) {
         return uniqueItems.filter((item) => item.name.toLowerCase().includes(searchLower));
       }
@@ -134,7 +136,7 @@ export function useOrderModalData(
       if (hasSearch) {
         return shelfItemsAsItems.filter((item) => item.name.toLowerCase().includes(searchLower));
       }
-      return shelfItemsAsItems.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+      return shelfItemsAsItems.sort((a, b) => a.name.localeCompare(b.name, collatorLocale(i18n.language)));
     }
 
     if (menuItems.length === 0) return [];
@@ -153,6 +155,7 @@ export function useOrderModalData(
     offers.featuredItems,
     offers.combos,
     offers.happyHours,
+    i18n.language,
   ]);
 
   return {

@@ -78,7 +78,7 @@ function LicensePageShell({
     <div dir={dir} className={`relative h-full min-h-0 overflow-y-auto overscroll-contain ${className}`}>
       <div className="pointer-events-none absolute end-4 top-4 z-10 rounded-xl border border-black/5 bg-white p-2 shadow-soft">
         <div className="pointer-events-auto">
-          <LanguageSwitcher className="[&_span]:text-obsidian/80 [&_select]:border-black/10 [&_select]:bg-white" />
+          <LanguageSwitcher />
         </div>
       </div>
       <div className="flex min-h-full flex-col items-center justify-start px-6 pb-8 pt-16">{children}</div>

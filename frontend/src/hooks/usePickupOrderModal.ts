@@ -17,6 +17,8 @@ import { APP_BRAND_NAME } from '../lib/brand';
 import { orderDisplayNumber } from '../utils/order-display-number';
 import { OFFERS_CATEGORY_ID, SHELF_CATEGORY_ID } from '../components/orders/CategoryTabs';
 import { buildOffersCategoryItems } from '../lib/offers/build-offers-category-items';
+import i18n from '../i18n';
+import { collatorLocale } from '../lib/app-locale';
 import { ExistingOrder, CartItem, Category } from './useOrderModal';
 import { useKitchensStore } from '../../stores/kitchensStore';
 import {
@@ -110,7 +112,7 @@ export function usePickupOrderModal() {
     const hasSearch = searchLower.length > 0;
     
     if (selectedCategory === OFFERS_CATEGORY_ID) {
-      const uniqueItems = buildOffersCategoryItems(menuItems, offers);
+      const uniqueItems = buildOffersCategoryItems(menuItems, offers, i18n.language);
       if (hasSearch) {
         return uniqueItems.filter(item => item.name.toLowerCase().includes(searchLower));
       }
@@ -133,7 +135,7 @@ export function usePickupOrderModal() {
           item.name.toLowerCase().includes(searchLower)
         );
       }
-      return shelfItemsAsItems.sort((a, b) => a.name.localeCompare(b.name, 'ar'));
+      return shelfItemsAsItems.sort((a, b) => a.name.localeCompare(b.name, collatorLocale(i18n.language)));
     }
     
     if (menuItems.length === 0) return [];
@@ -144,7 +146,7 @@ export function usePickupOrderModal() {
       if (hasSearch && !item.name.toLowerCase().includes(searchLower)) return false;
       return true;
     });
-  }, [menuItems, shelfItems, selectedCategory, debouncedSearch, offers.featuredItems, offers.combos, offers.happyHours]);
+  }, [menuItems, shelfItems, selectedCategory, debouncedSearch, offers.featuredItems, offers.combos, offers.happyHours, i18n.language]);
 
   const addItemToOrder = useCallback((item: Item, extras?: AddItemExtras) => {
     const sItem = extras?.shelfItem;

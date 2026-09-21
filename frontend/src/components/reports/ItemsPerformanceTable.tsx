@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { ItemPerformance } from '@/lib/reports/types';
 import { formatCurrency } from '@/lib/reports/utils';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
+import { collatorLocale } from '../../lib/app-locale';
 
 interface ItemsPerformanceTableProps {
   data: ItemPerformance[];
@@ -25,7 +26,7 @@ export default function ItemsPerformanceTable({
   const [sortField, setSortField] = useState<SortField>('totalSales');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
 
-  const sortLocale = useMemo(() => (i18n.language?.startsWith('en') ? 'en' : 'ar'), [i18n.language]);
+  const sortLocale = useMemo(() => collatorLocale(i18n.language), [i18n.language]);
 
   const displayTitle = title ?? t('reports.itemsDetailTitle');
   const displaySubtitle = subtitle ?? t('reports.itemsDetailSubtitle');

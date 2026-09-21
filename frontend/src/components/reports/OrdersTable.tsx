@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { OrderReport } from '@/lib/reports/types';
 import { formatCurrency } from '@/lib/reports/utils';
 import { orderDisplayNumber } from '@/utils/order-display-number';
+import { collatorLocale } from '../../lib/app-locale';
 
 interface OrdersTableProps {
   data: OrderReport[];
@@ -15,7 +16,7 @@ type SortDirection = 'asc' | 'desc';
 
 export default function OrdersTable({ data }: OrdersTableProps) {
   const { t, i18n } = useTranslation();
-  const sortLocale = useMemo(() => (i18n.language?.startsWith('en') ? 'en' : 'ar'), [i18n.language]);
+  const sortLocale = useMemo(() => collatorLocale(i18n.language), [i18n.language]);
 
   const [sortField, setSortField] = useState<SortField>('openTime');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');

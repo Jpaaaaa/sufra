@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import type { Item } from '../../hooks/useItems';
 import type { Category } from '../../hooks/useCategories';
 import { sortItemsAdminDisplay } from '../../utils/admin-catalog-sort';
+import { collatorLocale } from '../../lib/app-locale';
 import { SearchIcon } from '../icons';
 import NumericKeypad from '../ui/NumericKeypad';
 
@@ -23,7 +24,7 @@ export default function FastPricingTable({
   error,
   updateItemPrice,
 }: FastPricingTableProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [searchQuery, setSearchQuery] = useState('');
   const [draftById, setDraftById] = useState<Record<number, string>>({});
   const [savingId, setSavingId] = useState<number | null>(null);
@@ -34,7 +35,10 @@ export default function FastPricingTable({
     return categories.find((c) => c.id === categoryId)?.name ?? '—';
   };
 
-  const sorted = useMemo(() => sortItemsAdminDisplay(items), [items]);
+  const sorted = useMemo(
+    () => sortItemsAdminDisplay(items, collatorLocale(i18n.language)),
+    [items, i18n.language],
+  );
 
   const filtered = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
