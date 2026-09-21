@@ -7,6 +7,7 @@ import { navGroups } from './navConfig';
 import SidebarBrand from './SidebarBrand';
 import SidebarSession from './SidebarSession';
 import SidebarViewControls from './SidebarViewControls';
+import RailHoverLabel from './RailHoverLabel';
 
 const RAIL_WIDTH = '4.5rem';
 const FULL_WIDTH = '16.5rem';
@@ -105,19 +106,23 @@ function Sidebar({ isOpen = true }: SidebarProps) {
         collapsed={!expanded}
         onBrandClick={toggleExpanded}
         toggle={
-          <button
-            type="button"
-            onClick={toggleExpanded}
-            title={expanded ? t('layout.unpinSidebar') : t('layout.pinSidebar')}
-            aria-label={expanded ? t('layout.unpinSidebar') : t('layout.pinSidebar')}
-            className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-graphite hover:bg-black/[0.05] hover:text-obsidian"
+          <RailHoverLabel
+            label={expanded ? t('layout.unpinSidebar') : t('layout.pinSidebar')}
+            enabled={!expanded}
           >
-            {expanded ? (
-              <PanelLeftClose className="h-4 w-4 rtl:rotate-180" aria-hidden />
-            ) : (
-              <PanelLeftOpen className="h-4 w-4 rtl:rotate-180" aria-hidden />
-            )}
-          </button>
+            <button
+              type="button"
+              onClick={toggleExpanded}
+              aria-label={expanded ? t('layout.unpinSidebar') : t('layout.pinSidebar')}
+              className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg text-graphite hover:bg-black/[0.05] hover:text-obsidian"
+            >
+              {expanded ? (
+                <PanelLeftClose className="h-4 w-4 rtl:rotate-180" aria-hidden />
+              ) : (
+                <PanelLeftOpen className="h-4 w-4 rtl:rotate-180" aria-hidden />
+              )}
+            </button>
+          </RailHoverLabel>
         }
       />
 
@@ -144,35 +149,37 @@ function Sidebar({ isOpen = true }: SidebarProps) {
 
                   return (
                     <li key={item.href}>
-                      <Link
-                        to={item.href}
-                        title={label}
-                        className={`sidebar-item group relative flex items-center rounded-xl text-[13.5px] leading-snug ${
-                          expanded ? 'gap-2.5 px-2 py-1.5' : 'justify-center px-1 py-1.5'
-                        } ${
-                          isActive
-                            ? 'sidebar-item-active bg-cyber-aqua/12 font-semibold text-obsidian'
-                            : 'font-medium text-graphite hover:bg-black/[0.04] hover:text-obsidian'
-                        }`}
-                      >
-                        {isActive ? (
-                          <span className="absolute inset-y-1.5 start-0 w-[3px] rounded-full bg-cyber-aqua" />
-                        ) : null}
-                        <span
-                          className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${
+                      <RailHoverLabel label={label} enabled={!expanded}>
+                        <Link
+                          to={item.href}
+                          aria-label={label}
+                          className={`sidebar-item group relative flex items-center rounded-xl text-[13.5px] leading-snug ${
+                            expanded ? 'gap-2.5 px-2 py-1.5' : 'justify-center px-1 py-1.5'
+                          } ${
                             isActive
-                              ? 'bg-cyber-aqua text-white'
-                              : 'bg-black/[0.035] text-obsidian/55 group-hover:bg-cyber-aqua/12 group-hover:text-obsidian/80'
+                              ? 'sidebar-item-active bg-cyber-aqua/12 font-semibold text-obsidian'
+                              : 'font-medium text-graphite hover:bg-black/[0.04] hover:text-obsidian'
                           }`}
                         >
-                          <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
-                        </span>
-                        {expanded ? (
-                          <span className="min-w-0 flex-1 truncate">{label}</span>
-                        ) : (
-                          <span className="sr-only">{label}</span>
-                        )}
-                      </Link>
+                          {isActive ? (
+                            <span className="absolute inset-y-1.5 start-0 w-[3px] rounded-full bg-cyber-aqua" />
+                          ) : null}
+                          <span
+                            className={`flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg ${
+                              isActive
+                                ? 'bg-cyber-aqua text-white'
+                                : 'bg-black/[0.035] text-obsidian/55 group-hover:bg-cyber-aqua/12 group-hover:text-obsidian/80'
+                            }`}
+                          >
+                            <Icon className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                          </span>
+                          {expanded ? (
+                            <span className="min-w-0 flex-1 truncate">{label}</span>
+                          ) : (
+                            <span className="sr-only">{label}</span>
+                          )}
+                        </Link>
+                      </RailHoverLabel>
                     </li>
                   );
                 })}
