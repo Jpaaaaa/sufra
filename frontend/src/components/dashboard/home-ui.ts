@@ -1,11 +1,11 @@
 /**
- * Home dashboard visual tokens — Sufra mint/teal identity, POS density.
+ * Home dashboard visual tokens — command-center density, Bazar-like pastel surfaces.
  */
 export const homeUi = {
-  page: 'mx-auto max-w-7xl space-y-4',
+  page: 'mx-auto max-w-[1400px] space-y-4',
 
   surface:
-    'rounded-xl border border-black/[0.06] bg-white shadow-soft',
+    'rounded-2xl border border-black/[0.05] bg-white shadow-soft',
 
   surfacePad: 'p-4 md:p-5',
 
@@ -26,6 +26,9 @@ export const homeUi = {
 
   chipDanger:
     'border-red-200 bg-red-50 text-red-700',
+
+  chipWarn:
+    'border-amber-200 bg-amber-50 text-amber-800',
 
   iconWell:
     'flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-lg bg-cyber-aqua/12 text-cyber-aqua',

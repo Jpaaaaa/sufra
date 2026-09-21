@@ -10,6 +10,7 @@ import ItemFormModal from './ItemFormModal';
 import ItemMenuToggleButton from './ItemMenuToggleButton';
 import ItemAdminBadges from './ItemAdminBadges';
 import { sortItemsAdminDisplay } from '../../utils/admin-catalog-sort';
+import { collatorLocale } from '../../lib/app-locale';
 
 interface ItemsManagementProps {
   items: Item[];
@@ -68,7 +69,7 @@ export default function ItemsManagement({
   handleDelete,
   toggleItemHiddenFromMenu,
 }: ItemsManagementProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [selectedCategory, setSelectedCategory] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -114,8 +115,8 @@ export default function ItemsManagement({
   }, [items, selectedCategory, searchQuery]);
 
   const displayItems = useMemo(
-    () => sortItemsAdminDisplay(filteredItems),
-    [filteredItems],
+    () => sortItemsAdminDisplay(filteredItems, collatorLocale(i18n.language)),
+    [filteredItems, i18n.language],
   );
 
   // Group items by category

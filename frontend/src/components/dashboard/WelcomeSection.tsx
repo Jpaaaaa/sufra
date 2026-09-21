@@ -8,6 +8,7 @@ import { getEmployeeDisplayName } from '../../lib/userDisplay';
 import { APP_BRAND_NAME } from '../../lib/brand';
 import type { Shift } from '../../contexts/ShiftContext';
 import { getServerUrl, fetchJson } from '../../utils';
+import { dateFormatLocale, languageBase } from '../../lib/app-locale';
 import { homeUi } from './home-ui';
 
 function greetingKey(hour: number): 'welcomeMorning' | 'welcomeAfternoon' | 'welcomeEvening' {
@@ -16,19 +17,20 @@ function greetingKey(hour: number): 'welcomeMorning' | 'welcomeAfternoon' | 'wel
   return 'welcomeEvening';
 }
 
-function formatClock(now: Date): { time: string; date: string } {
-  const hours = now.getHours();
-  const minutes = now.getMinutes();
-  const ampm = hours >= 12 ? 'PM' : 'AM';
-  const displayHours = hours % 12 || 12;
-  const time = `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${ampm}`;
-  const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-  const date = `${days[now.getDay()]}, ${now.getMonth() + 1}/${now.getDate()}/${now.getFullYear()}`;
-  return { time, date };
+function formatClock(now: Date, locale: string, hour12: boolean): { time: string; date: string } {
+  return {
+    time: now.toLocaleTimeString(locale, { hour: 'numeric', minute: '2-digit', hour12 }),
+    date: now.toLocaleDateString(locale, {
+      weekday: 'long',
+      year: 'numeric',
+      month: 'numeric',
+      day: 'numeric',
+    }),
+  };
 }
 
 function WelcomeSection() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { user, token } = useAuth();
   const [restaurantName, setRestaurantName] = useState(APP_BRAND_NAME);
   const [shiftOpen, setShiftOpen] = useState(false);
@@ -102,9 +104,10 @@ function WelcomeSection() {
 
   const displayName = useMemo(
     () => (user ? getEmployeeDisplayName(user.username) : '—'),
-    [user],
+    [user, i18n.language],
   );
-  const clock = formatClock(now);
+  const clockLocale = dateFormatLocale(i18n.language);
+  const clock = formatClock(now, clockLocale, languageBase(i18n.language) !== 'tr');
 
   return (
     <section className={`${homeUi.surface} px-4 py-3.5 md:px-5`}>

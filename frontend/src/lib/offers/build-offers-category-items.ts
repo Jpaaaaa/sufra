@@ -4,6 +4,7 @@ import { isWeekdayIncluded } from '../../utils/weekdays';
 import { isHappyHourActiveNow, resolveComboOfferPrice } from '../../utils/offer-pricing';
 import { OFFERS_CATEGORY_ID } from '../../components/orders/CategoryTabs';
 import { isMultiProductOffer } from '@sufra-offers';
+import { collatorLocale } from '../app-locale';
 
 type OffersApi = ReturnType<typeof useOffers>;
 
@@ -73,6 +74,7 @@ function labelFromProducts(
 export function buildOffersCategoryItems(
   menuItems: Item[],
   offers: OffersApi,
+  locale = 'ar',
 ): Item[] {
   const allOffersItems: any[] = [];
 
@@ -224,7 +226,7 @@ export function buildOffersCategoryItems(
     const bCombo = b.id < 0;
     if (!aCombo && bCombo) return -1;
     if (aCombo && !bCombo) return 1;
-    return a.name.localeCompare(b.name, 'ar');
+    return a.name.localeCompare(b.name, collatorLocale(locale));
   });
 
   return uniqueItems;

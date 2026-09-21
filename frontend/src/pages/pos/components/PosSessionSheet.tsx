@@ -77,7 +77,7 @@ export function PosSessionSheet({ open, onClose }: { open: boolean; onClose: () 
                 aria-pressed={lang === opt.value}
                 onClick={() => void i18n.changeLanguage(opt.value as AppLanguage)}
               >
-                {t(opt.labelKey)}
+                {opt.nativeName}
               </button>
             ))}
           </div>

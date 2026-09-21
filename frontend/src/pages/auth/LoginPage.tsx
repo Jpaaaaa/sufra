@@ -40,7 +40,7 @@ export default function LoginPage() {
       }
       navigate(role === 'waiter' ? '/pos/floor' : '/');
     } catch (err: any) {
-      setError(err.message || 'فشل تسجيل الدخول. يرجى التحقق من اسم الموظف (اسم الدخول) وكلمة المرور.');
+      setError(err.message || t('login.failGeneric'));
     } finally {
       setIsLoading(false);
     }
@@ -49,7 +49,7 @@ export default function LoginPage() {
   return (
     <div className="relative flex min-h-screen items-center justify-center bg-gradient-to-br from-cloud-soft-white via-white to-cyber-aqua/10 p-4">
       <div className="absolute right-4 top-4 z-10 rounded-xl border border-black/5 bg-white p-2 shadow-soft">
-        <LanguageSwitcher className="[&_span]:text-obsidian/80 [&_select]:border-black/10 [&_select]:bg-white" />
+        <LanguageSwitcher />
       </div>
       <div className="w-full max-w-md">
         <div className="rounded-2xl bg-white p-8 shadow-2xl">
@@ -69,7 +69,7 @@ export default function LoginPage() {
 
             <div>
               <label htmlFor="username" className="block text-sm font-medium text-obsidian mb-2">
-                اسم الموظف <span className="font-normal text-graphite">(اسم الدخول)</span>
+                {t('login.usernameLabel')} <span className="font-normal text-graphite">{t('login.usernameHintParen')}</span>
               </label>
               <input
                 id="username"
@@ -78,18 +78,18 @@ export default function LoginPage() {
                 onChange={(e) => setUsername(e.target.value)}
                 required
                 className="w-full rounded-lg border border-gray-300 px-4 py-3 text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/20"
-                placeholder="نفس الاسم المسجّل في إعدادات المستخدمين"
+                placeholder={t('login.usernamePlaceholder')}
                 dir="ltr"
                 autoComplete="username"
               />
               <p className="mt-1.5 text-xs text-graphite">
-                يطابق اسم الموظف في جدول المستخدمين — ليس حقلًا منفصلًا عن اسم الدخول.
+                {t('login.usernameHelp')}
               </p>
             </div>
 
             <div>
               <label htmlFor="password" className="block text-sm font-medium text-obsidian mb-2">
-                كلمة المرور
+                {t('login.passwordLabel')}
               </label>
               <input
                 id="password"
@@ -98,7 +98,7 @@ export default function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)}
                 required
                 className="w-full rounded-lg border border-gray-300 px-4 py-3 text-obsidian focus:border-cyber-aqua focus:outline-none focus:ring-2 focus:ring-cyber-aqua/20"
-                placeholder="أدخل كلمة المرور"
+                placeholder={t('login.passwordPlaceholder')}
                 dir="ltr"
                 autoComplete="current-password"
               />
@@ -109,31 +109,31 @@ export default function LoginPage() {
               disabled={isLoading}
               className="w-full rounded-lg bg-cyber-aqua px-4 py-3 font-semibold text-white transition-colors hover:bg-cyber-aqua/90 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              {isLoading ? 'جاري تسجيل الدخول...' : 'تسجيل الدخول'}
+              {isLoading ? t('login.submitting') : t('login.submit')}
             </button>
           </form>
 
           <div className="mt-6 rounded-lg border border-gray-200 bg-gray-50 p-4 text-xs text-graphite">
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="font-medium">عنوان الخادم الحالي:</p>
-                <p className="truncate font-mono text-[11px]" dir="ltr">{serverUrl || 'غير محدد'}</p>
+                <p className="font-medium">{t('login.currentServer')}</p>
+                <p className="truncate font-mono text-[11px]" dir="ltr">{serverUrl || t('login.serverUnset')}</p>
               </div>
               <button
                 type="button"
                 onClick={() => navigate('/setup/server')}
                 className="rounded-md bg-white px-3 py-2 text-[12px] font-medium text-obsidian shadow-sm ring-1 ring-black/10 hover:bg-gray-100"
               >
-                إعدادات الخادم
+                {t('login.serverSettings')}
               </button>
             </div>
           </div>
 
           {/* Default Credentials Hint */}
           <div className="mt-6 rounded-lg bg-gray-50 p-4 text-xs text-graphite border border-gray-200">
-            <p className="font-medium mb-1">بيانات الدخول الافتراضية:</p>
-            <p>اسم المستخدم: <span className="font-mono">admin</span></p>
-            <p>كلمة المرور: <span className="font-mono">admin123</span></p>
+            <p className="font-medium mb-1">{t('login.defaultCreds')}</p>
+            <p>{t('login.defaultUsername')} <span className="font-mono">admin</span></p>
+            <p>{t('login.defaultPassword')} <span className="font-mono">admin123</span></p>
           </div>
         </div>
       </div>

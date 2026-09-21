@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { EmployeeSummary as EmployeeSummaryType } from '@/lib/reports/types';
 import { formatCurrency } from '@/lib/reports/utils';
 import { useOrderLocale } from '../../hooks/useOrderLocale';
+import { collatorLocale } from '../../lib/app-locale';
 
 interface EmployeeSummaryProps {
   data: EmployeeSummaryType[];
@@ -16,7 +17,7 @@ type SortDirection = 'asc' | 'desc';
 export default function EmployeeSummary({ data }: EmployeeSummaryProps) {
   const { t, i18n } = useTranslation();
   const { numberLocale } = useOrderLocale();
-  const sortLocale = useMemo(() => (i18n.language?.startsWith('en') ? 'en' : 'ar'), [i18n.language]);
+  const sortLocale = useMemo(() => collatorLocale(i18n.language), [i18n.language]);
 
   const [sortField, setSortField] = useState<SortField>('totalSales');
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');

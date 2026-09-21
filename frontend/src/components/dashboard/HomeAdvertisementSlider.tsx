@@ -72,10 +72,11 @@ function BrandPanel() {
   );
 }
 
-function HomeAdvertisementSlider() {
+function HomeAdvertisementSlider({ variant = 'band' }: { variant?: 'band' | 'card' }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { ads, isLoading } = useHomeAds();
+  const isCard = variant === 'card';
   const [index, setIndex] = useState(0);
   const [paused, setPaused] = useState(false);
   const count = ads.length;
@@ -103,6 +104,15 @@ function HomeAdvertisementSlider() {
   }, [count]);
 
   if (isLoading && count === 0) {
+    if (isCard) {
+      return (
+        <section
+          className={`${homeUi.surface} h-full min-h-[220px] overflow-hidden bg-[#E8F1FF]`}
+          aria-label={t('home.adsCarouselLabel')}
+          aria-busy="true"
+        />
+      );
+    }
     return (
       <section
         className="w-full bg-gradient-to-br from-[#0066FF]/18 via-[#0066FF]/10 to-[#0066FF]/06 py-5 md:py-6"
@@ -124,6 +134,40 @@ function HomeAdvertisementSlider() {
   const current = ads[index] ?? ads[0];
   const imageOnly = !!current.imageOnly;
   const slideCount = Math.max(count, 1);
+
+  if (isCard) {
+    return (
+      <section
+        className={`${homeUi.surface} relative h-full min-h-[220px] overflow-hidden`}
+        aria-label={t('home.adsCarouselLabel')}
+        onMouseEnter={() => setPaused(true)}
+        onMouseLeave={() => setPaused(false)}
+      >
+        {ads.map((ad, i) => (
+          <div
+            key={ad.id}
+            className={`home-ad-slide absolute inset-0 ${i === index ? 'is-active' : ''}`}
+            aria-hidden={i !== index}
+          >
+            <button
+              type="button"
+              onClick={() => void openAdLink(ad, navigate)}
+              className="absolute inset-0 block h-full w-full cursor-pointer border-0 bg-transparent p-0"
+              aria-label={ad.title || t('home.adsCtaDefault')}
+            >
+              <img
+                src={ad.imageUrl}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                className="h-full w-full object-cover object-center"
+              />
+            </button>
+          </div>
+        ))}
+      </section>
+    );
+  }
 
   return (
     <section

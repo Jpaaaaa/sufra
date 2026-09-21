@@ -11,14 +11,14 @@ export function sortCategoriesAdminDisplay(categories: Category[]): Category[] {
   });
 }
 
-/** Hidden or out-of-stock items first, then Arabic name. */
-export function sortItemsAdminDisplay(items: Item[]): Item[] {
+/** Hidden or out-of-stock items first, then name (UI language collation). */
+export function sortItemsAdminDisplay(items: Item[], locale = 'ar'): Item[] {
   return [...items].sort((a, b) => {
     const aUnavail =
       !!(a.hidden_from_menu || a.is_out_of_stock) ? 0 : 1;
     const bUnavail =
       !!(b.hidden_from_menu || b.is_out_of_stock) ? 0 : 1;
     if (aUnavail !== bUnavail) return aUnavail - bUnavail;
-    return a.name.localeCompare(b.name, 'ar');
+    return a.name.localeCompare(b.name, locale);
   });
 }

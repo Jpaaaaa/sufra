@@ -3,9 +3,10 @@ import { initReactI18next } from 'react-i18next';
 import en from './locales/en.json';
 import ar from './locales/ar.json';
 import ckb from './locales/ckb.json';
+import tr from './locales/tr.json';
 import { applyDocumentLanguage, attachLanguagePersistence } from './lib/apply-document-language';
 
-export const SUPPORTED_LANGUAGES = ['en', 'ar', 'ckb'] as const;
+export const SUPPORTED_LANGUAGES = ['en', 'ar', 'ckb', 'tr'] as const;
 export type AppLanguage = (typeof SUPPORTED_LANGUAGES)[number];
 
 const STORAGE_KEY = 'sufra-ui-language';
@@ -28,6 +29,7 @@ i18n.use(initReactI18next).init({
   lng: initialLng,
   fallbackLng: {
     ckb: ['ar', 'en'],
+    tr: ['en'],
     default: ['en'],
   },
   supportedLngs: [...SUPPORTED_LANGUAGES],
@@ -35,6 +37,7 @@ i18n.use(initReactI18next).init({
     en: { translation: en },
     ar: { translation: ar },
     ckb: { translation: ckb },
+    tr: { translation: tr },
   },
   interpolation: { escapeValue: false },
 });

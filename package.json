@@ -1,6 +1,6 @@
 {
   "name": "sufra-lite-pos",
-  "version": "0.1.35",
+  "version": "0.2.1",
   "private": true,
   "scripts": {
     "setup": "node scripts/setup-dev.js",
